@@ -23,8 +23,13 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 
 # 导入聚活各个模块
+import sys
+import os
+# 确保能找到上级目录的模块
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from router import check10d, format_report
-from judgment.router import check10d as full_check10d
+from router import check10d as full_check10d
 from action_system.action_system import generate_action_plan, format_action_plan
 from action_signal import generate_action_signals, format_for_robot, save_to_file
 from curiosity.curiosity_engine import CuriosityEngine, trigger_from_low_confidence
@@ -410,24 +415,223 @@ def list_sessions() -> List[Dict]:
     return sessions
 
 
-def save_dialogue_to_file(session: ChatSession, filepath: str):
-    """将对话保存为可读性好的markdown文件"""
+def should_keep_full(msg: ChatMessage) -> bool:
+    """
+    【对齐数字分身目标】科学筛选：判断这条消息是否需要完整保留
+    核心原则：**记住个人思考，过滤无效闲聊，保留进化轨迹**
+    
+    优先级：
+    1. 对自我模型/身份/判断规则的修改 → 最高重要性，必须完整
+    2. 对因果记忆/决策的反馈 → 高重要性，必须完整
+    3. 完整的问题/观点表达 → 保留
+    4. 简短确认/闲聊/无意义回应 → 只计数不保存
+    """
+    if msg.role == "system":
+        return True  # 系统记录必须完整
+    
+    content = msg.content.strip()
+    
+    # 1. 触发了核心分身功能 → 必须完整保留（这些是进化轨迹）
+    if "triggered_functions" in msg.metadata:
+        critical_funcs = {
+            "feedback_record",        # 对之前决策的反馈 → 修正自我模型
+            "evolution_accept",       # 接受进化建议 → 记录进化点
+            "causal_record",          # 新增因果记忆 → 个人经验
+            "identity_update",        # 更新核心身份 → 不能丢
+            "judgment_10d",           # 完整十维判断 → 思考轨迹
+            "action_plan",            # 行动规划 → 决策轨迹
+        }
+        triggered = msg.metadata["triggered_functions"]
+        if any(f in critical_funcs for f in triggered):
+            return True
+    
+    # 2. 包含关键个人内容关键词 → 必须完整（这些定义了"你是谁"）
+    key_phrases = [
+        "我认为", "我觉得", "我偏好", "我习惯", "我决定",
+        "我会选择", "对我来说", "我不同意", "我同意",
+        "教训", "经验", "总结", "反思", "下次",
+        "核心", "原则", "价值观", "目标", "我喜欢", "我讨厌",
+    ]
+    for phrase in key_phrases:
+        if phrase in content:
+            return True
+    
+    # 3. 长度过滤：非常短（< 8字）通常是简单回应 → 摘要即可
+    if len(content) < 8:
+        return False
+    
+    # 4. 默认：中等长度以上是完整表达 → 保留
+    return len(content) >= 20
+
+
+def get_importance_level(msg: ChatMessage) -> int:
+    """
+    【对齐数字分身目标】获取消息重要性层级：
+    0 = 低（仅摘要）→ 简短闲聊/确认
+    1 = 中（完整保留）→ 普通对话/问题
+    2 = 高（必须完整，核心记忆）→ 思考轨迹/反馈/进化/身份
+    
+    核心原则：**记住个人思考，过滤无效闲聊，保留进化轨迹**
+    """
+    if msg.role == "system":
+        return 2  # 系统进化记录必须完整
+    
+    # 1. 触发核心分身功能 → 最高优先级，必须完整（这些是进化轨迹）
+    if "triggered_functions" in msg.metadata:
+        critical_funcs = {
+            "feedback_record",        # 对之前决策的反馈 → 修正自我模型
+            "evolution_accept",       # 接受进化建议 → 记录进化点
+            "causal_record",          # 新增因果记忆 → 个人独有经验
+            "identity_update",        # 更新核心身份 → 绝对不能丢
+            "judgment_10d",           # 完整十维判断 → 思考轨迹
+            "action_plan",            # 行动规划 → 决策轨迹
+        }
+        triggered = msg.metadata["triggered_functions"]
+        if any(f in critical_funcs for f in triggered):
+            return 2
+    
+    # 2. 内容包含个人观点/偏好 → 高重要性，必须完整（这些塑造了"你是谁"）
+    content = msg.content.strip()
+    key_phrases = [
+        "我认为", "我觉得", "我偏好", "我习惯", "我决定",
+        "我会选择", "对我来说", "我不同意", "我同意",
+        "教训", "经验", "总结", "反思", "下次改进",
+        "核心", "原则", "价值观", "目标", "我喜欢", "我讨厌",
+    ]
+    for phrase in key_phrases:
+        if phrase in content:
+            return 2
+    
+    # 3. 长度分级
+    if len(content) < 8:
+        return 0  # 太短，闲聊/确认，仅摘要
+    if len(content) < 20:
+        return 1  # 中等长度，普通问题
+    return 2  # 长内容，完整表达 → 保留
+
+
+def save_dialogue_to_file(session: ChatSession, filepath: str, level: int = 1):
+    """
+    将对话保存为可读性好的markdown文件，带科学筛选：
+    - level=0: 只保留高重要性（重要决策/反馈）
+    - level=1: 保留中+高重要性（默认，去冗余）
+    - level=2: 保留全部（完整存档）
+    """
+    # 统计各层级
+    stats = {0: 0, 1: 0, 2: 0}
+    for msg in session.messages:
+        stats[get_importance_level(msg)] += 1
+    
     lines = [
         f"# 对话会话: {session.title}",
         "",
-        f"会话ID: {session.session_id}",
-        f"创建时间: {session.created_at}",
-        f"更新时间: {session.updated_at}",
+        f"- **会话ID**: {session.session_id}",
+        f"- **创建时间**: {session.created_at}",
+        f"- **更新时间**: {session.updated_at}",
+        f"- **总消息数**: {len(session.messages)}",
+        f"- **筛选层级**: level={level} (0=仅高重要性 1=中+高 2=全部)",
+        f"- **统计**: 高重要性={stats[2]} | 中重要性={stats[1]} | 低重要性={stats[0]}",
+        "",
+        "## 筛选规则（数字分身目标：记住个人思考，过滤无效闲聊，保留进化轨迹）",
+        "",
+        "| 重要性 | 规则 | 是否保存 |",
+        "|--------|------|----------|",
+        "| 🔴 **高** | 触发十维判断/反馈/因果记录/进化/身份更新 · 包含\"我认为/我偏好/教训/原则\"等个人观点 · 系统记录 | ✅ **必须完整保存**（这就是你）|",
+        "| 🟡 **中** | 长度 8-20 字 · 普通问题/回答 | ✅ 完整保存 |",
+        "| 🟢 **低** | < 8 字 闲聊/简单确认 | ❌ 仅计数，不保存详情 |",
         "",
         "---",
         "",
     ]
     
+    # 分块：高重要性在前，然后中，低在最后摘要
+    high_importance = []
+    medium_importance = []
+    low_importance = []
+    
     for msg in session.messages:
-        role = "用户" if msg.role == "user" else ("聚活" if msg.role == "assistant" else "系统")
-        lines.append(f"**{role}**:")
+        imp = get_importance_level(msg)
+        if imp >= level:
+            role = "用户" if msg.role == "user" else ("聚活" if msg.role == "assistant" else "系统")
+            entry = {
+                "role": role,
+                "content": msg.content,
+                "triggered": msg.metadata.get("triggered_functions", [])
+            }
+            if imp == 2:
+                high_importance.append(entry)
+            else:
+                medium_importance.append(entry)
+        else:
+            low_importance.append(msg)
+    
+    # 输出高重要性
+    if high_importance:
+        lines.append("## 🔴 高重要性内容（完整保存）")
         lines.append("")
-        lines.append(msg.content)
+        for entry in high_importance:
+            lines.append(f"### {entry['role']}")
+            lines.append("")
+            lines.append(entry['content'])
+            if entry['triggered']:
+                lines.append("")
+                lines.append(f"*触发功能: {', '.join(entry['triggered'])}*")
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+    
+    # 输出中等重要性
+    if medium_importance:
+        lines.append("## 🟡 中等重要性内容（完整保存）")
+        lines.append("")
+        for entry in medium_importance:
+            lines.append(f"### {entry['role']}")
+            lines.append("")
+            lines.append(entry['content'])
+            if entry['triggered']:
+                lines.append("")
+                lines.append(f"*触发功能: {', '.join(entry['triggered'])}*")
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+    
+    # 低重要性摘要
+    if low_importance:
+        lines.append("## 🟢 低重要性内容（摘要）")
+        lines.append("")
+        lines.append(f"共 {len(low_importance)} 条短消息/闲聊，这里只计数不保存详情：")
+        user_short = sum(1 for m in low_importance if m.role == "user")
+        assistant_short = len(low_importance) - user_short
+        lines.append(f"- 用户: {user_short} 条")
+        lines.append(f"- 聚活: {assistant_short} 条")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    
+    # 如果有触发记录，加上统计
+    has_triggered = any("triggered_functions" in msg.metadata for msg in session.messages)
+    if has_triggered:
+        lines.append("## 📊 触发功能统计");
+        lines.append("");
+        all_triggered = [];
+        for msg in session.messages:
+            if "triggered_functions" in msg.metadata:
+                all_triggered.extend(msg.metadata["triggered_functions"]);
+        if all_triggered:
+            from collections import Counter
+            counter = Counter(all_triggered);
+            for func, count in counter.most_common():
+                lines.append(f"- {func}: {count} 次");
+        lines.append("");
+        lines.append("---");
+        lines.append("");
+    
+    # 加上进化快照信息
+    if hasattr(session, 'evolution_snapshot') and session.evolution_snapshot:
+        lines.append("## 🧬 进化记录")
+        lines.append("")
+        for evo in session.evolution_snapshot:
+            lines.append(f"- {evo.get('type', 'evolution')}: {evo.get('message', '')}")
         lines.append("")
         lines.append("---")
         lines.append("")
