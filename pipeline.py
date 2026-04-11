@@ -10,10 +10,10 @@ Usage:
 import time
 from typing import Optional
 
-from router import check10d_run
-from dynamic_weights import get_dynamic_weights, get_task_complexity, detect_task_types
-from confidence import (
-    assess_all_confidences, get_low_confidence_dims,
+from judgment.router import check10d_run
+from judgment.dynamic_weights import get_dynamic_weights, get_task_complexity, detect_task_types
+from judgment.confidence import (
+    assess_all_confidences, get_low_confidence_dimensions,
     build_layered_verdict, format_layered_verdict,
     counterfactual_hindsight, format_hindsight,
 )
@@ -24,9 +24,9 @@ from lesson_recognition import get_pattern_warnings
 from profile_evolution import get_blind_spots
 from profile import check_goals_alignment
 from outcome_tracker import start_tracking
-from causal_chain import build_causal_chain
+from causal_memory.causal_chain import build_causal_chain
 from recursive_trigger import recursive_probe
-from metacognitive import metacognitive_review
+from judgment.metacognitive import metacognitive_review
 from multi_agent_debate import run_debate
 
 
@@ -93,7 +93,7 @@ def check10d_full(task_text: str, config: Optional[PipelineConfig] = None, **kwa
     )
 
     confidences = assess_all_confidences(task_text, check_result.get("answers", {}))
-    low_conf_dims = get_low_confidence_dims(confidences, threshold=cfg.confidence_threshold)
+    low_conf_dims = get_low_confidence_dimensions(confidences, threshold=cfg.confidence_threshold)
 
     # #10 分层判断
     try:
@@ -180,16 +180,16 @@ def check10d_full(task_text: str, config: Optional[PipelineConfig] = None, **kwa
     # generate synthetic scores via keyword matching for demo purposes
     if not confidence_scores:
         DIM_KEYWORDS = {
-            "d1_cognition": ["判断", "分析", "认知", "信息", "思?, "决策", "选择"],
+            "d1_cognition": ["判断", "分析", "认知", "信息", "思考", "决策", "选择"],
             "d2_game_theory": ["对方", "博弈", "竞争", "合作", "利益", "利弊", "得失"],
-            "d3_economics": ["成本", "收益", "经济", "划算", "值不?, "代价", "机会"],
+            "d3_economics": ["成本", "收益", "经济", "划算", "值不值", "代价", "机会"],
             "d4_dialectics": ["矛盾", "对立", "辩证", "转化", "利弊", "优劣", "主次"],
-            "d5_emotion": ["情绪", "感受", "焦虑", "担心", "害?, "期待", "开?, "纠结"],
-            "d6_intuition": ["直觉", "感觉", "第六?, "第一反应", "下意?],
+            "d5_emotion": ["情绪", "感受", "焦虑", "担心", "害怕", "期待", "开心", "纠结"],
+            "d6_intuition": ["直觉", "感觉", "第六感", "第一反应", "下意识"],
             "d7_morality": ["道德", "对错", "应该", "原则", "价值观", "责任", "良心"],
             "d8_social": ["别人", "他人", "社会", "群体", "关系", "看法", "评价"],
             "d9_time": ["长期", "短期", "未来", "以后", "时间", "耐心", "时机"],
-            "d10_metacognition": ["反?, "思考方?, "认知", "自我", "觉察", "元认?],
+            "d10_metacognition": ["反思", "思考方式", "认知", "自我", "觉察", "元认知"],
         }
         for dim_id in ["d1_cognition", "d2_game_theory", "d3_economics", "d4_dialectics", "d5_emotion", "d6_intuition", "d7_morality", "d8_social", "d9_time", "d10_metacognition"]:
             # Fallback: uniform moderate score when no LLM answers available
@@ -352,15 +352,15 @@ def format_full_report(report: dict) -> str:
         lines.append("")
         lines.append("[递归探测] 深度=%d | 追问=%d" % (rp.get("depth_reached", 0), rp.get("total_probes", 0)))
         for p in rp.get("probes", [])[:4]:
-            icon = "? if p.get("trigger_reason") == "low" else "?
+            icon = "🔍" if p.get("trigger_reason") == "low" else "⚡"
             lines.append("  %s %s (%.0f%%)" % (icon, p.get("dimension_name", ""), p.get("score", 0) * 100))
             for q in p.get("questions", [])[:2]:
-                lines.append("    ? %s" % q)
+                lines.append("    ❓ %s" % q)
 
-    # #2 元认知审?
+    # #2 元认知审查
     if report.get("meta_verdict"):
         mv = report["meta_verdict"]
-        verdict_icon = {"PROCEED": "?, "REVIEW": "?, "HOLD": "🛑"}.get(mv.get("meta_verdict", ""), "?")
+        verdict_icon = {"PROCEED": "✅", "REVIEW": "👀", "HOLD": "🛑"}.get(mv.get("meta_verdict", ""), "❔")
         lines.append("")
         lines.append("[元认知审查] %s (调整: %+.0f%%)" % (verdict_icon, (mv.get("confidence_adjustment", 0) or 0) * 100))
         for f in mv.get("flags", [])[:3]:
@@ -382,17 +382,17 @@ def format_full_report(report: dict) -> str:
         ga = report["goals_alignment"]
         lines.append("")
         lines.append("[目标层次对齐]")
-        verdict_icon = {"SERVES_GOALS": "?, "NEUTRAL": "?, "DETRACTS_FROM_GOALS": "?}
-        icon = verdict_icon.get(ga.get("verdict", "NEUTRAL"), "?)
+        verdict_icon = {"SERVES_GOALS": "✅", "NEUTRAL": "➖", "DETRACTS_FROM_GOALS": "❌"}
+        icon = verdict_icon.get(ga.get("verdict", "NEUTRAL"), "❔")
         lines.append(f"  {icon} {ga.get('verdict_reason', '')}")
         if ga.get("has_archetype") and ga.get("archetype"):
             arch = ga["archetype"]
             lines.append(f"  原型: {arch['name']} | {arch['典型提问']}")
         for g in ga.get("goals_alignment", [])[:3]:
-            g_icon = "? if g["aligned"] else ("? if g["aligned"] is None else "?)
+            g_icon = "✅" if g["aligned"] else ("❔" if g["aligned"] is None else "❌")
             lines.append(f"  {g_icon} {g['goal']} [{g['timeframe']}] ({g['score']:.0%})")
         if ga.get("overall_alignment", 0) > 0:
-            lines.append(f"  整体对齐? {ga['overall_alignment']:.0%}")
+            lines.append(f"  整体对齐: {ga['overall_alignment']:.0%}")
 
     lines.append("")
     lines.append("=" * 50)
@@ -438,18 +438,18 @@ def format_guyong_json(report: dict) -> dict:
     # 维度名称映射
     DIM_NAME = {
         "cognitive": "认知",
-        "game_theory": "博弈?,
-        "economic": "经济?,
-        "dialectical": "辩证?,
+        "game_theory": "博弈",
+        "economic": "经济",
+        "dialectical": "辩证",
         "emotional": "情绪智能",
         "intuitive": "直觉",
         "moral": "道德",
         "social": "社会",
         "temporal": "时间折扣",
-        "metacognitive": "元认?,
+        "metacognitive": "元认知",
     }
 
-    # 构建每维度详?
+    # 构建每维度详情
     dims_used_ids = must_check + important
     dims_detail = {}
     for dim_id in dims_used_ids:
