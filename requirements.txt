@@ -1,6 +1,21 @@
-﻿# Optional dependencies for 4D Judgment Framework
-# Core functionality works without any dependencies.
-# Install only if you need extras:
+﻿# 聚活核心依赖
+# 网页控制台
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
 
-# evolver integration (for recording judgments)
-# evolver >= 1.0
+# PDF提取
+pdfplumber>=0.10.3
+
+# 网页提取
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+
+# 数据处理
+dataclasses-json>=0.6.4
+networkx>=3.2.1
+
+# 可选：开发测试
+# pytest>=7.4.0
+# pytest-cov>=4.1.0
