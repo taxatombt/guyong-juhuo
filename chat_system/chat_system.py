@@ -28,8 +28,8 @@ import os
 # 确保能找到上级目录的模块
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from router import check10d, format_report
-from router import check10d as full_check10d
+from judgment.router import check10d, format_report
+from judgment.router import check10d as full_check10d
 from action_system.action_system import generate_action_plan, format_action_plan
 from action_signal import generate_action_signals, format_for_robot, save_to_file
 from curiosity.curiosity_engine import CuriosityEngine, trigger_from_low_confidence

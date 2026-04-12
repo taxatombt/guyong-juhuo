@@ -1,27 +1,27 @@
 """
-guyong-juhuo — 聚活：模拟具体个体、持续自我进化的 Agent
+guyong-juhuo �?聚活：模拟具体个体、持续自我进化的 Agent
 
-判断系统（judgment）是核心子系统之一，负责"遇到两难怎么想"。
-整体定位：在大模型基础上，模拟特定个体，持续学习，最终超越人类整体。
+判断系统（judgment）是核心子系统之一，负�?遇到两难怎么�?�?
+整体定位：在大模型基础上，模拟特定个体，持续学习，最终超越人类整体�?
 
 7大进化功能：
-1. 置信度量化 — 解决"不知道自己不知道"
-2. 对抗性验证 — 魔鬼代言人视角
-3. 维度权重动态化 — 避免一把尺量所有问题
-4. 教训模式识别 — 从记录错误到预防错误
-5. 与求是融合 — 实事求是的框架
-6. Profile进化追踪 — 主动发现盲区
-7. embedding语义匹配 — 从历史中学习
+1. 置信度量�?�?解决"不知道自己不知道"
+2. 对抗性验�?�?魔鬼代言人视�?
+3. 维度权重动态化 �?避免一把尺量所有问�?
+4. 教训模式识别 �?从记录错误到预防错误
+5. 与求是融�?�?实事求是的框�?
+6. Profile进化追踪 �?主动发现盲区
+7. embedding语义匹配 �?从历史中学习
 
 Usage:
     from judgment import check10d
-    result = check10d("工作很矛盾，不知道先做哪个")
+    result = check10d("工作很矛盾，不知道先做哪�?)
 
     from judgment.agent import JudgmentAgent
     agent = JudgmentAgent(profile_name="<persona>")
-    agent.think("要不要辞职")
+    agent.think("要不要辞�?)
 
-    # 新功能
+    # 新功�?
     from judgment.confidence import assess_all_confidences
     from judgment.adversarial import quick_validate
     from judgment.dynamic_weights import get_dynamic_weights
@@ -49,7 +49,7 @@ from judgment.confidence import (
     assess_all_confidences,
     get_low_confidence_dims,
     format_confidence_report,
-    # 分层置信度
+    # 分层置信�?
     LayeredVerdict,
     CoreJudgment,
     ConditionalJudgment,
@@ -138,7 +138,7 @@ from .outcome_tracker import (
     format_accuracy_report,
 )
 
-# #3 因果链
+# #3 因果�?
 from .causal_chain import (
     build_causal_chain,
     format_causal_report,
@@ -152,7 +152,7 @@ from .recursive_trigger import (
     format_probe_report,
 )
 
-# #2 元认知
+# #2 元认�?
 from judgment.metacognitive import (
     metacognitive_review,
     metacognitive_self_check,
@@ -175,7 +175,7 @@ from .pipeline import (
     format_guyong_json,
 )
 
-# 新增模块：标准化行动信号输出（给机器人/执行器）
+# 新增模块：标准化行动信号输出（给机器�?执行器）
 from .action_signal import (
     ActionTypeEnum,
     ActionSignal,
@@ -209,7 +209,7 @@ from .chat_system import (
     list_sessions,
 )
 
-# 感知层导出
+# 感知层导�?
 from .perception import (
     AttentionFilter,
     AttentionItem,
@@ -239,14 +239,14 @@ __all__ = [
     "DIMENSIONS",
     "PATHS",
 
-    # 置信度量化
+    # 置信度量�?
     "ConfidenceScore",
     "assess_dimension_confidence",
     "assess_all_confidences",
     "get_low_confidence_dims",
     "format_confidence_report",
 
-    # 对抗性验证
+    # 对抗性验�?
     "Objection",
     "AdversarialResult",
     "generate_objections",
@@ -262,7 +262,7 @@ __all__ = [
     "get_weighted_dimensions",
     "format_weight_report",
 
-    # 与求是融合
+    # 与求是融�?
     "QiushiVerdict",
     "apply_qiushi_check",
     "get_applicable_methods",
@@ -307,7 +307,7 @@ __all__ = [
     "get_accuracy_report",
     "format_accuracy_report",
 
-    # #3 因果链
+    # #3 因果�?
     "build_causal_chain",
     "format_causal_report",
 
@@ -317,7 +317,7 @@ __all__ = [
     "recursive_probe",
     "format_probe_report",
 
-    # #2 元认知
+    # #2 元认�?
     "metacognitive_review",
     "metacognitive_self_check",
     "get_bias_checklist",
@@ -328,7 +328,7 @@ __all__ = [
     "run_debate",
     "format_debate_report",
 
-    # 因果记忆（底座新模块）
+    # 因果记忆（底座新模块�?
     "log_causal_event",
     "find_similar_events",
     "recall_causal_history",
@@ -338,7 +338,7 @@ __all__ = [
     "load_all_events",
     "load_all_links",
 
-    # 自我模型（底座生长层）
+    # 自我模型（底座生长层�?
     "SelfModel",
     "KnownBias",
     "Strength",
@@ -361,7 +361,7 @@ __all__ = [
     "get_daily_list",
     "full_report",
 
-    # 目标系统（生长层）
+    # 目标系统（生长层�?
     "Goal",
     "GoalSystem",
     "add_goal",
@@ -371,19 +371,19 @@ __all__ = [
     "format_hierarchy",
     "get_curiosity_priority_boost",
 
-    # 情感系统（生长层）
+    # 情感系统（生长层�?
     "EmotionDetection",
     "detect_emotion",
     "analyze_current_emotion",
     "format_emotion_report",
     "inject_emotion_signal",
 
-    # 输出系统（生长层）
+    # 输出系统（生长层�?
     "OutputSystem",
     "OutputDecision",
     "format_output",
 
-    # 行动系统（执行层）
+    # 行动系统（执行层�?
     "NextAction",
     "ActionPlan",
     "generate_action_plan",
@@ -392,7 +392,7 @@ __all__ = [
     "get_pending_actions",
     "get_daily_actions",
 
-    # 反馈系统（进化层）
+    # 反馈系统（进化层�?
     "Feedback",
     "add_feedback",
     "load_all_feedback",
@@ -402,6 +402,49 @@ __all__ = [
 
     # 感知层（输入层）
     "perception",
+    "AttentionFilter",
+    "AttentionItem",
+    "IncomingMessage",
+    "FilterResult",
+    "PDFExtractorAdapter",
+    "PDFBlock",
+    "ExtractedPDF",
+    "extract_pdf_to_judgment_input",
+    "WebExtractorAdapter",
+    "WebBlock",
+    "ExtractedWeb",
+    "extract_web_to_judgment_input",
+    
+    # 行动信号输出层（给机器人/执行器）
+    "ActionTypeEnum",
+    "ActionSignal",
+    "ActionSignalList",
+    "generate_action_signals",
+    "format_for_robot",
+    "save_to_file",
+    "load_from_file",
+    
+    # 大模型接入适配�?
+    "LLMAdapter",
+    "LLMResponse",
+    "CompletionRequest",
+    "MiniMaxAdapter",
+    "OpenAIAdapter",
+    "OllamaAdapter",
+    "load_config",
+    "get_adapter",
+    
+    # 聊天系统（固定单用户对话�?
+    "ChatMessage",
+    "ChatSession",
+    "ChatSystem",
+    "load_chat_system",
+    "get_current_session",
+    "auto_trigger_functions",
+    "save_dialogue_to_file",
+    "list_sessions",
+    
+    # 感知层（输入层）
     "AttentionFilter",
     "AttentionItem",
     "IncomingMessage",
@@ -443,4 +486,40 @@ __all__ = [
     "auto_trigger_functions",
     "save_dialogue_to_file",
     "list_sessions",
+    
+    # Hermes-Agent 自我进化模块（逆向落地 NousResearch/Hermes-Agent）
+    "HermesEvolution",
+    "SkillStorage",
+    "TrajectoryRecorder",
+    
+    # gstack 虚拟工程团队（逆向落地 garrytan/gstack）
+    "VirtualTeam",
+    "GStackWorkflow",
+    "create_virtual_team",
+    "Role",
+    "RoleType",
+    "ExpertRole",
+    "TaskDefinition",
+    "ReviewResult",
+    "WorkflowStatus",
 ]
+
+# Hermes-Agent 自我进化模块
+from .hermes_evolution import (
+    HermesEvolution,
+    SkillStorage,
+    TrajectoryRecorder,
+)
+
+# gstack 虚拟工程团队模块
+from .gstack_virtual_team.types import (
+    Role,
+    RoleType,
+    Task,
+    ReviewResult,
+    WorkflowState,
+    WorkflowStatus,
+)
+from .gstack_virtual_team.team import VirtualTeam
+from .gstack_virtual_team.workflow import GStackWorkflow
+from .gstack_virtual_team.integration import create_juhuo_virtual_team, JuhuoGStackIntegration, JuhuoGStackConfig

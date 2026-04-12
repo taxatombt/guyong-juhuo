@@ -79,6 +79,15 @@ from execution_analyzer import (
     ExecutionRecord,
 )
 
+from .autonomous_skill_detector import (
+    OpportunityScore,
+    UsageStats,
+    AutonomousSkillTracker,
+    score_skill_opportunity,
+    trigger_autonomous_improvement,
+    format_opportunity_suggestion,
+)
+
 __all__ = [
     # Types
     'EvolutionType',
@@ -125,6 +134,13 @@ __all__ = [
     # Analysis
     'ExecutionAnalyzer',
     'ExecutionRecord',
+    # Autonomous skill creation (from Hermes)
+    'OpportunityScore',
+    'UsageStats',
+    'AutonomousSkillTracker',
+    'score_skill_opportunity',
+    'trigger_autonomous_improvement',
+    'format_opportunity_suggestion',
     # Paths
     'SKILL_DB_PATH',
 ]

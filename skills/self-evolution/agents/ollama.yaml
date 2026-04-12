@@ -1,0 +1,51 @@
+# Ollama-specific configuration for self-evolution
+
+# Model configuration
+model: "codellama:7b"
+provider: "ollama"
+
+# Temperature and creativity settings
+temperature: 0.3
+max_tokens: 2048
+
+# System prompt enhancements
+system_prompt_overrides:
+  - "You are an expert in self-evolution with deep knowledge of personal digital twin systems"
+  - "Prioritize safety and user control over automation"
+  - "Always recommend human intervention when uncertain"
+
+# Rate limiting
+rate_limit:
+  requests_per_minute: 5
+  tokens_per_minute: 20000
+
+# Retry policy
+retry_policy:
+  max_retries: 3
+  backoff_factor: 2
+  timeout_seconds: 60
+
+# Feature flags
+features:
+  enable_json_output: true
+  enable_state_persistence: true
+  enable_auto_retry: true
+  enable_review_comment_analysis: true
+
+# Context management
+context:
+  max_history: 5
+  compress_after: 10
+
+# Security
+security:
+  allow_external_calls: false
+  allow_file_writes: true
+  allow_git_operations: true
+  allow_system_commands: false
+
+# Debugging
+debug:
+  verbose: false
+  log_level: "info"
+  trace_actions: false

@@ -1,0 +1,22 @@
+{
+  "trajectory_id": "traj_20260412_095949_test_ses",
+  "session_id": "test_session",
+  "start_time": "2026-04-12T09:59:49.062965",
+  "end_time": "2026-04-12T09:59:49.062965",
+  "experiences": [
+    {
+      "experience_id": "exp_20260412_095949_062965",
+      "timestamp": "2026-04-12T09:59:49.062965",
+      "input_text": "Test input",
+      "decision_output": {
+        "conclusion": "Test conclusion"
+      },
+      "user_feedback": null,
+      "consistency_score": 0.8,
+      "skill_id": "test_skill",
+      "metadata": {}
+    }
+  ],
+  "total_reward": 0.8,
+  "avg_consistency": 0.8
+}
