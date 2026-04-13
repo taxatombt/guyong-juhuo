@@ -36,8 +36,19 @@ from self_model.self_model import get_self_warnings
 from curiosity.curiosity_engine import CuriosityEngine, trigger_from_low_confidence
 from emotion_system.emotion_system import EmotionSystem
 
+# 新增：自我复盘 + Fitness Baseline
+from .self_review import SelfReviewSystem
+from .fitness_baseline import FitnessBaseline
+
 # 兼容接口
 global_emotion_system = EmotionSystem()
+global_self_review = None  # 懒加载
+
+def _get_self_review():
+    global global_self_review
+    if global_self_review is None:
+        global_self_review = SelfReviewSystem()
+    return global_self_review
 
 def inject_emotion_signal(task_text: str) -> str:
     """兼容旧接口：如果情绪信号需要重视，返回提示文本"""

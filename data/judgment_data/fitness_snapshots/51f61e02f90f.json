@@ -1,0 +1,25 @@
+{
+  "dw": {
+    "cognitive": 0.0,
+    "game_theory": 0.0,
+    "economic": 0.0,
+    "dialectical": 0.0,
+    "emotional": 1.0,
+    "intuitive": 0.0,
+    "moral": 0.0,
+    "social": 0.0,
+    "temporal": 0.0,
+    "metacognitive": 0.0
+  },
+  "ac": 0.44,
+  "er": 1.0,
+  "rt": "medium",
+  "so": 0.0,
+  "tf": 0.0,
+  "ms": 0.0,
+  "tt": [],
+  "sc": 4,
+  "sid": "51f61e02f90f",
+  "pl": "20260411~20260411",
+  "ca": "2026-04-13T10:42:15.369081"
+}
