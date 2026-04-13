@@ -29,6 +29,13 @@ from .types import (
     CausalStats,
 )
 
+from .diff_tracker import (
+    TurnDiffTracker,
+    FileChange,
+    TurnDiff,
+    TRACKER_FILE,
+)
+
 __all__ = [
     # 核心功能
     "init",
@@ -58,6 +65,11 @@ __all__ = [
     "EvolutionType",
     "EvolutionSuggestion",
     "CausalStats",
+    # TurnDiffTracker（决策影响追踪）
+    "TurnDiffTracker",
+    "FileChange",
+    "TurnDiff",
+    "TRACKER_FILE",
 ]
 
 # 兼容旧名称
