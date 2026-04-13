@@ -294,6 +294,282 @@ class ActionSignalSystem:
         return self._SignalList
 
 
+# ─── 新增子系统 ─────────────────────────────────────────────────────────────
+
+class RalphSystem:
+    """
+    封装 curiosity/ralph_loop.py — Ralph 自引用循环检测。
+
+    Ralph Wiggum 风格：completion promise 驱动，达到目标才退出。
+    """
+    def __init__(self):
+        from curiosity.ralph_loop import RalphLoop, RalphState
+        self._RalphLoop = RalphLoop
+        self._RalphState = RalphState
+
+    def create(self, promise, max_iterations: int = 20, patience: int = 3):
+        """
+        创建 RalphLoop 实例。
+        promise: Callable[[], bool] — 返回 True 表示完成
+        """
+        return self._RalphLoop(promise=promise, max_iterations=max_iterations, patience=patience)
+
+    def detect_loop(self, iterations: list, threshold: int = 3) -> bool:
+        """从迭代历史检测是否陷入死循环。"""
+        consecutive = 0
+        for item in reversed(iterations):
+            if item.get("new_info", True):
+                break
+            consecutive += 1
+        return consecutive >= threshold
+
+    def report(self, loop) -> str:
+        return loop.report()
+
+    @property
+    def RalphState(self):
+        return self._RalphState
+
+
+class CollisionSystem:
+    """
+    封装 openspace/collision_detector.py — Skill 触发条件碰撞检测。
+
+    检测 INCLUDE（包含）和 OVERLAP（重叠）两种碰撞。
+    """
+    def __init__(self):
+        # 直接导入文件，避免 openspace/__init__.py 的 transitive 依赖问题
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "collision_detector",
+            str(Path(__file__).parent / "openspace" / "collision_detector.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        self._Detector = mod.SkillCollisionDetector
+        self._Collision = mod.Collision
+
+    def create(self):
+        return self._Detector()
+
+    def detect(self, detector, skills: dict) -> list:
+        """批量检测碰撞。"""
+        detector.add_skill_dict(skills)
+        return detector.detect_all()
+
+    def format_report(self, collisions: list) -> str:
+        if not collisions:
+            return "[OK] 无碰撞"
+        lines = [f"[!] 发现 {len(collisions)} 个碰撞:"]
+        for c in collisions:
+            lines.append(f"  [{c.type}] {c.skill_a} <-> {c.skill_b}: {c.detail}")
+            lines.append(f"    共享词: {', '.join(c.shared)}")
+        return "\n".join(lines)
+
+
+class SecuritySystem:
+    """
+    封装 action_system/security_hook.py — 10种危险模式检测。
+
+    检测：代码执行 / 管道bash / 递归删除 / XSS / SQL注入 / 反序列化等。
+    """
+    def __init__(self):
+        from action_system.security_hook import SecurityHook, SecurityLevel
+        self._Hook = SecurityHook
+        self._Level = SecurityLevel
+
+    def check(self, code: str) -> list:
+        """检查代码危险模式。"""
+        return self._Hook().check_code(code)
+
+    def level_name(self, level: int) -> str:
+        return self._Level.name(level)
+
+    @property
+    def SAFE(self) -> int: return self._Level.SAFE
+    @property
+    def LOW(self) -> int: return self._Level.LOW
+    @property
+    def MEDIUM(self) -> int: return self._Level.MEDIUM
+    @property
+    def HIGH(self) -> int: return self._Level.HIGH
+    @property
+    def CRITICAL(self) -> int: return self._Level.CRITICAL
+
+    def format_findings(self, findings: list) -> str:
+        """格式化检查结果。"""
+        if not findings:
+            return "[SAFE] 无危险模式"
+        lines = [f"[!] 发现 {len(findings)} 个问题:"]
+        for f in findings:
+            lines.append(f"  [{f.level_name}] {f.name} (L{f.line_number})")
+            lines.append(f"    -> {f.detail}")
+        return "\n".join(lines)
+
+
+class BenchmarkSystem:
+    """
+    封装 evolutions/benchmark.py — GDPVal Benchmark 效果衡量。
+
+    衡量 Skill 进化带来的实际收益：Token 节省率 / 完成率变化 / 速度变化。
+    """
+    def __init__(self):
+        from evolutions.benchmark import (
+            BenchmarkResult, PhaseResult, BaseRunner, SimulatedRunner,
+        )
+        self._BenchmarkResult = BenchmarkResult
+        self._PhaseResult = PhaseResult
+        self._BaseRunner = BaseRunner
+        self._SimulatedRunner = SimulatedRunner
+
+    def create_benchmark(self, task_set_name: str, p1: dict, p2: dict):
+        return self._BenchmarkResult(
+            task_set_name=task_set_name,
+            p1=self._PhaseResult(**p1),
+            p2=self._PhaseResult(**p2),
+        )
+
+    @property
+    def BaseRunner(self): return self._BaseRunner
+    @property
+    def SimulatedRunner(self): return self._SimulatedRunner
+
+
+class ObserveSystem:
+    """
+    封装 feedback_system/observe_hook.py — 5层被动工具调用捕获。
+
+    100% 工具调用捕获，不漏，不主动分析。
+    5层自防：防止 observe_hook 自己observe自己。
+    """
+    def __init__(self):
+        from feedback_system.observe_hook import ObserveHook, should_observe, ToolObservation
+        self._Hook = ObserveHook
+        self._should_observe = should_observe
+        self._Observation = ToolObservation
+
+    def create(self):
+        return self._Hook()
+
+    def should_observe(self, event: dict) -> bool:
+        return self._should_observe(event)
+
+    def on_tool_call(self, hook, tool: str, args: dict, result: str = "ok",
+                     error: str = None, duration_ms: int = None) -> None:
+        hook.on_tool_call(tool, args, result=result, error=error, duration_ms=duration_ms)
+
+    def flush(self, hook) -> None:
+        hook.flush()
+
+
+class DiffTrackerSystem:
+    """
+    封装 causal_memory/diff_tracker.py — TurnDiffTracker 决策影响追踪。
+
+    追踪每个决策（turn）→ 触发了哪些文件变更 → 因果推断。
+    """
+    def __init__(self):
+        from causal_memory.diff_tracker import TurnDiffTracker, TurnDiff, FileChange
+        self._Tracker = TurnDiffTracker
+        self._TurnDiff = TurnDiff
+        self._FileChange = FileChange
+
+    def create(self, storage_path=None):
+        from pathlib import Path
+        return self._Tracker(storage_path=storage_path)
+
+    def begin_turn(self, tracker, turn_id: str, decision_summary: str = "") -> None:
+        tracker.begin_turn(turn_id, decision_summary)
+
+    def log_change(self, tracker, tool: str, args: dict, before_hash: str = None,
+                   after_hash: str = None) -> None:
+        tracker.on_tool_call(tool, args, before_hash=before_hash, after_hash=after_hash)
+
+    def save(self, tracker) -> None:
+        tracker.save()
+
+
+class SelfEvolverSystem:
+    """
+    封装 evolver/self_evolver.py — Self-Evolver 自动闭环。
+
+    4 Phase：收集 → 分析 → 进化 → 输出。
+    定时运行，从实际任务中学习。
+    """
+    def __init__(self):
+        from evolver.self_evolver import SelfEvolver, DecisionRecord, EvolutionResult
+        self._SelfEvolver = SelfEvolver
+        self._DecisionRecord = DecisionRecord
+        self._EvolutionResult = EvolutionResult
+
+    def create(self) -> Any:
+        return self._SelfEvolver()
+
+    def run_cycle(self, evo=None) -> Any:
+        if evo is None:
+            evo = self._SelfEvolver()
+        return evo.run_full_cycle()
+
+    def cron_cycle(self, evo=None) -> str:
+        if evo is None:
+            evo = self._SelfEvolver()
+        return evo.run_cron_cycle()
+
+    def collect_decisions(self, limit: int = 50) -> list:
+        evo = self._SelfEvolver()
+        return evo.collect_recent_decisions(limit=limit)
+
+    def summarize(self, evo=None) -> str:
+        if evo is None:
+            evo = self._SelfEvolver()
+        return evo.summarize()
+
+
+class SQLiteSystem:
+    """
+    封装 evolver/sqlite_schema.py — SQLite 数据分层。
+
+    三张表：lessons / snapshots / health_metrics。
+    WAL 模式，支持 crash recovery。
+    """
+    def __init__(self):
+        from evolver.sqlite_schema import init_db, get_db, DB_FILE
+        self._init_db = init_db
+        self._get_db = get_db
+        self._db_file = DB_FILE
+
+    def init(self):
+        """初始化数据库（创建表）。"""
+        return self._init_db(str(self._db_file))
+
+    def query(self, sql: str, params: tuple = ()) -> list:
+        """执行查询，返回所有行。"""
+        with self._get_db(str(self._db_file)) as conn:
+            cur = conn.execute(sql, params)
+            return cur.fetchall()
+
+    def execute(self, sql: str, params: tuple = ()) -> None:
+        """执行 DML（INSERT/UPDATE/DELETE）。"""
+        with self._get_db(str(self._db_file)) as conn:
+            conn.execute(sql, params)
+
+    @property
+    def db_file(self) -> Path:
+        return self._db_file
+
+    def summary(self) -> str:
+        """各表行数摘要。"""
+        lines = [f"SQLite DB: {self._db_file}"]
+        with self._get_db(str(self._db_file)) as conn:
+            for table in ["lessons", "snapshots", "health_metrics"]:
+                try:
+                    cur = conn.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = cur.fetchone()[0]
+                    lines.append(f"  {table}: {count} 条")
+                except sqlite3.OperationalError:
+                    lines.append(f"  {table}: (不存在)")
+        return "\n".join(lines)
+
+
 # ─── Juhuo Hub ───────────────────────────────────────────────────────────────
 
 class Juhuo:
@@ -333,6 +609,14 @@ class Juhuo:
         self._emotion:     Optional[EmotionSystem]        = None
         self._feedback:    Optional[FeedbackSystem]        = None
         self._action_signal: Optional[ActionSignalSystem] = None
+        self._ralph:       Optional[RalphSystem]         = None
+        self._collision:   Optional[CollisionSystem]    = None
+        self._security:    Optional[SecuritySystem]      = None
+        self._benchmark:   Optional[BenchmarkSystem]     = None
+        self._observe:     Optional[ObserveSystem]       = None
+        self._diff_tracker: Optional[DiffTrackerSystem]   = None
+        self._self_evolver: Optional[SelfEvolverSystem] = None
+        self._sqlite:        Optional[SQLiteSystem]       = None
 
     # ── 属性访问（懒加载）─────────────────────────────────────────────────
 
@@ -377,6 +661,54 @@ class Juhuo:
         if self._action_signal is None:
             self._action_signal = ActionSignalSystem()
         return self._action_signal
+
+    @property
+    def ralph(self) -> RalphSystem:
+        if self._ralph is None:
+            self._ralph = RalphSystem()
+        return self._ralph
+
+    @property
+    def collision(self) -> CollisionSystem:
+        if self._collision is None:
+            self._collision = CollisionSystem()
+        return self._collision
+
+    @property
+    def security(self) -> SecuritySystem:
+        if self._security is None:
+            self._security = SecuritySystem()
+        return self._security
+
+    @property
+    def benchmark(self) -> BenchmarkSystem:
+        if self._benchmark is None:
+            self._benchmark = BenchmarkSystem()
+        return self._benchmark
+
+    @property
+    def observe(self) -> ObserveSystem:
+        if self._observe is None:
+            self._observe = ObserveSystem()
+        return self._observe
+
+    @property
+    def diff_tracker(self) -> DiffTrackerSystem:
+        if self._diff_tracker is None:
+            self._diff_tracker = DiffTrackerSystem()
+        return self._diff_tracker
+
+    @property
+    def evolver(self) -> SelfEvolverSystem:
+        if self._self_evolver is None:
+            self._self_evolver = SelfEvolverSystem()
+        return self._self_evolver
+
+    @property
+    def sqlite(self) -> SQLiteSystem:
+        if self._sqlite is None:
+            self._sqlite = SQLiteSystem()
+        return self._sqlite
 
     # ── 快捷方法 ──────────────────────────────────────────────────────────
 
