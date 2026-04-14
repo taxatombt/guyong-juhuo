@@ -200,43 +200,21 @@ print(ee.get_state())
 
 ---
 
-## 安装（四选一）
+## 安装（傻瓜式，双击即用）
 
-### 方式 1：直接运行 exe（推荐，Windows 用户）⭐
-**最新版本：`dist/guyong-juhuo.exe`（39MB 单文件，解压即用）**
+### ⭐ 安装包安装（推荐）
+下载 `dist/guyong-juhuo-1.0.0-setup.exe`（46.5MB）双击运行 → 下一步下一步 → 完成。
 
-下载后双击 `guyong-juhuo.exe` 即可启动（自带 Python 运行时，无需安装任何依赖）。
+自动完成：安装到 `C:\Program Files\聚活` → 桌面创建图标 → 开始菜单创建图标 → 可选立即启动
+
+### ⭐ 免安装版
+下载 `dist/guyong-juhuo.exe`（39.9MB）双击直接运行，无需安装任何依赖。
 
 ```
-guyong-juhuo.exe          启动网页控制台（默认）
+guyong-juhuo.exe          启动网页控制台
 guyong-juhuo.exe --help   显示帮助
 guyong-juhuo.exe --tui    TUI 终端界面
 guyong-juhuo.exe --check  安装前环境检测
-```
-
-### 方式 2：PowerShell 脚本安装
-```powershell
-# 下载项目后，双击 install.ps1 或在 PowerShell 中运行：
-.\install.ps1
-```
-自动完成：克隆/依赖安装/创建桌面快捷方式/初始化
-
-### 方式 3：生成 exe 安装程序（需要 Inno Setup）
-```powershell
-# 1. 下载 Inno Setup 6：https://jrsoftware.org/isinfo.php
-# 2. 编译：
-iscc setup.iss
-# 3. 生成分发：
-dist\guyong-juhuo-1.0.0-setup.exe
-#    → 双击运行 / 支持 /SILENT 静默安装
-```
-
-### 方式 4：绿色版（无需 Inno Setup）
-```powershell
-python build_installer.py
-# 生成分发：
-dist\guyong-juhuo-1.0.0-portable.zip
-#    → 解压后双击 launcher.bat --init
 ```
 
 ---
