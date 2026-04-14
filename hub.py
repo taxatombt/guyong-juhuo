@@ -25,13 +25,45 @@ hub.py — Juhuo 统一入口
 
 from __future__ import annotations
 import os
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-
-# ─── 路径配置 ───────────────────────────────────────────────────────────────
+# ─── 路径配置（最早定义，其他模块可能依赖）────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).parent.resolve()
+
+# ─── 用户级配置系统（参考 Hermes Agent ~/.hermes/ 模式）──────────────────
+# 用户级配置目录：~/.juhuo/
+#   ~/.juhuo/.env        — API keys（优先，从不提交 git）
+#   ~/.juhuo/config.yaml — 用户设置
+# 项目级回退：{项目根}/.env.example
+#
+# 加载顺序（用户级 override=True，project级 override=False）：
+#   1. ~/.juhuo/.env（override=True）
+#   2. {项目根}/.env.example（override=False）
+
+sys.path.insert(0, str(PROJECT_ROOT))
+try:
+    from config_manager import (
+        load_dotenv_files,
+        is_configured,
+        run_setup_wizard,
+        JUHuo_USER_DIR,
+        JUHuo_USER_ENV,
+        JUHuo_USER_CONFIG,
+    )
+
+    _loaded_paths = load_dotenv_files()
+except Exception:
+    # 配置模块加载失败不影响主流程（可能是首次使用）
+    is_configured = lambda: False
+    run_setup_wizard = None
+    JUHuo_USER_DIR = PROJECT_ROOT / ".juhuo"
+    JUHuo_USER_ENV = JUHuo_USER_DIR / ".env"
+    JUHuo_USER_CONFIG = JUHuo_USER_DIR / "config.yaml"
+    _loaded_paths = []
+
 DATA_DIR = PROJECT_ROOT / "data"
 
 # 新数据分层结构
@@ -838,6 +870,10 @@ def _cli():
     # --status
     sub.add_parser("status", help="Hub 整体健康状态")
 
+    # --config（透传剩余参数给 config handler）
+    p_cfg = sub.add_parser("config", help="配置管理（show/wizard/set/get）")
+    p_cfg.add_argument("cfg_args", nargs="*", help="config 子命令参数")
+
     # 全局选项（适用于所有子命令）
     parser.add_argument("--format", "-f", choices=["text", "json"], default="text", help="输出格式")
     parser.add_argument("--profile", "-p", default=None, help="Profile 名称")
@@ -1006,9 +1042,127 @@ def _cli():
             pass
         return
 
+    # config（内联处理，避免与 hub argparse 冲突）
+    if args.cmd == "config":
+        from config_manager import (
+            is_configured as _is_cfg,
+            run_setup_wizard as _run_wizard,
+            load_user_config as _load_cfg,
+            save_user_config as _save_cfg,
+            JUHuo_USER_DIR as _user_dir,
+            JUHuo_USER_ENV as _user_env,
+            JUHuo_USER_CONFIG as _user_cfg,
+        )
+        import argparse as _argparse
+
+        # hub 已用 nargs="*" 把 config 后的所有参数收进 cfg_args
+        _cfg_argv = getattr(args, "cfg_args", []) or []
+
+        _cfg_parser = _argparse.ArgumentParser(
+            prog="juhuo config",
+            description="juhuo 配置管理",
+        )
+        _cfg_sub = _cfg_parser.add_subparsers(dest="cfg_cmd")
+
+        _cfg_sub.add_parser("show", help="显示当前配置")
+        _cfg_sub.add_parser("wizard", help="运行首次设置向导")
+
+        _p_get = _cfg_sub.add_parser("get", help="读取配置项")
+        _p_get.add_argument("key", help="配置项名称")
+
+        _p_set = _cfg_sub.add_parser("set", help="设置配置项")
+        _p_set.add_argument("key", help="配置项名称")
+        _p_set.add_argument("value", help="配置值")
+
+        if not _cfg_argv:
+            _cfg_parser.print_help()
+            return
+
+        _cfg_args = _cfg_parser.parse_args(_cfg_argv)
+
+        if _cfg_args.cfg_cmd == "show":
+            print(f"用户配置目录：{_user_dir}")
+            print(f"  .env         → {_user_env}")
+            print(f"  config.yaml  → {_user_cfg}")
+            print()
+            if _is_cfg():
+                print("[OK] API Key：已配置")
+            else:
+                print("[X] API Key：未配置（运行 'juhuo config wizard' 进行设置）")
+            print()
+            _cfg = _load_cfg()
+            if _cfg:
+                print("用户配置项：")
+                for _k, _v in _cfg.items():
+                    print(f"  {_k}={_v}")
+            else:
+                print("用户配置项：无（使用默认值）")
+
+        elif _cfg_args.cfg_cmd == "wizard":
+            _run_wizard()
+
+        elif _cfg_args.cfg_cmd == "get":
+            _cfg = _load_cfg()
+            _val = _cfg.get(_cfg_args.key)
+            if _val is not None:
+                print(_val)
+            else:
+                print(f"配置项 '{_cfg_args.key}' 不存在", file=sys.stderr)
+                sys.exit(1)
+
+        elif _cfg_args.cfg_cmd == "set":
+            _cfg = _load_cfg()
+            _cfg[_cfg_args.key] = _cfg_args.value
+            _save_cfg(_cfg)
+            print(f"[OK] 已保存：{_cfg_args.key}={_cfg_args.value}")
+
+        else:
+            _cfg_parser.print_help()
+
+        return
+
     # 默认：显示帮助
     parser.print_help()
 
 
 if __name__ == "__main__":
+    # ── 首次运行检查 ────────────────────────────────────────────────────────
+    # 如果没有检测到 API key，且不是 help/config 命令，引导用户进行首次设置
+    _no_arg_cmds = ("-h", "--help", "-v", "--version")
+    _is_interactive = len(sys.argv) == 1 or (
+        len(sys.argv) > 1 and sys.argv[1] not in ("config", *_no_arg_cmds)
+    )
+
+    if not is_configured() and _is_interactive:
+        print()
+        print("=" * 60)
+        print("  首次运行检测：未找到 API Key 配置")
+        print("=" * 60)
+        print()
+        print(f"  用户配置目录：{JUHuo_USER_DIR}")
+        print(f"  API Key 文件：{JUHuo_USER_ENV}")
+        print()
+        try:
+            response = input("  运行首次设置向导吗？（Y/n）：").strip().lower()
+        except (EOFError, OSError):
+            response = "n"
+        if response in ("", "y", "yes"):
+            if run_setup_wizard:
+                ok = run_setup_wizard()
+                if ok:
+                    # 重新加载 .env（刚才的向导刚写入）
+                    _loaded_paths = load_dotenv_files()
+                else:
+                    print()
+                    print("  跳过设置。可随时运行以下命令重新配置：")
+                    print("    python hub.py config wizard")
+                    print()
+        else:
+            print()
+            print("  可手动配置 API Key：")
+            print(f"    1. 创建文件：{JUHuo_USER_ENV}")
+            print(f'    2. 写入内容：MINIMAX_API_KEY=your_key_here')
+            print(f'    3. 参考模板：{PROJECT_ROOT / ".env.example"}')
+            print()
+
     _cli()

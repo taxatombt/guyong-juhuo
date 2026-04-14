@@ -34,3 +34,8 @@ emotion_log.jsonl
 # config
 config.json
 local/
+
+# 用户级配置（永不提交）
+.env
+.env.local
+

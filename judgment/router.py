@@ -40,7 +40,9 @@ from emotion_system.emotion_system import EmotionSystem
 from .self_review import SelfReviewSystem
 from .fitness_baseline import FitnessBaseline
 
-# 兼容接口
+# LLM接入：MiniMax适配器
+from llm_adapter.minimax import MiniMaxAdapter
+from llm_adapter.base import CompletionRequest
 global_emotion_system = EmotionSystem()
 global_self_review = None  # 懒加载
 
@@ -58,13 +60,126 @@ def inject_emotion_signal(task_text: str) -> str:
         return f"\n[情绪信号提示] {signal.description}\n"
     return None
 
-def inject_emotion_signal(task_text: str) -> str:
-    """兼容旧接口：如果情绪信号需要重视，返回提示文本"""
-    # 先检测情绪（我们只需要文本关键词检测，这里传入空判断结果）
-    signal = global_emotion_system.detect_emotion(task_text, {})
-    if signal.is_signal:
-        return f"\n[情绪信号提示] {signal.description}\n"
-    return None
+
+def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = None) -> str:
+    """构造LLM回答问题的prompt"""
+    dim_labels = {
+        "cognitive": "认知维度",
+        "game_theory": "博弈维度",
+        "economic": "经济维度",
+        "dialectical": "辩证维度",
+        "emotional": "情绪维度",
+        "intuitive": "直觉维度",
+        "moral": "道德维度",
+        "social": "社会维度",
+        "temporal": "时间维度",
+        "metacognitive": "元认知维度",
+    }
+
+    profile_context = ""
+    if agent_profile:
+        name = agent_profile.get("name", "通用AI")
+        profile_context = f"\n你是{name}的判断分身。价值取向：{', '.join(agent_profile.get('values', []))}。"
+
+    parts = [
+        f"任务：{task_text}{profile_context}\n",
+        "请针对以下问题给出简短而深刻的回答（每条回答不超过50字）：\n",
+    ]
+
+    for dim_id, qs in questions.items():
+        label = dim_labels.get(dim_id, dim_id)
+        if not qs:
+            continue
+        parts.append(f"【{label}】")
+        for i, q in enumerate(qs, 1):
+            parts.append(f"  Q{i}. {q}")
+        parts.append("")
+
+    return "\n".join(parts)
+
+
+def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None) -> dict:
+    """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
+    adapter = MiniMaxAdapter()
+
+    # 如果没有配置api_key（环境变量也没有），返回空
+    if not adapter.is_configured():
+        print("[LLM] MiniMax未配置 api_key，跳过answer生成")
+        return {}
+
+    prompt = _build_answer_prompt(task_text, questions, agent_profile)
+
+    # 截断prompt（LLM context limit）
+    if len(prompt) > 6000:
+        prompt = prompt[:6000] + "\n[内容过长已截断]"
+
+    try:
+        response = adapter.complete(CompletionRequest(
+            prompt=prompt,
+            max_tokens=2048,
+            temperature=0.7,
+        ))
+
+        if not response.success:
+            print(f"[LLM] 调用失败: {response.error}")
+            return {}
+
+        # 简单按行解析：格式为 "【维度名】回答内容"
+        answers = {}
+        current_dim = None
+        current_content = []
+
+        dim_labels_inv = {
+            "认知维度": "cognitive",
+            "博弈维度": "game_theory",
+            "经济维度": "economic",
+            "辩证维度": "dialectical",
+            "情绪维度": "emotional",
+            "直觉维度": "intuitive",
+            "道德维度": "moral",
+            "社会维度": "social",
+            "时间维度": "temporal",
+            "元认知维度": "metacognitive",
+        }
+
+        for line in response.content.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            # 检测维度标题行
+            matched_dim = None
+            for label, dim_id in dim_labels_inv.items():
+                if label in line:
+                    matched_dim = dim_id
+                    break
+
+            if matched_dim:
+                # 保存上一维度的答案
+                if current_dim and current_content:
+                    answers[current_dim] = " ".join(current_content).strip()
+                current_dim = matched_dim
+                current_content = []
+                # 去除标题，只保留后面的内容
+                rest = line.split("】", 1)
+                if len(rest) > 1:
+                    content = rest[1].strip()
+                    if content:
+                        current_content.append(content)
+            elif current_dim and line:
+                # 普通内容行，拼接到当前维度
+                current_content.append(line)
+
+        # 保存最后一个维度
+        if current_dim and current_content:
+            answers[current_dim] = " ".join(current_content).strip()
+
+        return answers
+
+    except Exception as e:
+        print(f"[LLM] 回答生成异常: {e}")
+        return {}
+
 
 # 维度优先级分类
 # 优先级原则（聚活项目设计）：
@@ -202,7 +317,10 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
     from emotion_system.emotion_system import EmotionSystem
     emotion_system = EmotionSystem()
     emotion_detection = emotion_system.detect_emotion(original_task, {})
-    
+
+    # LLM接入：MiniMax回答所有维度问题
+    answers = _answer_questions(task_text, questions, agent_profile)
+
     return {
         "task": task_text,
         "original_task": original_task,
@@ -211,7 +329,7 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
         "important": important,
         "skipped": skipped,
         "questions": questions,
-        "answers": {},
+        "answers": answers,
         "agent_profile": agent_profile,
         "causal_memory": {
             "has_history": causal_result["summary"] is not None,
@@ -284,6 +402,9 @@ def check10d_run(task_text, agent_profile=None):
 
         checked_count = len([d.id for d in DIMENSIONS if d.id not in skipped])
 
+        # LLM接入：MiniMax回答所有维度问题
+        answers = _answer_questions(task_text, all_questions, agent_profile)
+
         return {
             "task": task_text,
             "complexity": "critical",
@@ -291,7 +412,7 @@ def check10d_run(task_text, agent_profile=None):
             "important": important,
             "skipped": skipped,
             "questions": all_questions,
-            "answers": {},
+            "answers": answers,
             "agent_profile": agent_profile,
             "meta": {
                 "total_dims": 10,
