@@ -29,6 +29,12 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+# --- Version Info ---
+VERSION = "1.0.0"
+REPO = "taxatombt/guyong-juhuo"
+GITHUB_API = f"https://api.github.com/repos/{REPO}"
+GITHUB_DOWNLOAD = f"https://github.com/{REPO}"
+
 # ─── 路径配置（最早定义，其他模块可能依赖）────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).parent.resolve()
@@ -874,10 +880,16 @@ def _cli():
     p_cfg = sub.add_parser("config", help="配置管理（show/wizard/set/get）")
     p_cfg.add_argument("cfg_args", nargs="*", help="config 子命令参数")
 
+    p_up = sub.add_parser("upgrade", help="检查并升级到最新版本")
+    p_up.add_argument("--force", action="store_true", help="强制升级（跳过版本比较）")
+    p_up.add_argument("--dry-run", action="store_true", help="仅检查版本，不升级")
+    p_up.add_argument("--yes", "-y", action="store_true", help="跳过确认直接升级")
+
     # 全局选项（适用于所有子命令）
     parser.add_argument("--format", "-f", choices=["text", "json"], default="text", help="输出格式")
     parser.add_argument("--profile", "-p", default=None, help="Profile 名称")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
 
     args = parser.parse_args()
 
@@ -1121,6 +1133,137 @@ def _cli():
 
         return
 
+
+    # ── upgrade ─────────────────────────────────────────────────────────────
+    if args.cmd == "upgrade":
+        import zipfile, shutil, tempfile, urllib.request, urllib.error, json, time
+
+        def _http_get(url, headers=None):
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", f"juhuo/{VERSION}")
+            if headers:
+                for k, v in headers.items():
+                    req.add_header(k, v)
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    return r.read()
+            except Exception as e:
+                print(f"[Network Error] {e}", file=sys.stderr)
+                return None
+
+        def _parse_version(tag):
+            t = tag.lstrip("v")
+            return tuple(int(x) for x in t.split(".") if x.isdigit()) or (0,)
+
+        def _need_upgrade(current, latest):
+            return _parse_version(latest) > _parse_version(current)
+
+        print(f"juhuo upgrade -- 当前版本 {VERSION}")
+        print()
+
+        print("[1/5] 检查最新版本...")
+        data = _http_get(f"{GITHUB_API}/releases/latest",
+                         headers={"Accept": "application/vnd.github+json"})
+        if data is None:
+            print("无法连接 GitHub，请检查网络后重试。")
+            return
+        try:
+            release = json.loads(data.decode("utf-8"))
+        except Exception:
+            print("解析 GitHub 响应失败。")
+            return
+
+        latest_tag = release.get("tag_name", "v0.0.0")
+        latest_ver = latest_tag.lstrip("v")
+        print(f"  当前版本：{VERSION}")
+        print(f"  最新版本：{latest_ver}  ({latest_tag})")
+        print()
+
+        if not _need_upgrade(VERSION, latest_ver) and not args.force:
+            print("[OK] 当前已是最新版本，无需升级。")
+            return
+
+        if args.dry_run:
+            print(f"[Dry Run] 发现新版本 {latest_ver}，未执行升级。")
+            print(f"  运行 'python hub.py upgrade' 进行升级。")
+            return
+
+        if not args.yes:
+            print("确认升级吗？（Ctrl+C 取消，Enter 确认）")
+            try:
+                input()
+            except (EOFError, OSError):
+                pass
+
+        print("[2/5] 查找安装包...")
+        assets = release.get("assets", [])
+        zipball_url = None
+        for a in assets:
+            if a.get("name", "").endswith(".zip"):
+                zipball_url = a.get("browser_download_url")
+                print(f"  找到：{a.get('name')}")
+                break
+        if not zipball_url:
+            zipball_url = f"{GITHUB_DOWNLOAD}/archive/refs/tags/{latest_tag}.zip"
+            print("  使用源码包")
+
+        print("[3/5] 下载安装包...")
+        tmp_dir = Path(tempfile.gettempdir()) / f"juhuo_upgrade_{int(time.time())}"
+        tmp_dir.mkdir(exist_ok=True)
+        zip_path = tmp_dir / f"juhuo-{latest_ver}.zip"
+        try:
+            body = _http_get(zipball_url)
+            if body is None:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return
+            with open(zip_path, "wb") as f:
+                f.write(body)
+            print(f"  下载完成: {len(body)/1024/1024:.1f} MB")
+        except Exception as e:
+            print(f"[Error] 下载失败: {e}")
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return
+
+        print("[4/5] 安装文件...")
+        extract_dir = tmp_dir / "extracted"
+        skip_names = {".git", ".juhuo", "data", "node_modules", "__pycache__",
+                      ".env", ".env.example"}
+        try:
+            with zipfile.ZipFile(zip_path, "r") as z:
+                z.extractall(extract_dir)
+            items = list(extract_dir.iterdir())
+            if not items:
+                print("[Error] 压缩包内容为空。")
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return
+            src_root = items[0]
+            print(f"  安装目录：{src_root.name}")
+            for item in src_root.rglob("*"):
+                rel = item.relative_to(src_root)
+                if any(p in skip_names for p in rel.parts):
+                    continue
+                dest = PROJECT_ROOT / rel
+                if item.is_file():
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, dest)
+            print("  文件替换完成。")
+        except Exception as e:
+            print(f"[Error] 安装失败: {e}")
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return
+
+        print("[5/5] 清理临时文件...")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        print()
+        print("=" * 50)
+        print(f"  升级完成：{VERSION} -> {latest_ver}")
+        print("=" * 50)
+        print()
+        print("  请重新启动 juhuo：")
+        print(f"    python hub.py --version")
+        print()
+
     # 默认：显示帮助
     parser.print_help()
 
@@ -1128,7 +1271,7 @@ def _cli():
 if __name__ == "__main__":
     # ── 首次运行检查 ────────────────────────────────────────────────────────
     # 如果没有检测到 API key，且不是 help/config 命令，引导用户进行首次设置
-    _no_arg_cmds = ("-h", "--help", "-v", "--version")
+    _no_arg_cmds = ("-h", "--help", "-v", "--version", "upgrade")
     _is_interactive = len(sys.argv) == 1 or (
         len(sys.argv) > 1 and sys.argv[1] not in ("config", *_no_arg_cmds)
     )
