@@ -20,7 +20,7 @@ import subprocess
 import argparse
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent.resolve()
+ROOT = Path(__file__).parent.resolve()
 OUT_DIR = ROOT / "dist"
 STAGING_DIR = ROOT / "dist" / "guyong-juhuo"
 EXCLUDES = {".git", "__pycache__", ".github", "node_modules",

@@ -21,7 +21,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-OutputDir=..\dist
+OutputDir=dist
 OutputBaseFilename=guyong-juhuo-{#MyAppVersion}-setup
 UninstallDisplayIcon={app}\{#MyAppExeName}
 PrivilegesRequired=lowest
@@ -45,7 +45,7 @@ Name: "startup"; Description: "开机自动启动"; GroupDescription: "其他选
 
 [Files]
 ; 排除 .git __pycache__ .env 等不需要的文件
-Source: "..\*"; DestDir: "{app}"; Excludes: ".git,__pycache__,*.pyc,.env,node_modules,*.db,*.log,dist,.venv,*.egg-info,.github"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "*"; DestDir: "{app}"; Excludes: ".git,__pycache__,*.pyc,.env,node_modules,*.db,*.log,dist,.venv,*.egg-info,.github,installer"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

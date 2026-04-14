@@ -97,7 +97,13 @@ guyong-juhuo/
 ├── judgment_web.py   # 判断系统网页版
 ├── tui_console.py    # 终端图形界面
 ├── profile.py        # 用户身份配置
-└── config.py         # 全局配置
+├── config.py         # 全局配置
+├── launcher.bat       # Windows 启动器（init/console/tui 三模式）
+├── install.ps1       # Windows 一键安装脚本
+├── install.sh       # Linux/macOS 安装脚本
+├── setup.iss        # Inno Setup 打包脚本（生成 exe 安装程序）
+├── build_installer.py # 无 Inno Setup 的备选打包工具
+└── precheck.bat     # 安装前环境检测
 ```
 
 ---
@@ -194,13 +200,56 @@ print(ee.get_state())
 
 ---
 
-## 安装
+## 安装（三选一）
+
+### 方式 1：一键安装（推荐，Windows 用户）
+```powershell
+# 下载项目后，双击 install.ps1 或在 PowerShell 中运行：
+.\install.ps1
+```
+自动完成：克隆/依赖安装/创建桌面快捷方式/初始化
+
+### 方式 2：生成 exe 安装程序（需要 Inno Setup）
+```powershell
+# 1. 下载 Inno Setup 6：https://jrsoftware.org/isinfo.php
+# 2. 编译：
+iscc setup.iss
+# 3. 生成分发：
+dist\guyong-juhuo-1.0.0-setup.exe
+#    → 双击运行 / 支持 /SILENT 静默安装
+```
+
+### 方式 3：绿色版（无需 Inno Setup）
+```powershell
+python build_installer.py
+# 生成分发：
+dist\guyong-juhuo-1.0.0-portable.zip
+#    → 解压后双击 launcher.bat --init
+```
+
+---
+
+## 启动
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env  # 编辑填入 API Key
-python cli.py         # 命令行对话
-python judgment_web.py  # 网页判断系统
+# Windows：双击桌面"聚活"图标
+# 或命令行：
+launcher.bat              # 启动网页控制台（默认）
+launcher.bat --init      # 初始化/重装依赖
+launcher.bat --tui       # TUI 终端界面
+
+# Linux/macOS：
+bash install.sh
+./launcher.bat           # 或 python web_console.py
+```
+
+---
+
+## 安装前检测（可选）
+
+运行前检查环境是否就绪：
+```powershell
+.\precheck.bat
 ```
 
 ## 配置
