@@ -1,5 +1,1 @@
-from .app import (
-    create_app,
-)
-
-__all__ = ['create_app']
+"""web - guyong-juhuo Web UI"""

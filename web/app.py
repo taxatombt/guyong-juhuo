@@ -15,6 +15,7 @@ from judgment import check10d
 from judgment.pipeline import check10d_full, PipelineConfig
 from judgment.profile import list_profiles, load as load_profile
 from judgment.memory import log_decision as _log_decision, get_recent_decisions, init as _init_mem
+from config_manager import load_user_config, save_user_config, is_configured, get_api_key, write_api_key, JUHuo_USER_ENV
 
 def log_decision(task, result_data, decision, feedback):
     checked = (result_data or {}).get("important", [])
@@ -95,6 +96,39 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(get_lessons())
         elif self.path == "/profiles":
             self.send_json(list_profiles())
+        elif self.path.startswith("/api/analyze"):
+            # SSE streaming endpoint (GET with query params)
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            task = (params.get("task", [""])[0]).strip()
+            profile_name = (params.get("profile", [""])[0]).strip() or None
+            if not task:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"error": "task empty"}')
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            try:
+                self._stream_analysis(task, profile_name)
+            except Exception as e:
+                self.send_sse("error", {"message": str(e)})
+            return
+        elif self.path == "/api/config":
+            cfg = load_user_config()
+            self.send_json({
+                "configured": is_configured(),
+                "api_key_set": bool(get_api_key()),
+                "llm_model": cfg.get("llm_model", "MiniMax-M2.7"),
+                "temperature": cfg.get("temperature", 0.7),
+                "max_token": cfg.get("max_token", 4096),
+                "confidence_threshold": cfg.get("confidence_threshold", 0.5),
+            })
         else:
             self.send_response(404)
 
@@ -138,6 +172,28 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_sse("error", {"message": str(e)})
             return
+        elif self.path == "/api/config":
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            cfg = load_user_config()
+            # API key（单独处理，写入 ~/.juhuo/.env）
+            if "api_key" in data:
+                api_key = data["api_key"].strip()
+                if api_key:
+                    write_api_key(api_key)
+                elif "api_key" in cfg:
+                    del cfg["api_key"]
+            # 其他配置项
+            for key in ("llm_model", "temperature", "max_token", "confidence_threshold"):
+                if key in data:
+                    val = data[key]
+                    if key == "temperature":
+                        val = float(val)
+                    elif key in ("max_token", "confidence_threshold"):
+                        val = int(val)
+                    cfg[key] = val
+            save_user_config(cfg)
+            self.send_json({"ok": True})
         else:
             self.send_response(404)
 
@@ -217,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    PORT = int(os.environ.get("PORT", 18765))
+    PORT = int(os.environ.get("PORT", 18768))
     server = HTTPServer(("0.0.0.0", PORT), Handler)
     print("guyong-juhuo web UI: http://localhost:%d" % PORT)
     print("SSE endpoint: POST /analyze/stream?task=...&profile=...")

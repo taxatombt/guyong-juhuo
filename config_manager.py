@@ -118,6 +118,15 @@ def get_api_key() -> Optional[str]:
     return os.environ.get("MINIMAX_API_KEY") or None
 
 
+def write_api_key(api_key: str) -> None:
+    """将 API key 写入用户级 .env 文件。"""
+    ensure_user_dir()
+    with open(JUHuo_USER_ENV, "w", encoding="utf-8") as f:
+        f.write(f"MINIMAX_API_KEY={api_key}\n")
+    # 立即更新当前进程的环境变量
+    os.environ["MINIMAX_API_KEY"] = api_key
+
+
 def is_configured() -> bool:
     """检查是否已完成首次配置（有 API key）。"""
     return bool(get_api_key())

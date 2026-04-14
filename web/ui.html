@@ -6,6 +6,7 @@
 <title>guyong</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;510;590&display=swap');
+*{box-sizing:border-box}
 body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#08090a;color:#f7f8f8;font-size:15px;line-height:1.5;margin:0}
 .c{margin:0 auto;max-width:960px;padding:2rem 1.5rem 5rem}
 .hh{display:flex;align-items:center;gap:0.75rem;padding-bottom:1.5rem;margin-bottom:2rem;border-bottom:1px solid rgba(255,255,255,0.05)}
@@ -13,10 +14,13 @@ body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#08090a;col
 .tag{font-size:0.68rem;font-weight:590;padding:0.2rem 0.6rem;border-radius:9999px;background:rgba(113,112,255,0.12);color:#7170ff;border:1px solid rgba(113,112,255,0.2)}
 .stats{margin-left:auto;color:#8a8f98;font-size:0.8rem}
 .stats span{color:#f7f8f8;font-weight:590}
+.gear-btn{background:none;border:none;color:#8a8f98;cursor:pointer;font-size:1.1rem;padding:0.3rem;margin-left:0.5rem;border-radius:6px;display:flex;align-items:center;transition:color 0.2s,background 0.2s;line-height:1;flex-shrink:0}
+.gear-btn:hover{color:#f7f8f8;background:rgba(255,255,255,0.06)}
 .card{background:#191a1b;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.5rem;margin-bottom:1rem}
 .ct{font-size:0.72rem;font-weight:590;color:#8a8f98;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:1rem}
-textarea,input{width:100%;background:#0f1011;border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#f7f8f8;font-size:0.9rem;padding:0.7rem;outline:none;font-family:inherit}
-textarea:focus,input:focus{border-color:#7170ff}
+textarea,input,select{width:100%;background:#0f1011;border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#f7f8f8;font-size:0.9rem;padding:0.7rem;outline:none;font-family:inherit}
+textarea:focus,input:focus,select:focus{border-color:#7170ff}
+select{cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238a8f98' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 0.7rem center;padding-right:2rem}
 textarea{resize:vertical;min-height:88px}
 .br{display:flex;gap:0.5rem;margin-top:0.85rem}
 .btn{padding:0.55rem 1.3rem;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#d0d6e0;font-size:0.82rem;font-weight:510;cursor:pointer;font-family:inherit}
@@ -44,40 +48,178 @@ textarea{resize:vertical;min-height:88px}
 #ld{display:none;text-align:center;padding:2rem}
 .do{display:inline-block;width:6px;height:6px;border-radius:50%;background:#7170ff;margin:0 3px;animation:bl 1.2s infinite}
 @keyframes bl{0%,100%{opacity:0.3}50%{opacity:1}}
+.mo{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:1000;backdrop-filter:blur(4px)}
+.mo.open{display:flex}
+.mk{background:#191a1b;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:2rem;width:90%;max-width:480px;max-height:90vh;overflow-y:auto;animation:moIn 0.2s ease}
+@keyframes moIn{from{opacity:0;transform:scale(0.96)}to{opacity:1}}
+.mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
+.mh h2{font-size:1rem;font-weight:590;margin:0}
+.cb{background:none;border:none;color:#8a8f98;cursor:pointer;font-size:1.2rem;padding:0.25rem;line-height:1}
+.cb:hover{color:#f7f8f8}
+.fg{margin-bottom:1.2rem}
+.fg label{display:block;font-size:0.75rem;font-weight:590;color:#8a8f98;margin-bottom:0.5rem;letter-spacing:0.04em}
+.fg .hint{display:block;font-size:0.7rem;color:#62666d;margin-top:0.3rem}
+.fld{display:flex;gap:0.5rem;align-items:center}
+.fld input{flex:1;min-width:0}
+.apistatus{display:inline-flex;align-items:center;gap:0.35rem;font-size:0.75rem;font-weight:590;margin-top:0.4rem}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot.ok{background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.5)}
+.dot.bad{background:#f85149}
+.save-btn{width:100%;padding:0.7rem;background:#5e6ad2;border:none;color:#fff;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:510;margin-top:0.5rem;font-family:inherit}
+.save-btn:hover{background:#7170ff}
 </style>
 </head>
 <body>
 <div class="c">
-  <div class="hh">
-    <h1>guyong-juhuo</h1>
-    <span class="tag">v1</span>
-    <div class="stats"><span>10</span> 维度</div>
-  </div>
-  <div class="card">
-    <div class="ct">决策场景</div>
-    <textarea id="tk" placeholder="描述一个需要判断的情境..."></textarea>
-    <div class="br">
-      <button class="btn p" id="go" onclick="go()">开始分析</button>
-      <button class="btn" onclick="st()">流式分析</button>
-    </div>
-  </div>
-  <div class="card" id="ra" style="display:none">
-    <div id="meta"></div>
-    <div id="cx"></div>
-    <svg id="radar" viewBox="0 0 400 400" style="width:100%;max-width:360px;margin:1rem auto;display:block"></svg>
-    <div class="gr" id="cards"></div>
-  </div>
-  <div id="ld"><span class="do"></span><span class="do"></span><span class="do"></span></div>
+<div class="hh">
+<h1>guyong-juhuo</h1>
+<span class="tag">v1</span>
+<div class="stats">turns: <span id="ts">0</span></div>
+<button class="gear-btn" id="gearBtn" title="Settings">&#9881;</button>
 </div>
+<div class="card">
+<div class="ct">Task Input</div>
+<textarea id="task" placeholder="Describe your decision scenario..."></textarea>
+<div class="br">
+<select id="profile" style="max-width:180px">
+<option value="">Default</option>
+</select>
+<button class="btn p" id="runBtn">Analyze</button>
+</div>
+</div>
+<div id="res"></div>
+<div id="ld"><span class="do"></span><span class="do"></span><span class="do"></span></div>
+</div>
+
+<!-- Settings Modal -->
+<div class="mo" id="mo">
+<div class="mk">
+<div class="mh"><h2>Settings</h2><button class="cb" id="closeMo">&#x2715;</button></div>
+<div class="fg">
+<label>MiniMax API Key</label>
+<input type="password" id="apiKey" placeholder="eyJ..." style="margin-bottom:0.4rem">
+<div class="apistatus" id="apiStatus"></div>
+<span class="hint">Stored in ~/.juhuo/.env (never leaves your machine)</span>
+</div>
+<div class="fg">
+<label>Model</label>
+<select id="mdl">
+<option value="MiniMax-Text-01">MiniMax-Text-01</option>
+<option value="MiniMax-M2.7">MiniMax-M2.7</option>
+<option value="gpt-4o">gpt-4o</option>
+<option value="claude-sonnet-4">claude-sonnet-4</option>
+</select>
+</div>
+<div class="fg">
+<label>Temperature <span id="tv" style="color:#f7f8f8;font-weight:590">0.3</span></label>
+<input type="range" id="tmp" min="0" max="1" step="0.05" value="0.3" style="padding:0;margin-top:0.3rem">
+</div>
+<div class="fg">
+<label>Confidence Threshold <span id="cv" style="color:#f7f8f8;font-weight:590">0.5</span></label>
+<input type="range" id="cvt" min="0" max="1" step="0.05" value="0.5" style="padding:0;margin-top:0.3rem">
+</div>
+<button class="save-btn" id="saveBtn">Save</button>
+</div>
+</div>
+
 <script>
-var D=[{n:'cog',l:'认知',c:'#5e6ad2'},{n:'game',l:'博弈',c:'#10b981'},{n:'econ',l:'经济',c:'#d29922'},{n:'dialectic',l:'辩证',c:'#f85149'},{n:'emotion',l:'情绪',c:'#db61a2'},{n:'intuition',l:'直觉',c:'#79c0ff'},{n:'moral',l:'道德',c:'#7ee787'},{n:'social',l:'社会',c:'#ffa657'},{n:'time',l:'时间',c:'#ff7b72'},{n:'meta',l:'元认知',c:'#d2a8ff'}];
-function g(id){return document.getElementById(id)}
-function go(){var t=g('tk').value.trim();if(!t)return;g('ra').style.display='block';g('ld').style.display='block';fetch('/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:t})}).then(function(r){return r.json()}).then(function(d){g('ld').style.display='none';render(d)}).catch(function(e){g('ld').style.display='none';console.error(e)})}
-function st(){var t=g('tk').value.trim();if(!t)return;g('ra').style.display='block';g('ld').style.display='block';g('cards').innerHTML='';D.forEach(function(d2){var c=document.createElement('div');c.className='dc';c.innerHTML="<div class=n>"+d2.l+"</div><div class=br><div class=bw><div class=ba id=b-"+d2.n+" style='width:0%;background:"+d2.c+"'></div></div><span class=sc id=s-"+d2.n+">--</span></div><div class=tl id=t-"+d2.n+"></div><div class=su id=u-"+d2.n+"></div>";g('cards').appendChild(c);setTimeout(function(){c.style.opacity='1'})});fetch('/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:t})}).then(function(r){var reader=r.body.getReader();var decoder=new TextDecoder();var buf='';function next(){reader.read().then(function(result){if(result.done)return;buf+=decoder.decode(result.value,{stream:true});var lines=buf.split('\n');buf=lines.pop();lines.forEach(function(line){if(line.startsWith('data:')){try{var d2=JSON.parse(line.slice(5));updateDim(d2)}catch(e){}}});next()})}next()}).catch(function(e){g('ld').style.display='none';console.error(e)})}
-function updateDim(d2){var bEl=g('b-'+d2.dim);var sEl=g('s-'+d2.dim);var tEl=g('t-'+d2.dim);var uEl=g('u-'+d2.dim);if(bEl){bEl.style.width=(d2.score*10)+'%'}if(sEl){sEl.textContent=d2.score.toFixed(1)}if(tEl){tEl.textContent=d2.label||''}if(uEl){uEl.textContent=d2.desc||''}}
-function render(d){g('meta').innerHTML="<div style='font-size:0.8rem;color:#8a8f98;margin-bottom:0.5rem'>"+d.task+"</div>";var cxEl=g('cx');var cls='cx '+(d.complexity==='simple'?'s':d.complexity==='complex'?'x':'c');cxEl.innerHTML="<span class='"+cls+"'>"+d.complexity+"</span>";while(g('cards').firstChild)g('cards').removeChild(g('cards').firstChild);D.forEach(function(d2,i){var found=d.dims[d2.n];if(!found)return;var c=document.createElement('div');c.className='dc';var badgeCls=found.score>=7?'hi':found.score>=4?'me':'lo';var badgeTxt=found.score>=7?'高':found.score>=4?'中':'低';c.innerHTML="<div class=n>"+d2.l+" <span class='bg "+badgeCls+"'>"+badgeTxt+"</span></div><div class=br><div class=bw><div class=ba style='width:"+(found.score*10)+"%;background:"+d2.c+"'></div></div><span class=sc>"+found.score.toFixed(1)+"</span></div><div class=tl>"+found.label+"</div><div class=su>"+found.reason+"</div>";g('cards').appendChild(c);setTimeout(function(){c.style.opacity='1'},i*80)});drawRadar(d.dims)}
-function drawRadar(dims){var svg=g('radar');svg.innerHTML='';var cx=200,cy=200,r=150;var N=D.length;var points=[];D.forEach(function(d2,i){var v=dims[d2.n]?dims[d2.n].score/10:0;var angle=(Math.PI*2*i/N)-Math.PI/2;var x=cx+r*v*Math.cos(angle);var y=cy+r*v*Math.sin(angle);points.push(x+','+y)});var poly=document.createElementNS('http://www.w3.org/2000/svg','polygon');poly.setAttribute('points',points.join(' '));poly.setAttribute('fill','rgba(94,106,210,0.15)');poly.setAttribute('stroke','rgba(94,106,210,0.6)');poly.setAttribute('stroke-width','1.5');svg.appendChild(poly);D.forEach(function(d2,i){var angle=(Math.PI*2*i/N)-Math.PI/2;var x2=cx+(r+15)*Math.cos(angle);var y2=cy+(r+15)*Math.sin(angle);var label=document.createElementNS('http://www.w3.org/2000/svg','text');label.setAttribute('x',x2);label.setAttribute('y',y2);label.setAttribute('text-anchor','middle');label.setAttribute('dominant-baseline','middle');label.setAttribute('fill','#8a8f98');label.setAttribute('font-size','11');label.setAttribute('font-family','Inter,sans-serif');label.textContent=d2.l;svg.appendChild(label);var cLine=document.createElementNS('http://www.w3.org/2000/svg','line');cLine.setAttribute('x1',cx);cLine.setAttribute('y1',cy);cLine.setAttribute('x2',cx+r*Math.cos(angle));cLine.setAttribute('y2',cy+r*Math.sin(angle));cLine.setAttribute('stroke','rgba(255,255,255,0.06)');cLine.setAttribute('stroke-width','1');svg.appendChild(cLine)});for(var j=3;j<=10;j+=3.5){var jR=r*(j/10);var jPoints=[];D.forEach(function(d2,i){var angle=(Math.PI*2*i/N)-Math.PI/2;jPoints.push((cx+jR*Math.cos(angle))+','+(cy+jR*Math.sin(angle)))});var jPoly=document.createElementNS('http://www.w3.org/2000/svg','polygon');jPoly.setAttribute('points',jPoints.join(' '));jPoly.setAttribute('fill','none');jPoly.setAttribute('stroke','rgba(255,255,255,0.05)');jPoly.setAttribute('stroke-width','1');svg.appendChild(jPoly)}};
-if(location.hash==='#demo'){g('tk').value='你的朋友向你借一笔较大的钱，说下个月还，但你知道他之前有多次借钱不还的记录。';setTimeout(function(){go()},500)}
+const $ = id => document.getElementById(id);
+let turns = 0;
+let cfg = {};
+
+async function loadCfg() {
+  try {
+    const r = await fetch('/api/config');
+    if (r.ok) { cfg = await r.json(); return true; }
+  } catch {}
+  return false;
+}
+
+function applyCfg(c) {
+  if (c.llm_model) $('mdl').value = c.llm_model;
+  if (c.temperature != null) {
+    $('tmp').value = c.temperature; $('tv').textContent = c.temperature.toFixed(2);
+  }
+  if (c.confidence_threshold != null) {
+    $('cvt').value = c.confidence_threshold; $('cv').textContent = c.confidence_threshold.toFixed(2);
+  }
+  updateApiStatus(!!c.api_key);
+}
+
+function updateApiStatus(has) {
+  $('apiStatus').innerHTML = has
+    ? '<span class="dot ok"></span> Key configured'
+    : '<span class="dot bad"></span> No API key';
+  $('apiKey').value = '';
+}
+
+async function saveCfg() {
+  const d = {};
+  const k = $('apiKey').value.trim();
+  if (k) d.api_key = k;
+  d.llm_model = $('mdl').value;
+  d.temperature = parseFloat($('tmp').value);
+  d.confidence_threshold = parseInt($('cvt').value);
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(d)
+    });
+    if (r.ok) {
+      cfg = Object.assign(cfg, d);
+      updateApiStatus(!!(d.api_key || cfg.api_key));
+      $('mo').classList.remove('open');
+    } else { alert('Save failed: ' + r.status); }
+  } catch(e) { alert('Save error: ' + e.message); }
+}
+
+$('gearBtn').addEventListener('click', () => {
+  if (Object.keys(cfg).length) applyCfg(cfg);
+  $('mo').classList.add('open');
+});
+$('closeMo').addEventListener('click', () => $('mo').classList.remove('open'));
+$('mo').addEventListener('click', e => { if (e.target === $('mo')) $('mo').classList.remove('open'); });
+$('saveBtn').addEventListener('click', saveCfg);
+$('tmp').addEventListener('input', e => $('tv').textContent = parseFloat(e.target.value).toFixed(2));
+$('cvt').addEventListener('input', e => $('cv').textContent = parseFloat(e.target.value).toFixed(2));
+
+async function run() {
+  var t = $('task').value.trim();
+  if (!t) return;
+  var p = $('profile').value;
+  turns++; $('ts').textContent = turns;
+  $('res').innerHTML = '<div id="ld" style="display:block;text-align:center;padding:2rem"><span class="do"></span><span class="do"></span><span class="do"></span></div>';
+  var params = new URLSearchParams({task:t});
+  if (p) params.set('profile', p);
+  var es = new EventSource('/api/analyze?' + params.toString());
+  var dc = document.createElement('div'); dc.className = 'dc';
+  $('res').innerHTML = ''; $('res').appendChild(dc);
+  var dimIdx = 0;
+  var dims = ['Cognitive','Game Theory','Economic','Dialectical','Emotional','Intuitive','Moral','Social','Temporal','Metacog'];
+  var colors = ['#7170ff','#f85149','#d29922','#10b981','#ec4899','#06b6d4','#8b5cf6','#f97316','#84cc16','#64748b'];
+  es.onmessage = function(e) {
+    var d = JSON.parse(e.data);
+    if (d.type === 'init') {
+      dc.innerHTML = '<div class="n">Initializing...</div>';
+    } else if (d.type === 'dimension') {
+      dimIdx++;
+      var pct = Math.round(d.confidence * 100);
+      var lvl = pct >= 70 ? 'high' : pct >= 40 ? 'medium' : 'low';
+      var color = colors[dimIdx - 1] || '#7170ff';
+      var dimEl = document.createElement('div'); dimEl.className = 'dc'; dimEl.style.animationDelay = (dimIdx * 0.1) + 's';
+      dimEl.innerHTML = '<div class="n">' + dims[dimIdx - 1] + ' <span class="bg ' + lvl + '">' + pct + '%</span></div><div class="br"><div class="bw"><div class="ba" style="width:' + pct + '%;background:' + color + '"></div></div><span class="sc" style="color:' + color + '">' + pct + '%</span></div><div class="tl">Score: ' + d.score.toFixed(2) + ' | Weight: ' + (d.weight || 0).toFixed(2) + '</div><div class="su">' + (d.reasoning || '') + '</div>';
+      $('res').appendChild(dimEl);
+    } else if (d.type === 'final') {
+      dc.innerHTML = '<div class="n">Final Verdict</div><div style="margin-top:0.5rem;font-size:0.85rem">' + d.verdict + '</div>';
+    } else if (d.type === 'error') {
+      dc.innerHTML = '<div class="n" style="color:#f85149">Error</div><div>' + d.message + '</div>';
+      es.close();
+    }
+  };
+  es.onerror = function() { es.close(); };
+}
+$('runBtn').addEventListener('click', run);
+$('task').addEventListener('keydown', function(e) { if (e.ctrlKey && e.key === 'Enter') run(); });
+loadCfg().then(function(ok) { if (ok) applyCfg(cfg); });
 </script>
 </body>
 </html>
