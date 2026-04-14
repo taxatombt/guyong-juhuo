@@ -4,6 +4,8 @@
 
 模拟特定个体的思维方式，在判断力上超越人类整体。
 
+> 🌍 **English version:** [README_en.md](README_en.md)
+
 ---
 
 ## 目录结构
