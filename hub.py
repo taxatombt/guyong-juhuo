@@ -29,6 +29,12 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+# ─── 版本信息 ────────────────────────────────────────────────────────────────
+VERSION = "1.0.0"
+REPO = "taxatombt/guyong-juhuo"
+GITHUB_API = f"https://api.github.com/repos/{REPO}"
+GITHUB_DOWNLOAD = f"https://github.com/{REPO}"
+
 # --- Version Info ---
 VERSION = "1.0.0"
 REPO = "taxatombt/guyong-juhuo"
@@ -885,6 +891,14 @@ def _cli():
     p_up.add_argument("--dry-run", action="store_true", help="仅检查版本，不升级")
     p_up.add_argument("--yes", "-y", action="store_true", help="跳过确认直接升级")
 
+    p_ver = sub.add_parser("verdict", help="事后验证信号（judgment对了/错了）")
+    p_ver.add_argument("--chain-id", "-c", help="判断记录ID")
+    p_ver.add_argument("--task", "-t", help="任务文本（当chain-id不可用时）")
+    p_ver.add_argument("--correct", "-k", action="store_true", default=True, help="判断正确")
+    p_ver.add_argument("--wrong", "-w", action="store_true", help="判断错误")
+    p_ver.add_argument("--notes", "-n", default="", help="备注")
+    p_ver.add_argument("--show", "-s", action="store_true", help="显示信念状态")
+
     # 全局选项（适用于所有子命令）
     parser.add_argument("--format", "-f", choices=["text", "json"], default="text", help="输出格式")
     parser.add_argument("--profile", "-p", default=None, help="Profile 名称")
@@ -1134,6 +1148,47 @@ def _cli():
         return
 
 
+    # ── verdict ────────────────────────────────────────────────────────────
+    if args.cmd == "verdict":
+        from judgment.closed_loop import (
+            receive_verdict, get_belief_summary,
+            get_recent_chains, init as cl_init
+        )
+        cl_init()
+
+        if args.show:
+            print("\n=== 维度信念状态 ===")
+            bs = get_belief_summary()
+            for k, v in bs.items():
+                tag = ""
+                if v["total"] > 0:
+                    tag = "  belief=%.4f  acc=%s  n=%d" % (v['belief'], v['accuracy'], v['total'])
+                else:
+                    tag = "  (无数据)"
+                print("  %-15s%s" % (k, tag))
+            print()
+            chains = get_recent_chains(5)
+            print("=== 最近 %d 条因果链 ===" % len(chains))
+            for c in chains:
+                status = "已验证" if c['corrected'] else "待验证"
+                print("  [%s] %s  %s" % (status, c['chain_id'], c['task'][:40]))
+            return
+
+        correct = not args.wrong
+        result = receive_verdict(
+            chain_id=args.chain_id,
+            task_text=args.task,
+            correct=correct,
+            notes=args.notes,
+        )
+        if result.get("updated"):
+            print("[OK] 信念已更新（判断%s）" % ("正确" if correct else "错误"))
+            for dim, ch in result.get("changes", {}).items():
+                print("  %s: %.4f -> %.4f (%+.2f)" % (dim, ch['belief_before'], ch['belief_after'], ch['delta']))
+        else:
+            print("[Info] %s" % result.get('reason', 'unknown'))
+        return
+
     # ── upgrade ─────────────────────────────────────────────────────────────
     if args.cmd == "upgrade":
         import zipfile, shutil, tempfile, urllib.request, urllib.error, json, time
@@ -1271,7 +1326,7 @@ def _cli():
 if __name__ == "__main__":
     # ── 首次运行检查 ────────────────────────────────────────────────────────
     # 如果没有检测到 API key，且不是 help/config 命令，引导用户进行首次设置
-    _no_arg_cmds = ("-h", "--help", "-v", "--version", "upgrade")
+    _no_arg_cmds = ("-h", "--help", "-v", "--version", "upgrade", "verdict")
     _is_interactive = len(sys.argv) == 1 or (
         len(sys.argv) > 1 and sys.argv[1] not in ("config", *_no_arg_cmds)
     )

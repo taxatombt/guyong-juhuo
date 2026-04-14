@@ -194,6 +194,21 @@ class Handler(BaseHTTPRequestHandler):
                     cfg[key] = val
             save_user_config(cfg)
             self.send_json({"ok": True})
+        elif self.path == "/api/verdict":
+            # 事后验证信号 → 更新维度信念
+            length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            try:
+                from judgment.closed_loop import receive_verdict
+                result = receive_verdict(
+                    chain_id=data.get("chain_id"),
+                    task_text=data.get("task_text"),
+                    correct=data.get("correct", True),
+                    notes=data.get("notes", ""),
+                )
+                self.send_json(result)
+            except Exception as e:
+                self.send_json({"error": str(e)}, 500)
         else:
             self.send_response(404)
 

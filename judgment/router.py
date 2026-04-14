@@ -38,6 +38,7 @@ from emotion_system.emotion_system import EmotionSystem
 
 # 新增：自我复盘 + Fitness Baseline
 from .self_review import SelfReviewSystem
+from .closed_loop import record_judgment, get_prior_adjustments
 from .fitness_baseline import FitnessBaseline
 
 # LLM接入：MiniMax适配器
@@ -319,9 +320,14 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
     emotion_detection = emotion_system.detect_emotion(original_task, {})
 
     # LLM接入：MiniMax回答所有维度问题
+    prior_adj = {}
+    try:
+        prior_adj = get_prior_adjustments()
+    except Exception:
+        pass
     answers = _answer_questions(task_text, questions, agent_profile)
 
-    return {
+    _ret = {
         "task": task_text,
         "original_task": original_task,
         "complexity": complexity,
@@ -355,8 +361,24 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             "total_dims": 10,
             "checked": checked,
             "skipped_count": len(skipped),
+            "prior_adjustments": prior_adj,
         }
     }
+
+    # ── 闭环：记录因果链 ──────────────────────────────────────────────
+    try:
+        _dims_chosen = [d.id for d in DIMENSIONS if d.id not in skipped]
+        _weights = {d: prior_adj.get(d, 1.0) for d in _dims_chosen}
+        _chain_id = record_judgment(
+            task_text=original_task[:300],
+            dimensions=_dims_chosen,
+            weights=_weights,
+            reasoning={},
+        )
+        _ret["meta"]["chain_id"] = _chain_id
+    except Exception:
+        pass
+    return _ret
 
 
 async def _analyze_dim(dim, task_text, agent_profile):
@@ -400,27 +422,16 @@ def check10d_run(task_text, agent_profile=None):
         for dr in dim_results_list:
             all_questions.update(dr)
 
-        checked_count = len([d.id for d in DIMENSIONS if d.id not in skipped])
-
         # LLM接入：MiniMax回答所有维度问题
+        _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
         answers = _answer_questions(task_text, all_questions, agent_profile)
 
-        return {
-            "task": task_text,
-            "complexity": "critical",
-            "must_check": must,
-            "important": important,
-            "skipped": skipped,
-            "questions": all_questions,
-            "answers": answers,
-            "agent_profile": agent_profile,
-            "meta": {
-                "total_dims": 10,
-                "checked": checked_count,
-                "skipped_count": len(skipped),
-                "parallel": True,
-            }
-        }
+        base_result["questions"] = all_questions
+        base_result["answers"] = answers
+        base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
+        base_result["meta"]["parallel"] = True
+        base_result["meta"]["prior_adjustments"] = _prior_adj
+        return base_result
 
     return asyncio.run(_run())
 
