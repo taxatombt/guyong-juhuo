@@ -35,6 +35,7 @@ curiosity_engine.py — 聚活好奇心引擎
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import time  # 用于时间戳生成
 import json
 from pathlib import Path
 
@@ -533,6 +534,110 @@ class CuriosityEngine:
 
 
 # 接入判断系统：低置信度自动触发缺口
+def trigger_from_verdict(chain_id: str, task_text: str, correct: bool,
+                          pad_state: Optional[Dict[str, float]] = None,
+                          changes: Optional[Dict] = None) -> Optional[CuriosityItem]:
+    """
+    事后验证触发 → 情绪驱动好奇心探索频率增加。
+
+    PAD 高激活（A > 0.7）时，增加自由随机游走概率：
+      - 判断错了 + 高激活 → "为什么我想错了？"（系统反思）
+      - 判断对了 + 高激活 → "下次如何更好？"（优化探索）
+      - 低激活 → 不额外触发
+
+    由 closed_loop.receive_verdict() 在信念更新后调用。
+    """
+    arousal = (pad_state or {}).get("A", 0.5)
+
+    if arousal <= 0.55:
+        return None  # 激活度不够，不触发
+
+    # 根据正确性和激活度构建探索问题
+    if not correct and arousal > 0.7:
+        # 错了 + 高激活：深度反思为什么错
+        topic = _extract_topic_from_task(task_text)
+        question = (
+            f"Verdict wrong (chain={chain_id}). "
+            f"Why did I misjudge this? What pattern do these mistakes share?"
+        )
+        trigger_type = "emotion_anomaly"
+        priority = round(0.5 + arousal * 0.4, 3)
+    elif correct and arousal > 0.75:
+        # 正确但很激动：探索如何进一步优化
+        topic = _extract_topic_from_task(task_text)
+        question = (
+            f"Verdict correct (chain={chain_id}). "
+            f"How could this judgment be even better next time?"
+        )
+        trigger_type = "emotion_optimize"
+        priority = round(0.3 + arousal * 0.3, 3)
+    else:
+        return None
+
+    # 临时提升自由探索概率（全局状态）
+    global _pad_arousal_boost
+    _pad_arousal_boost = arousal
+
+    item = _build_verdict_curiosity_item(
+        question=question,
+        topic=topic or "judgment_self_reflection",
+        trigger_type=trigger_type,
+        priority=priority,
+        chain_id=chain_id,
+    )
+    return item
+
+
+def _extract_topic_from_task(task_text: str) -> Optional[str]:
+    """从任务文本中提取探索主题关键词"""
+    if not task_text:
+        return None
+    interest_keywords = [
+        "工作", "职业", "创业", "辞职", "跳槽", "offer",
+        "人际关系", "亲密关系", "家庭", "朋友",
+        "投资", "理财", "赚钱", "财务",
+        "学习", "成长", "目标", "规划",
+        "AI", "agent", "技术", "产品",
+    ]
+    for kw in interest_keywords:
+        if kw in task_text:
+            return kw
+    return task_text[:10].strip()
+
+
+def _build_verdict_curiosity_item(question: str, topic: str,
+                                   trigger_type: str, priority: float,
+                                   chain_id: str) -> CuriosityItem:
+    """构建一条 verdict 触发的 curiosity 条目"""
+    trigger = TriggerInfo(
+        trigger_type=trigger_type,
+        description=f"verdict_emotional A>0.7 chain={chain_id}",
+    )
+    return CuriosityItem(
+        id=int(time.time() * 1000) % 1000000,
+        question=question,
+        topic=topic,
+        trigger=trigger,
+        priority_level=2,  # medium-high for emotional triggers
+        aligned_to_long_term=False,
+        serves_current_task=None,
+        created_at=datetime.now().isoformat(),
+        status="open",
+    )
+
+
+# ── PAD arousal 全局增强状态（下次 get_daily_list 时读取）───────────────
+_pad_arousal_boost: float = 0.0
+
+
+def get_pad_arousal_boost() -> float:
+    """返回当前 PAD 激活度增强值（消费后重置）"""
+    global _pad_arousal_boost
+    val = _pad_arousal_boost
+    _pad_arousal_boost = 0.0
+    return val
+
+
 def trigger_from_low_confidence(judgment_result, current_task=None) -> Optional[CuriosityItem]:
     """
     判断结果置信度低 → 自动触发好奇心缺口

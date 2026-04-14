@@ -416,19 +416,47 @@ def recall_causal_history(task: str, max_events: int = 3) -> Dict:
     返回 {
         "similar_events": [...],  # 相似历史事件（按相似度排序）
         "causal_chains": [...],   # 指向这些事件的因果链接（按有效置信度排序）
+        "closed_loop_chains": [...],  # 来自 closed_loop 的最新判断链（独立来源）
         "summary": str            # 自然语言总结给判断系统
     }
+    
+    数据源：
+    - causal_memory 自己的事件存储（历史积累、因果链接）
+    - closed_loop.get_recent_chains()（最新判断闭环数据，两者打通）
     """
     # Debug
     if not isinstance(max_events, int):
         print(f"DEBUG: recall_causal_history: max_events is {type(max_events)} = {max_events}")
         max_events = 3
+    
+    # ── 数据源 1：closed_loop 的最新判断链（打通后的新数据源）───────────
+    closed_loop_chains = []
+    try:
+        from judgment.closed_loop import get_recent_chains
+        raw_chains = get_recent_chains(limit=max_events)
+        for c in raw_chains:
+            closed_loop_chains.append({
+                "chain_id": c["chain_id"],
+                "task": c["task"],
+                "corrected": c["corrected"],
+                "source": "closed_loop",
+            })
+    except Exception:
+        pass  # closed_loop 不可用则跳过
+    
+    # ── 数据源 2：causal_memory 自己的事件存储 ─────────────────────────
     similar = find_similar_events(task, max_events)
     if not similar:
+        parts = ["没有找到相似的历史事件，无法提供因果参考。"]
+        if closed_loop_chains:
+            parts.append("[Closed Loop 判断链]")
+            for c in closed_loop_chains[:3]:
+                parts.append(f"  [{'已验证' if c.get('corrected') else '待验证'}] {c['chain_id']}: {c.get('task', '')[:40]}")
         return {
             "similar_events": [],
             "causal_chains": [],
-            "summary": None,
+            "closed_loop_chains": closed_loop_chains,
+            "summary": "\n".join(parts),
         }
     
     links = load_all_links()
@@ -468,6 +496,7 @@ def recall_causal_history(task: str, max_events: int = 3) -> Dict:
     return {
         "similar_events": similar,
         "causal_chains": [l.to_dict() for l in relevant_links],
+        "closed_loop_chains": closed_loop_chains,
         "summary": summary,
     }
 
@@ -574,6 +603,22 @@ def inject_to_judgment_input(task: str) -> str:
     """
     聚活因果记忆注入到判断输入：
     返回自然语言总结，注入到 judgment 输入
+    
+    同时包含 causal_memory 历史积累和 closed_loop 最新判断链。
     """
     recall_result = recall_causal_history(task, max_events=3)
-    return recall_result.get("summary", "")
+    
+    parts = []
+    if recall_result.get("summary"):
+        parts.append(recall_result["summary"])
+    
+    # 附加 closed_loop 最新链
+    cl_chains = recall_result.get("closed_loop_chains", [])
+    if cl_chains:
+        cl_lines = ["[Closed Loop 判断链]"]
+        for c in cl_chains[:3]:
+            status = "已验证" if c.get("corrected") else "待验证"
+            cl_lines.append(f"  [{status}] {c['chain_id']}: {c.get('task', '')[:50]}")
+        parts.append("\n".join(cl_lines))
+    
+    return "\n\n".join(parts) if parts else ""

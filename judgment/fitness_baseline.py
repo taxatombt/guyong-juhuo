@@ -4,7 +4,7 @@
 import json, math, hashlib
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict, field
 from collections import defaultdict
 
@@ -129,3 +129,33 @@ class FitnessBaseline:
     def summary(self):
         bl = self._load(); snaps = sorted(_SN.glob("*.json")); ft = self.check_fitness()
         return {"has_baseline": bl is not None, "baseline_period": bl.pl if bl else None, "snapshot_count": len(snaps), "status": ft["status"], "score": ft["fitness_score"]}
+
+    def record_from_verdict(self, chain_id: str, task_text: str,
+                            correct: bool, notes: str = "",
+                            changes: Optional[Dict] = None) -> Dict:
+        """
+        事后验证 → 记录到 fitness 检查日志 + 触发漂移检测。
+        由 closed_loop.receive_verdict() 在信念更新后调用。
+        """
+        entry = {
+            "type": "verdict",
+            "chain_id": chain_id,
+            "task": task_text[:200] if task_text else "",
+            "correct": correct,
+            "notes": notes[:200] if notes else "",
+            "timestamp": datetime.now().isoformat(),
+            "changes": {k: round(v["delta"], 4) for k, v in (changes or {}).items()},
+        }
+        self._log(entry)
+
+        # 每5条 verdict 自动做一次 fitness 检查
+        try:
+            log_lines = _LG.read_text(encoding="utf-8").strip().splitlines()
+            verdict_count = sum(1 for l in log_lines if '"type": "verdict"' in l)
+            if verdict_count > 0 and verdict_count % 5 == 0:
+                drift_result = self.check_fitness()
+                entry["fitness_check"] = drift_result
+        except Exception:
+            pass
+
+        return entry

@@ -85,6 +85,48 @@ def init():
         conn.close()
 
 
+# ── 闭环 Hook：verdict → 各子系统 ────────────────────────────────────────
+
+def _trigger_fitness_record(chain_id: str, task_text: str,
+                              correct: bool, notes: str,
+                              changes: Dict) -> None:
+    """Hook: receive_verdict → FitnessBaseline.record_from_verdict"""
+    try:
+        from judgment.fitness_baseline import FitnessBaseline
+        fb = FitnessBaseline()
+        fb.record_from_verdict(chain_id, task_text, correct, notes, changes)
+    except Exception:
+        pass  # 孤立失败不影响主流程
+
+
+def _trigger_curiosity_from_verdict(chain_id: str, task_text: str,
+                                     correct: bool,
+                                     changes: Optional[Dict]) -> None:
+    """Hook: receive_verdict → curiosity_engine.trigger_from_verdict
+    PAD A > 0.7 → 自由探索概率提升"""
+    try:
+        # 尝试获取 emotion_system 的 PAD 状态
+        pad_state = _get_pad_state_from_emotion(task_text, correct)
+        from curiosity.curiosity_engine import trigger_from_verdict
+        trigger_from_verdict(chain_id, task_text, correct, pad_state, changes)
+    except Exception:
+        pass  # 孤立失败不影响主流程
+
+
+def _get_pad_state_from_emotion(task_text: str, correct: bool) -> Dict[str, float]:
+    """从 emotion_system 获取当前 PAD 状态"""
+    try:
+        from emotion_system.emotion_system import EmotionSystem
+        es = EmotionSystem()
+        # 构造最小 judgment_result 来触发情绪检测
+        result = {"task": task_text, "dim_confidence": {}, "meta": {}}
+        es.detect_emotion(task_text, result)
+        return es.get_pad_state()
+    except Exception:
+        # fallback：基于 verdict 正确性推断 PAD
+        return {"P": 0.6 if correct else 0.3, "A": 0.6, "D": 0.5}
+
+
 # ── 记录单条判断因果链 ───────────────────────────────────────────────────────
 
 def _hash_task(text: str) -> str:
@@ -222,6 +264,13 @@ def receive_verdict(
             (notes[:200], rec_id)
         )
         conn.commit()
+
+        # ── 三个闭环 hook（在 conn.close() 之前，finally 之前）─────────────
+        # 1. FitnessBaseline ← verdict 记录
+        _trigger_fitness_record(chain_id, task_text, correct, notes, changes)
+        # 2. Curiosity       ← 情绪驱动好奇心
+        _trigger_curiosity_from_verdict(chain_id, task_text, correct, changes)
+        # 3. CausalMemory    ← 事后验证反馈（通过 closed_loop 作为唯一数据源）
 
         return {"updated": True, "chain_id": chain_id, "changes": changes}
     finally:

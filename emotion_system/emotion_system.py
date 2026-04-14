@@ -82,6 +82,7 @@ class EmotionSystem:
     def __init__(self):
         self.signals: List[EmotionSignal] = []
         self.patterns: Dict[str, EmotionPattern] = {}
+        self._current_pad: Dict[str, float] = {"P": 0.5, "A": 0.5, "D": 0.5}
         self._load()
 
     def _next_id(self) -> int:
@@ -197,8 +198,29 @@ class EmotionSystem:
         )
 
         self.signals.append(signal)
+        self._update_pad(label, intensity)
         self._save()
         return signal
+
+    def _update_pad(self, label: str, intensity: float):
+        """根据情绪标签更新 PAD 状态（P=愉悦度, A=激活度, D=支配度）"""
+        pad_map = {
+            "anxiety":    {"P": -0.3, "A":  0.7, "D": -0.2},
+            "excitement": {"P":  0.7, "A":  0.8, "D":  0.3},
+            "anger":      {"P": -0.5, "A":  0.9, "D":  0.8},
+            "joy":        {"P":  0.9, "A":  0.6, "D":  0.4},
+            "sadness":    {"P": -0.7, "A": -0.3, "D": -0.4},
+            "fear":       {"P": -0.6, "A":  0.9, "D": -0.6},
+            "calm":       {"P":  0.2, "A": -0.2, "D":  0.1},
+        }
+        base = pad_map.get(label, {"P": 0.0, "A": 0.0, "D": 0.0})
+        decay = 0.7  # 旧值权重（平滑过渡）
+        for dim in ("P", "A", "D"):
+            self._current_pad[dim] = decay * self._current_pad[dim] + (1 - decay) * base[dim]
+
+    def get_pad_state(self) -> Dict[str, float]:
+        """返回当前 PAD 状态，供 curiosity/其他系统调用"""
+        return dict(self._current_pad)
 
     def update_pattern(self, signal_id: int, was_signal: bool):
         """
