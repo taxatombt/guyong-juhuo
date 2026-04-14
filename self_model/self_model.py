@@ -71,6 +71,14 @@ class Strength:
     last_used: str
     description: str
 
+    def to_dict(self):
+        return {
+            "dimension": self.dimension,
+            "correct_count": self.correct_count,
+            "last_used": self.last_used,
+            "description": self.description,
+        }
+
 
 @dataclass
 class SelfModel:
@@ -117,7 +125,7 @@ class SelfModel:
 
 def init():
     """初始化自我模型文件"""
-    if not SELF_MODEL_FILE.exists():
+    if not SELF_MODEL_FILE.exists() or SELF_MODEL_FILE.stat().st_size == 0:
         empty_model = SelfModel()
         save_model(empty_model)
 
@@ -140,60 +148,87 @@ def load_model() -> SelfModel:
 def update_from_feedback(event) -> Optional[KnownBias]:
     """
     聚活独特技术：贝叶斯盲区追踪 — 从一次判断反馈更新自我模型
-    event: 因果记忆事件（包含feedback）
-    
+
+    兼容两种 event 格式：
+    - 旧格式（其他模块）：feedback in ["坏","错"] + skipped=[dims]
+    - 新格式（causal_memory）：feedback_type="judgment_repeated_mistake/success"
+                           + wrong_dimensions=[dims]
+
     贝叶斯置信度公式：confidence = min(1.0, 0.2 + 0.16 * mistake_count)
     - 1次失误 → 0.36置信度 → "可能是偏差"
     - 3次失误 → 0.68置信度 → "大概率是偏差"
     - 5次失误 → 1.0置信度 → "确定这是盲区"
-    
+
     对数增长，越往后越难涨 → 不会一次就定型，符合人的认知过程
     """
     model = load_model()
     model.total_decisions += 1
     updated_bias = None
 
-    # 如果反馈是坏的，记录偏差
-    if event.get("feedback") in ["坏", "bad", "wrong", "错", "错误"]:
-        # 看哪些维度被跳过了 → 很可能跳过就是原因
-        for dim in event.get("skipped", []):
+    now = event.get("timestamp") or datetime.now().isoformat()
+
+    # ── 判断反馈类型 ─────────────────────────────────────────────
+    feedback_type = event.get("feedback_type", "")
+    is_bad = (
+        feedback_type == "judgment_repeated_mistake"
+        or event.get("feedback") in ["坏", "bad", "wrong", "错", "错误"]
+    )
+    is_good = (
+        feedback_type == "judgment_repeated_success"
+        or event.get("feedback") in ["好", "good", "right", "对", "正确"]
+    )
+
+    # ── 提取维度列表 ─────────────────────────────────────────────
+    if feedback_type.startswith("judgment_repeated"):
+        # 新格式：wrong_dimensions 来自 causal_memory 的 pattern 检测
+        dims_to_blame = event.get("wrong_dimensions", [])
+        dims_to_credit = [
+            d for d in event.get("dimensions", []) if d not in dims_to_blame
+        ]
+    else:
+        # 旧格式
+        dims_to_blame = event.get("skipped", [])
+        dims_to_credit = event.get("must_check", []) + event.get("important", [])
+
+    # ── 坏反馈 → 记录偏差 ────────────────────────────────────────
+    if is_bad:
+        occurrence_count = event.get("occurrence_count", 1)
+
+        for dim in dims_to_blame:
             if dim in model.biases:
                 b = model.biases[dim]
-                b.mistake_count += 1
-                b.last_seen = event["timestamp"]
-                # 贝叶斯更新：每次失误增加置信度
+                b.mistake_count += occurrence_count
+                b.last_seen = now
+                # 贝叶斯更新
                 b.confidence = min(1.0, 0.2 + 0.16 * b.mistake_count)
                 updated_bias = b
             else:
                 model.biases[dim] = KnownBias(
                     dimension=dim,
-                    mistake_count=1,
-                    first_seen=event["timestamp"],
-                    last_seen=event["timestamp"],
-                    description=f"容易跳过{dim}维度，导致判断失误",
-                    confidence=0.2 + 0.16 * 1,  # 第一次失误 → 0.36置信度
+                    mistake_count=occurrence_count,
+                    first_seen=now,
+                    last_seen=now,
+                    description=f"在 dims_to_blame {dim} 判断失误 {occurrence_count} 次（pattern 检测）",
+                    confidence=min(1.0, 0.2 + 0.16 * occurrence_count),
                 )
                 updated_bias = model.biases[dim]
-    
-    # 如果反馈是好的，记录优势 → 同样贝叶斯追踪
-    if event.get("feedback") in ["好", "good", "right", "对", "正确"]:
-        checked = event.get("must_check", []) + event.get("important", [])
-        for dim in checked:
+
+    # ── 好反馈 → 记录优势 ────────────────────────────────────────
+    if is_good:
+        for dim in dims_to_credit:
             if dim in model.strengths:
                 s = model.strengths[dim]
                 s.correct_count += 1
-                s.last_used = event["timestamp"]
+                s.last_used = now
             else:
                 model.strengths[dim] = Strength(
                     dimension=dim,
                     correct_count=1,
-                    last_used=event["timestamp"],
-                    description=f"在{dim}维度判断通常准确",
+                    last_used=now,
+                    description=f"在 {dim} 维度判断通常准确",
                 )
-    
-    save_model(model)
 
-    # 返回新增/更新的偏差
+    save_model(model)
     return updated_bias
 
 
@@ -293,45 +328,7 @@ def get_self_warnings(current_result, confidence_threshold: float = 0.5) -> Tupl
     return warnings, strengths
 
 
-def get_self_warnings(current_result) -> Tuple[List[str], List[str]]:
-    """
-    给当前判断生成自我提醒：
-    返回 (warnings, strengths)
-    - warnings: "你过去在这些维度容易错，注意" + 带出因果历史前因后果
-    - strengths: "你过去在这些维度做得好"
-    """
-    from causal_memory.causal_memory import find_similar_events
-    
-    model = load_model()
-    warnings = []
-    strengths = []
 
-    # 检查当前跳过的维度有没有已知偏差
-    for dim in current_result.get("skipped", []):
-        if dim in model.biases:
-            bias = model.biases[dim]
-            warning_text = f"⚠️ 自我提醒：你过去有{bias.mistake_count}次跳过{dim}维度导致失误，这一次是否真的可以跳过？"
-            
-            # 打通因果记忆：找最近一次这个维度失误的案例，带进来
-            similar_events = find_similar_events(dim, max_results=1)
-            if similar_events:
-                recent = similar_events[0]
-                warning_text += f"\n    最近一次失误：{recent.get('task', '')[:80]}"
-                if recent.get("feedback"):
-                    warning_text += f" → 反馈: {recent['feedback']}"
-            
-            warnings.append(warning_text)
-    
-    # 检查当前检查的维度有没有已知优势
-    checked = current_result.get("must_check", []) + current_result.get("important", [])
-    for dim in checked:
-        if dim in model.strengths:
-            strength = model.strengths[dim]
-            strengths.append(
-                f"✓ 你过去在{dim}维度判断准确率不错，保持这个节奏"
-            )
-    
-    return warnings, strengths
 
 
 def format_self_report() -> str:

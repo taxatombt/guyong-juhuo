@@ -43,11 +43,10 @@ from .types import (
     CausalStats,
 )
 
-# 集成自我模型更新
-try:
-    from self_model.self_model import update_from_feedback
-except ImportError:
-    update_from_feedback = None
+# 集成自我模型更新（延迟导入，避免循环依赖）
+# self_model → causal_memory → self_model 循环
+# 用法：from causal_memory.causal_memory import update_from_feedback as _lazy_update
+_update_from_feedback = None  # 延迟初始化
 
 # 文件路径
 CAUSAL_EVENTS_FILE = Path(__file__).parent / "causal_events.jsonl"
@@ -96,15 +95,9 @@ def _task_similarity(a: str, b: str) -> float:
 
 
 def load_all_events() -> List[dict]:
-    """加载所有事件"""
-    init()
-    events = []
-    with open(CAUSAL_EVENTS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                events.append(json.loads(line))
-    return events
+    """从 SQLite 加载所有事件（替代 JSONL）"""
+    from .causal_memory_sqlite import load_all_events as _sqlite_load
+    return _sqlite_load()
 
 
 def load_all_links() -> List[CausalLink]:
@@ -118,6 +111,36 @@ def load_all_links() -> List[CausalLink]:
                 data = json.loads(line)
                 links.append(CausalLink.from_dict(data))
     return links
+
+
+def record_event(
+    event_type: str,
+    description: str,
+    what_happened: str,
+    why_i_think_so: str,
+    outcome: str = None,
+    judgment_summary: dict = None,
+    tags: List[str] = None,
+    chain_id: str = None,
+) -> int:
+    """
+    【闭环Step1 专用】judgment verdict 写入 causal_memory（SQLite后端）
+
+    写入 SQLite {data}/causal_memory/events.db，替代原 JSONL 方案。
+    字段满足 check_and_trigger_self_model_update 的查询条件。
+    """
+    # 委托给 SQLite 后端
+    from .causal_memory_sqlite import record_event as _sqlite_record
+    return _sqlite_record(
+        event_type=event_type,
+        description=description,
+        what_happened=what_happened,
+        why_i_think_so=why_i_think_so,
+        outcome=outcome,
+        judgment_summary=judgment_summary,
+        tags=tags,
+        chain_id=chain_id,
+    )
 
 
 def log_causal_event(task: str, result: Dict, decision: str, feedback: Optional[str] = None, outcome: Optional[bool] = None) -> Dict:
@@ -622,3 +645,119 @@ def inject_to_judgment_input(task: str) -> str:
         parts.append("\n".join(cl_lines))
     
     return "\n\n".join(parts) if parts else ""
+
+
+def check_and_trigger_self_model_update(
+    task: str,
+    dimensions: List[str],
+    correct: bool,
+    pattern_key: str = None,
+) -> dict:
+    """
+    【闭环Step2】causal_memory → self_model 触发器
+
+    检查同类 verdict pattern（相同 dimensions + 相似 task 文本）
+    是否累积达到阈值。达到阈值时触发 self_model.update_from_feedback，
+    让自我模型学习"我在哪些情况下会判断错误/成功"。
+
+    Args:
+        task: 任务文本
+        dimensions: 涉及的维度列表
+        correct: 判定是否正确
+        pattern_key: 可选，手动指定 pattern key
+
+    Returns:
+        {"triggered": bool, "count": int, "threshold": int, "result": ...}
+    """
+    import hashlib
+
+    PATTERN_THRESHOLD = 2  # 同一 pattern 出现 2 次就触发
+
+    events = load_all_events()
+    dims_key = "|".join(sorted(dimensions)) if dimensions else "none"
+
+    # 生成 pattern key
+    if pattern_key is None:
+        task_hash = hashlib.md5(task.encode("utf-8")).hexdigest()[:8]
+        pattern_key = f"{dims_key}:{task_hash}"
+
+    # 找同类 verdict 事件（相同 dimensions + 相似 task）
+    similar_events = [
+        e
+        for e in events
+        if e.get("category") == "judgment_verdict"
+        and e.get("outcome") is not None
+        and "|".join(sorted(e.get("dimensions", []))) == dims_key
+        and _task_similarity(task, e.get("task", "")) >= SIMILARITY_THRESHOLD
+    ]
+
+    count = len(similar_events)
+
+    if count >= PATTERN_THRESHOLD:
+        # 提取错误维度（correct=False 时哪些维度出了问题）
+        wrong_dims = [d for d in dimensions if d]
+
+        # 构建反馈事件，送给 self_model
+        feedback_event = {
+            "source": "causal_memory_pattern_detector",
+            "pattern_key": pattern_key,
+            "feedback_type": (
+                "judgment_repeated_mistake" if not correct else "judgment_repeated_success"
+            ),
+            "task_sample": task[:200],
+            "dimensions": dimensions,
+            "wrong_dimensions": wrong_dims if not correct else [],
+            "correct": correct,
+            "occurrence_count": count,
+            "similar_events_summary": [
+                {
+                    "event_id": e.get("event_id"),
+                    "outcome": e.get("outcome"),
+                    "task": e.get("task", "")[:80],
+                }
+                for e in similar_events[-5:]  # 最近 5 条
+            ],
+        }
+
+        # 延迟导入 self_model（避免循环依赖）
+        global _update_from_feedback
+        if _update_from_feedback is None:
+            try:
+                from self_model.self_model import update_from_feedback as _uf
+                _update_from_feedback = _uf
+            except Exception:
+                _update_from_feedback = False
+
+        if _update_from_feedback:
+            try:
+                result = _update_from_feedback(feedback_event)
+                return {
+                    "triggered": True,
+                    "count": count,
+                    "threshold": PATTERN_THRESHOLD,
+                    "pattern_key": pattern_key,
+                    "result": result,
+                }
+            except Exception as e:
+                return {
+                    "triggered": False,
+                    "count": count,
+                    "threshold": PATTERN_THRESHOLD,
+                    "pattern_key": pattern_key,
+                    "error": str(e),
+                }
+        else:
+            return {
+                "triggered": False,
+                "count": count,
+                "threshold": PATTERN_THRESHOLD,
+                "pattern_key": pattern_key,
+                "error": "update_from_feedback not available",
+            }
+
+    return {
+        "triggered": False,
+        "count": count,
+        "threshold": PATTERN_THRESHOLD,
+        "pattern_key": pattern_key,
+    }

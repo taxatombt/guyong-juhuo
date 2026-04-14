@@ -335,3 +335,27 @@ class SelfEvolver:
             return result.summary
         except Exception as e:
             return f"[ERROR] SelfEvolver 失败: {e}"
+
+
+def main():
+    """CLI 入口：python -m evolver.self_evolver"""
+    import argparse
+    parser = argparse.ArgumentParser(description="juhuo Self-Evolver")
+    parser.add_argument("--cron", action="store_true", help="cron 模式（简化输出）")
+    args = parser.parse_args()
+
+    evo = SelfEvolver()
+    if args.cron:
+        result = evo.run_cron_cycle()
+        print(result)
+    else:
+        result = evo.run_full_cycle()
+        print(f"=== SelfEvolver 完成 ===")
+        print(f"records_processed: {result.records_processed}")
+        print(f"new_patterns: {result.new_patterns}")
+        print(f"lessons_added: {result.lessons_added}")
+        print(f"\n{result.summary}")
+
+
+if __name__ == "__main__":
+    main()

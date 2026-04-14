@@ -170,3 +170,106 @@ class TrajectoryRecorder:
                 deleted += 1
         
         return deleted
+
+
+# ── 全局函数（CoPaw evolver 标准接口）───────────────────────────────────────
+
+TRAJECTORY_FILE = Path(__file__).parent.parent / "data" / "evolutions" / "trajectories.jsonl"
+TRAJECTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+
+def save_trajectory(tool: str, task: str, success: bool, error: str = None, tags: list = None) -> str:
+    """
+    记录单次工具调用轨迹（失败/成功都记）。
+    由 evolver.record() 内联调用，或直接调用。
+    """
+    import hashlib
+    traj_id = hashlib.sha256(f"{tool}{task}{error or ''}".encode()).hexdigest()[:16]
+    entry = {
+        "traj_id": traj_id,
+        "timestamp": datetime.now().isoformat(),
+        "tool": tool,
+        "task": task[:200] if task else "",
+        "success": success,
+        "error": error,
+        "tags": tags or [],
+    }
+    with open(TRAJECTORY_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return traj_id
+
+
+def load_failed_trajectories(limit: int = 50) -> list:
+    """读取失败轨迹列表"""
+    if not TRAJECTORY_FILE.exists():
+        return []
+    entries = []
+    with open(TRAJECTORY_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+                if not e.get("success"):
+                    entries.append(e)
+            except Exception:
+                continue
+    return sorted(entries, key=lambda x: x.get("timestamp", ""), reverse=True)[:limit]
+
+
+def reflect_on_failures() -> dict:
+    """
+    分析失败轨迹，按 tool+error 分组，
+    相同 pattern 出现 >=2 次生成 lesson。
+    """
+    failed = load_failed_trajectories(100)
+    if not failed:
+        return {"lessons": [], "groups": 0, "reflected": 0}
+
+    # 按 (tool, error) 分组
+    groups = {}
+    for e in failed:
+        key = (e.get("tool", ""), e.get("error", "")[:80])
+        groups.setdefault(key, []).append(e)
+
+    lessons = []
+    for (tool, error), items in groups.items():
+        if len(items) < 2:
+            continue
+        lesson = {
+            "type": "trajectory_reflection",
+            "tool": tool,
+            "error_pattern": error,
+            "occurrence": len(items),
+            "advice": f"tool={tool}, error='{error[:60]}...' occurred {len(items)} times. Consider checking before use.",
+            "timestamp": datetime.now().isoformat(),
+        }
+        lessons.append(lesson)
+
+    return {"lessons": lessons, "groups": len(groups), "reflected": len(lessons)}
+
+
+def evolver_update() -> dict:
+    """
+    定期自进化主函数（由 cron 或手动触发）。
+    1. 分析失败轨迹 → 生成 lessons
+    2. 统计学习成果
+    3. 输出摘要
+    """
+    reflection = reflect_on_failures()
+    failed = load_failed_trajectories(100)
+    
+    # 写入 lesson 到 evolutions/
+    LESSONS_FILE = Path(__file__).parent.parent / "data" / "evolutions" / "self_lessons.jsonl"
+    for lesson in reflection.get("lessons", []):
+        with open(LESSONS_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(lesson, ensure_ascii=False) + "\n")
+
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "failed_count": len(failed),
+        "reflection": reflection,
+        "lessons_written": len(reflection.get("lessons", [])),
+        "status": "ok",
+    }
