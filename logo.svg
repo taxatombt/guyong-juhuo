@@ -1,1 +1,101 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1E1830"/><stop offset="100%" stop-color="#14102A"/></linearGradient><linearGradient id="stem" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F5C87A"/><stop offset="45%" stop-color="#E8A84A"/><stop offset="100%" stop-color="#C47D35"/></linearGradient><linearGradient id="bar" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#D4B483"/><stop offset="50%" stop-color="#E8C99B"/><stop offset="100%" stop-color="#D4B483"/></linearGradient><radialGradient id="halo" cx="50%" cy="40%" r="50%"><stop offset="0%" stop-color="#F5D98A" stop-opacity="0.2"/><stop offset="100%" stop-color="#F5D98A" stop-opacity="0"/></radialGradient><filter id="og" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="18" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><filter id="mg" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><filter id="ig" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><filter id="bglow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="12" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect width="512" height="512" fill="none"/><rect x="24" y="24" width="464" height="464" rx="72" ry="72" fill="url(#bg)"/><rect x="24" y="24" width="464" height="464" rx="72" ry="72" fill="none" stroke="#2A2050" stroke-width="1.5" opacity="0.6"/><rect x="40" y="40" width="432" height="432" rx="60" ry="60" fill="none" stroke="#F5C87A" stroke-width="0.6" opacity="0.08"/><ellipse cx="256" cy="220" rx="165" ry="155" fill="url(#halo)"/><circle cx="148" cy="148" r="72" fill="none" stroke="#E8C99B" stroke-width="0.6" opacity="0.07"/><circle cx="364" cy="148" r="56" fill="none" stroke="#F5C87A" stroke-width="0.6" opacity="0.06"/><circle cx="128" cy="310" r="48" fill="none" stroke="#D4B483" stroke-width="0.6" opacity="0.06"/><circle cx="384" cy="310" r="64" fill="none" stroke="#E8C99B" stroke-width="0.6" opacity="0.05"/><path d="M132,260C160,230 210,210 256,210C302,210 352,230 380,260" fill="none" stroke="#F5C87A" stroke-width="14" stroke-linecap="round" opacity="0.18" filter="url(#og)"/><path d="M128,260C156,230 210,210 256,210C302,210 356,230 384,260" fill="none" stroke="#E8C99B" stroke-width="18" stroke-linecap="round" opacity="0.28" filter="url(#mg)"/><path d="M124,260C152,230 210,210 256,210C302,210 360,230 388,260" fill="none" stroke="#D4B483" stroke-width="26" stroke-linecap="round" opacity="0.95"/><path d="M124,260C152,230 210,210 256,210C302,210 360,230 388,260" fill="none" stroke="#F5C87A" stroke-width="6" stroke-linecap="round" opacity="0.5"/><rect x="244" y="212" width="24" height="250" fill="#C47D35" opacity="0.95"/><rect x="244" y="212" width="24" height="250" fill="none" stroke="#F5C87A" stroke-width="2" opacity="0.4"/><rect x="244" y="212" width="24" height="80" fill="#F5C87A" opacity="0.2" filter="url(#ig)"/><circle cx="180" cy="188" r="3" fill="#F5C87A" opacity="0.72" filter="url(#mg)"/><circle cx="332" cy="172" r="2.5" fill="#E8C99B" opacity="0.68" filter="url(#mg)"/><circle cx="372" cy="308" r="2.5" fill="#D4B483" opacity="0.62" filter="url(#mg)"/><circle cx="140" cy="308" r="2" fill="#E8C99B" opacity="0.58" filter="url(#mg)"/><circle cx="200" cy="150" r="1.5" fill="#F5C87A" opacity="0.48"/><circle cx="312" cy="145" r="1.5" fill="#D4B483" opacity="0.42"/><circle cx="350" cy="380" r="1.5" fill="#F5C87A" opacity="0.38"/><circle cx="162" cy="380" r="1.5" fill="#E8C99B" opacity="0.38"/><circle cx="420" cy="210" r="2" fill="#D4B483" opacity="0.28"/><circle cx="92" cy="210" r="2" fill="#E8C99B" opacity="0.28"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A1430"/>
+      <stop offset="50%" stop-color="#12101F"/>
+      <stop offset="100%" stop-color="#0A0915"/>
+    </linearGradient>
+    
+    <!-- T 主体渐变 -->
+    <linearGradient id="stem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F8D890"/>
+      <stop offset="35%" stop-color="#E8A84A"/>
+      <stop offset="70%" stop-color="#C47D35"/>
+      <stop offset="100%" stop-color="#8B5A2B"/>
+    </linearGradient>
+    
+    <!-- 内发光 -->
+    <filter id="innerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feComposite in="b" in2="SourceGraphic" operator="in" result="mask"/>
+      <feFlood flood-color="#F8D890" flood-opacity="0.3"/>
+      <feComposite in2="mask" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+    <!-- 外发光 -->
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="20" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+    <!-- 中等发光 -->
+    <filter id="mglow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="12" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+    <!-- 柔和发光 -->
+    <filter id="sglow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    
+    <!-- 背景光晕 -->
+    <radialGradient id="halo" cx="50%" cy="35%" r="45%">
+      <stop offset="0%" stop-color="#F5D98A" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#E8A84A" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#F5D98A" stop-opacity="0"/>
+    </radialGradient>
+    
+    <!-- 卡片内阴影 -->
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <!-- 背景 -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  
+  <!-- 背景光晕 -->
+  <ellipse cx="256" cy="200" rx="200" ry="180" fill="url(#halo)"/>
+  
+  <!-- 装饰圆环 -->
+  <circle cx="256" cy="220" r="140" fill="none" stroke="#F5C87A" stroke-width="0.5" opacity="0.06"/>
+  <circle cx="256" cy="220" r="160" fill="none" stroke="#F5C87A" stroke-width="0.3" opacity="0.04"/>
+  
+  <!-- 装饰圆点 -->
+  <circle cx="130" cy="130" r="48" fill="none" stroke="#E8C99B" stroke-width="0.5" opacity="0.08"/>
+  <circle cx="382" cy="130" r="36" fill="none" stroke="#F5C87A" stroke-width="0.5" opacity="0.06"/>
+  <circle cx="110" cy="320" r="32" fill="none" stroke="#D4B483" stroke-width="0.5" opacity="0.05"/>
+  <circle cx="402" cy="320" r="42" fill="none" stroke="#E8C99B" stroke-width="0.5" opacity="0.04"/>
+  
+  <!-- T 外发光层 -->
+  <path d="M88,173 C154,125 358,125 424,173" fill="none" stroke="#E8A84A" stroke-width="36" stroke-linecap="round" opacity="0.15" filter="url(#glow)"/>
+  
+  <!-- T 中发光层 -->
+  <path d="M88,173 C154,125 358,125 424,173" fill="none" stroke="#E8A84A" stroke-width="32" stroke-linecap="round" opacity="0.3" filter="url(#mglow)"/>
+  
+  <!-- T 主体：横杠（更圆润的两端） -->
+  <path d="M88,173 C154,125 358,125 424,173" fill="none" stroke="url(#stem)" stroke-width="36" stroke-linecap="round" filter="url(#sglow)"/>
+  
+  <!-- T 主体：竖杠（底部也更圆） -->
+  <rect x="240" y="173" width="32" height="270" rx="16" ry="16" fill="url(#stem)"/>
+  
+  <!-- T 高光层 -->
+  <path d="M88,173 C154,125 358,125 424,173" fill="none" stroke="#FFF5D0" stroke-width="8" stroke-linecap="round" opacity="0.5"/>
+  <rect x="244" y="173" width="8" height="270" rx="4" ry="4" fill="#FFF5D0" opacity="0.35"/>
+  
+  <!-- T 顶部最亮的高光 -->
+  <path d="M92,170 C155,128 357,128 420,170" fill="none" stroke="#FFFFF5" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  <rect x="244" y="176" width="5" height="120" rx="2" ry="2" fill="#FFFFF5" opacity="0.25"/>
+  
+  <!-- 卡片边框（圆角） -->
+  <rect x="24" y="24" width="464" height="464" rx="72" ry="72" fill="none" stroke="#F5C87A" stroke-width="1.5" opacity="0.4" filter="url(#cardShadow)"/>
+  <rect x="24" y="24" width="464" height="464" rx="72" ry="72" fill="none" stroke="#2A2050" stroke-width="1" opacity="0.6"/>
+  <rect x="40" y="40" width="432" height="432" rx="60" ry="60" fill="none" stroke="#F5C87A" stroke-width="0.5" opacity="0.1"/>
+  
+  <!-- 底部微光 -->
+  <ellipse cx="256" cy="490" rx="120" ry="30" fill="#F5D98A" opacity="0.03"/>
+</svg>
