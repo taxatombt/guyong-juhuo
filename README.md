@@ -1,5 +1,9 @@
 # guyong-juhuo · 聚活
 
+<p align="center">
+  <img src="logo.svg" width="320" alt="juhuo logo">
+</p>
+
 **一个会进化的个人数字分身。**
 
 模拟特定个体的思维方式，在判断力上超越人类整体。
