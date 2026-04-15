@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.2] - 2026-04-15
+
+### 新增模块
+- causal_memory 轨迹记录 / benchmark 测试 / 安全规则引擎
+- compact 压缩模块 / 运行时数据 / evolutions 数据
+
 ## [v1.1] - 2026-04-15
 
 ### Logo 优化
