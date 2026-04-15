@@ -99,6 +99,7 @@ class JudgmentSystem:
         from judgment import check10d, route, format_report, format_structured
         from judgment import detect_task_types, get_task_complexity
         from judgment import get_low_confidence_dimensions, metacognitive_review
+        from judgment.closed_loop import snapshot_judgment
         self._check10d = check10d
         self._route = route
         self._format_report = format_report
@@ -107,10 +108,21 @@ class JudgmentSystem:
         self._complexity = get_task_complexity
         self._low_conf = get_low_confidence_dimensions
         self._meta = metacognitive_review
+        self._snapshot = snapshot_judgment
 
     def check10d(self, input_text: str, agent_profile: str = None, complexity: str = "auto") -> Dict[str, Any]:
-        """十维判断决策。"""
-        return self._check10d(input_text, agent_profile=agent_profile, complexity=complexity)
+        """十维判断决策（自动快照落盘）。"""
+        result = self._check10d(input_text, agent_profile=agent_profile, complexity=complexity)
+        # Auto快照：judgment完成后立即落盘（供auto闭环使用）
+        try:
+            chain_id = result.get("chain_id") or result.get("meta", {}).get("chain_id")
+            dims = result.get("dimensions_chosen", result.get("meta", {}).get("dimensions_chosen"), [])
+            weights = result.get("meta", {}).get("dimension_weights", {})
+            if chain_id and dims:
+                self._snapshot(chain_id, input_text, dims, weights, result, complexity)
+        except Exception:
+            pass  # 不因快照失败影响主流程
+        return result
 
     def route(self, input_text: str) -> str:
         """路径路由（P/A/B/C）。"""
@@ -425,6 +437,21 @@ class SecuritySystem:
         """检查代码危险模式。"""
         return self._Hook().check_code(code)
 
+    def check_command(self, command: str, tool: str = "Bash") -> "EvalResult":
+        """
+        使用 Hookify 规则引擎检查 shell 命令。
+
+        规则引擎支持6种操作符（regex_match/contains/equals/not_contains/
+        starts_with/ends_with）和 Block/Warn 两种 Action。
+
+        内置6条规则：dangerous_rm / curl_pipe_sh / wget_pipe_sh /
+        fork_bomb / eval_user_input / innerHTML。
+
+        用户可自定义规则：~/.juhuo/security_rules/*.yaml
+        """
+        from security_rule_engine import evaluate, EvalResult
+        return evaluate({"tool_name": tool, "command": command})
+
     def level_name(self, level: int) -> str:
         return self._Level.name(level)
 
@@ -661,6 +688,29 @@ class Juhuo:
         self._diff_tracker: Optional[DiffTrackerSystem]   = None
         self._self_evolver: Optional[SelfEvolverSystem] = None
         self._sqlite:        Optional[SQLiteSystem]       = None
+        self._compact:       Optional["Compact"]          = None
+
+        # ── Auto闭环初始化 ───────────────────────────────────────────────
+        try:
+            from judgment.closed_loop import init as _cl_init, start_verdict_listener
+            from outcome_tracker import record_judgment_outcome as _record_jo
+            _cl_init()
+            start_verdict_listener()
+            self._record_jo = _record_jo
+        except Exception as e:
+            import logging
+            logging.warning(f"[Juhuo] auto闭环初始化失败: {e}")
+            self._record_jo = None
+
+    # ── 记录判断结果（触发auto闭环）──────────────────────────────────────
+    def record_outcome(self, chain_id: str, task_text: str, outcome) -> bool:
+        """
+        记录判断结果，触发auto闭环监听器。
+        outcome: True(正确)/False(错误)/1.0/0.0
+        """
+        if self._record_jo:
+            return self._record_jo(chain_id, task_text, outcome)
+        return False
 
     # ── 属性访问（懒加载）─────────────────────────────────────────────────
 
@@ -754,6 +804,21 @@ class Juhuo:
             self._sqlite = SQLiteSystem()
         return self._sqlite
 
+    @property
+    def compact(self) -> "Compact":
+        """
+        HANDOVER DOCUMENT 格式的上下文压缩器。
+
+        用于长会话上下文满时压缩为四段结构：
+        RESOLVED / PENDING / KEY DECISIONS / SYSTEM
+
+        来源: CoPaw workspace_tools/compact.py + weekly report 2026-04-14
+        """
+        if self._compact is None:
+            from compact import Compact
+            self._compact = Compact()
+        return self._compact
+
     # ── 快捷方法 ──────────────────────────────────────────────────────────
 
     def think(self, input_text: str) -> dict:
@@ -793,6 +858,24 @@ class Juhuo:
     @property
     def checkpoints_dir(self) -> Path:
         return self._data_dir / "checkpoints"
+
+    # ─── 全链路追踪 ────────────────────────────────────────────────────────────
+
+    @property
+    def trace_id(self) -> Optional[str]:
+        """当前 trace_id（pipeline 启用 enable_trace=True 时有值）。"""
+        from trace_context import get_current_trace_id
+        return get_current_trace_id()
+
+    def get_trace(self) -> Optional[Any]:
+        """获取当前 trace 对象（包含 spans 层级结构）。"""
+        from trace_context import get_current_trace
+        return get_current_trace()
+
+    def run_with_trace(self, name: str, func: callable, *args, **kwargs) -> Any:
+        """在 trace 上下文中运行函数（自动创建子 span）。"""
+        from trace_context import trace_call
+        return trace_call(name, lambda: func(*args, **kwargs))
 
 
 # ─── 快捷函数 ────────────────────────────────────────────────────────────────

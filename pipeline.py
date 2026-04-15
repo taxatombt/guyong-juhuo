@@ -28,6 +28,7 @@ from causal_memory.causal_chain import build_causal_chain
 from recursive_trigger import recursive_probe
 from judgment.metacognitive import metacognitive_review
 from multi_agent_debate import run_debate
+from trace_context import trace_call
 
 
 class PipelineConfig:
@@ -41,6 +42,7 @@ class PipelineConfig:
         confidence_threshold: float = 0.5,
         agent_profile: Optional[dict] = None,
         complexity: Optional[str] = None,
+        enable_trace: bool = False,
     ):
         self.agent_profile_name = agent_profile_name
         self.enable_adversarial = enable_adversarial
@@ -50,6 +52,7 @@ class PipelineConfig:
         self.confidence_threshold = confidence_threshold
         self.agent_profile = agent_profile
         self.complexity = complexity
+        self.enable_trace = enable_trace
 
 
 def check10d_full(task_text: str, config: Optional[PipelineConfig] = None, **kwargs) -> dict:
@@ -92,7 +95,7 @@ def check10d_full(task_text: str, config: Optional[PipelineConfig] = None, **kwa
         agent_profile=cfg.agent_profile,
     )
 
-    confidences = assess_all_confidences(task_text, check_result.get("answers", {}))
+    confidences = assess_all_confidences(check_result.get("answers", {}))
     low_conf_dims = get_low_confidence_dimensions(confidences, threshold=cfg.confidence_threshold)
 
     # #10 分层判断
@@ -117,7 +120,10 @@ def check10d_full(task_text: str, config: Optional[PipelineConfig] = None, **kwa
     adversarial_data = None
     if cfg.enable_adversarial:
         try:
-            objections = generate_objections(task_text, check_result)
+            objections = trace_call(
+                "adversarial.generate_objections",
+                lambda: generate_objections(task_text, check_result),
+            )
             strong_unanswered = [o for o in objections if o.strength == "strong" and not o.response]
             robustness = max(0, 100 - len(strong_unanswered) * 20)
             verdict = "REJECT" if robustness < 40 else "MODIFY" if robustness < 70 else "PASS"
