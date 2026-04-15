@@ -1,0 +1,6 @@
+{"traj_id": "707cf36d9f6c7c38", "timestamp": "2026-04-15T02:34:00.258331", "tool": "execute_shell_command", "task": "npm install clawhub", "success": false, "error": "permission denied", "tags": ["github"]}
+{"traj_id": "707cf36d9f6c7c38", "timestamp": "2026-04-15T02:34:00.259331", "tool": "execute_shell_command", "task": "npm install clawhub", "success": false, "error": "permission denied", "tags": ["github"]}
+{"traj_id": "707cf36d9f6c7c38", "timestamp": "2026-04-15T02:34:25.723971", "tool": "execute_shell_command", "task": "npm install clawhub", "success": false, "error": "permission denied", "tags": ["github"]}
+{"traj_id": "707cf36d9f6c7c38", "timestamp": "2026-04-15T02:34:25.724975", "tool": "execute_shell_command", "task": "npm install clawhub", "success": false, "error": "permission denied", "tags": ["github"]}
+{"traj_id": "707cf36d9f6c7c38", "timestamp": "2026-04-15T02:36:29.461861", "tool": "execute_shell_command", "task": "npm install clawhub", "success": false, "error": "permission denied", "tags": ["github"]}
+{"traj_id": "707cf36d9f6c7c38", "timestamp": "2026-04-15T02:36:29.462860", "tool": "execute_shell_command", "task": "npm install clawhub", "success": false, "error": "permission denied", "tags": ["github"]}

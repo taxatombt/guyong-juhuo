@@ -1,0 +1,148 @@
+{
+  "sections": [
+    {
+      "title": "一、因果记忆系统 causal_memory.py",
+      "subs": [
+        {"title": "1.1 核心设计 2026-04-10", "body": [
+          "遵循t兄弟方案：快路径（每次判断写事件+找相似链接）+ 慢路径（每日批量推断因果）",
+          "基于 decisions.jsonl 扩展，不换数据库，不重构，保持向后兼容",
+          "新判断自动召回相似历史因果注入上下文 → judgment 能看见自己的历史判断模式"
+        ]},
+        {"title": "1.2 核心文件", "code": [
+          "E:\juhuo\causal_memory\causal_memory.py   # 主模块",
+          "E:\juhuo\causal_memory\__init__.py        # 导出接口",
+          "E:\juhuo\causal_events.jsonl               # 因果事件存储（JSONL）",
+          "E:\juhuo\causal_links.jsonl                # 因果链接存储（JSONL）"
+        ]},
+        {"title": "1.3 关键函数", "body": [
+          "record_event()  写入 judgment_verdict（含 category + dimensions，供给 check_and_trigger_self_model_update）",
+          "log_causal_event()  通用因果事件写入（task/result/decision/feedback/outcome 五字段）",
+          "load_all_events() / load_all_links()  JSONL 流式读取",
+          "find_similar_events()  task 相似度 + dimensions + 链接强度查找",
+          "check_and_trigger_self_model_update()  pattern 阈值检测，>= 2 触发 self_model 更新",
+          "inject_to_judgment_input()  注入相似因果到 judgment 上下文",
+          "CausalLink 类  from/to_event_id、cause、effect、quality 追踪"
+        ], "bullets": true},
+        {"title": "1.4 闭环流程", "body": [
+          "judgment → closed_loop._trigger_causal_memory()",
+          "  ├─ record_event()  写 judgment_verdict（含 category + dimensions）",
+          "  └─ check_and_trigger_self_model_update()  相似事件 >= 2 → self_model.update_from_feedback()",
+          "inject_to_judgment_input()  注入相似历史因果 → judgment 上下文可见"
+        ]}
+      ]
+    },
+    {
+      "title": "二、judgment 闭环 judgment-causal_memory-self_model",
+      "subs": [
+        {"title": "2.1 问题描述", "body": [
+          "judgment 每做一个判断，需要知道判断对不对，然后把结果记到因果记忆，再更新自我模型",
+          "涉及三个模块的跨模块闭环：judgment → causal_memory → self_model"
+        ]},
+        {"title": "2.2 Step1：judgment → causal_memory", "body": [
+          "文件：E:\juhuo\judgment\closed_loop.py  函数：_trigger_causal_memory()",
+          "核心调用：record_event() + check_and_trigger_self_model_update()"
+        ]},
+        {"title": "2.3 Step2：causal_memory → self_model", "body": [
+          "文件：E:\juhuo\causal_memory\causal_memory.py  函数：check_and_trigger_self_model_update()",
+          "PATTERN_THRESHOLD = 2（同一 pattern 出现 2 次触发）",
+          "关键：延迟导入避免 circular import"
+        ]},
+        {"title": "2.4 关键修复", "body": [
+          "[Bug1] record_event() 不存在 → 新增 record_event() 函数，适配 closed_loop 参数",
+          "[Bug2] circular import → 改为 lazy import（在函数内部导入）",
+          "[验证] triggered=True, self_model biases 持续更新 ✅"
+        ]}
+      ]
+    },
+    {
+      "title": "三、Trajectory 回流机制 evolver.py",
+      "subs": [
+        {"title": "3.1 背景", "body": [
+          "来源：CoPaw evolver Trajectory system (#8 架构建议)",
+          "目的：让 evolver 能记录成功/失败轨迹，并定期自进化",
+          "落地：E:\juhuo\evolver.py（对应 CoPaw 的 evolver.py）"
+        ]},
+        {"title": "3.2 新增函数", "body": [
+          "save_trajectory()  记录成功/失败轨迹",
+          "load_failed_trajectories()  加载失败轨迹",
+          "reflect_on_failures()  分析失败模式",
+          "evolver_update()  定期自进化（结合 cron 任务）"
+        ], "bullets": true}
+      ]
+    },
+    {
+      "title": "四、Hermes-Agent 主动闭环学习",
+      "subs": [
+        {"title": "4.1 Hermes-Agent 落地  2026-04-12", "body": [
+          "目录：E:\juhuo\hermes_evolution",
+          "181个ECC技能成功导入，100% 兼容 SQLite FTS5 技能存储",
+          "闭环学习循环：对话→执行→记录→提取新技能→自改进",
+          "181 ECC技能 → 191总技能（10原有 + 181新导入）"
+        ]},
+        {"title": "4.2 ECC v2 技能学习", "body": [
+          "Codex Rust v0.120.0 + ECC v2",
+          "从 Codex 源码中提取有效工程模式，转化为可执行 skill",
+          "落地到 CoPaw workspace_tools 和 skills/"
+        ]}
+      ]
+    },
+    {
+      "title": "五、gstack 虚拟工程团队",
+      "subs": [
+        {"title": "5.1 落地  2026-04-12", "body": [
+          "目录：E:\juhuo\gstack_virtual_team",
+          "10个预定义专家角色（CEO/PM/Architect/DevOps/Security/QA/Data/UX/Dev/Product）",
+          "8项安全规则增强（硬编码密钥/SQL注入/XSS/命令注入/路径遍历/敏感数据/不安全依赖/日志注入）",
+          "TDD流程强制绑定（RED→GREEN→IMPROVE）"
+        ]},
+        {"title": "5.2 验证结果", "body": [
+          "8 ECC安全规则 → 13总规则（8新增 + 5基础规则）",
+          "10个专家角色全部加载 ✅"
+        ]}
+      ]
+    },
+    {
+      "title": "六、chat_system 完整对话持久化",
+      "subs": [
+        {"title": "6.1 开发  2026-04-11", "body": [
+          "目录：E:\juhuo\chat_system",
+          "完整对话历史持久化存储（JSON格式，保存到 chat_history/ 目录）",
+          "固定单用户设计，只服务一个人生成数字分身",
+          "自动触发全流程：用户输入→十维判断→行动规划→行动信号→好奇心→因果记忆"
+        ]},
+        {"title": "6.2 配套功能", "body": [
+          "每日自动进化，生成进化建议保存到 evolution_suggestions/",
+          "支持历史对话召回和分析",
+          "JSONL 流式写入，避免大文件内存问题"
+        ]}
+      ]
+    },
+    {
+      "title": "七、TUI 终端界面 + 多平台安装",
+      "subs": [
+        {"title": "7.1 TUI 终端界面  2026-04-11", "body": [
+          "文件：E:\juhuo\tui_console.py，使用 curses 实现终端 TUI",
+          "Windows 需要安装 windows-curses 包",
+          "纯键盘操作，无需浏览器",
+          "左侧新增第一个按钮：聊天"
+        ]},
+        {"title": "7.2 多平台安装方式", "body": [
+          "requirements.txt  列出所有依赖",
+          "install.ps1  Windows 一键安装脚本",
+          "install.sh  macOS/Linux 一键安装脚本",
+          "Dockerfile  支持容器化部署"
+        ], "bullets": true}
+      ]
+    },
+    {
+      "title": "八、CoPaw 基础设施增强",
+      "subs": [
+        {"title": "8.1 cron 定期自进化  2026-04-15", "body": [
+          "来源：#7 架构建议落地",
+          "目的：让 CoPaw evolver 定期自动运行自进化任务",
+          "实现：evolver.py 新增 cron 任务注册机制"
+        ]},
+        {"title": "8.2 workspace_tools 补充  2026-04-15", "body": [
+          "security_rule_engine.py  安全规则引擎（从 juhuo 复制到 CoPaw）",
+          "compact.py  记忆压缩工具（新建）",
+          "MemoryProvider

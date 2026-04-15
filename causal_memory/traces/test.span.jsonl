@@ -1,0 +1,1 @@
+{"trace_id": "e76a2f31b4064c80", "started_at": 1776214291.799586, "trace": {"span_id": "7e577373", "name": "test.span", "start_ms": 1776214291799.586, "end_ms": 1776214291799.586, "duration_ms": 0.0, "fields": {}, "error": null, "children": []}}
