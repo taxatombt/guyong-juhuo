@@ -28,21 +28,25 @@ from causal_memory import recall_causal_history, inject_to_judgment_input, find_
 init()
 
 # 兼容旧接口命名
-causal_memory = type('obj', (object,), {
-    'recall_causal_history': lambda task, max_events=3: recall_causal_history(max_events, task),
-    'inject_to_judgment_input': inject_to_judgment_input
-})()
+class _CausalMemoryCompat:
+    """兼容层：让 causal_memory 作为可调用对象访问模块级函数"""
+    def recall_causal_history(self, task, max_events=3):
+        return recall_causal_history(task, max_events)
+    def inject_to_judgment_input(self, task):
+        return inject_to_judgment_input(task)
+
+causal_memory = _CausalMemoryCompat()
 from self_model.self_model import get_self_warnings
 from curiosity.curiosity_engine import CuriosityEngine, trigger_from_low_confidence
 from emotion_system.emotion_system import EmotionSystem
 
 # 新增：自我复盘 + Fitness Baseline
 from .self_review import SelfReviewSystem
-from .closed_loop import record_judgment, get_prior_adjustments
+from .closed_loop import record_judgment, snapshot_judgment, get_prior_adjustments
 from .fitness_baseline import FitnessBaseline
 
 # LLM接入：MiniMax适配器
-from llm_adapter.minimax import MiniMaxAdapter
+from llm_adapter.minimax import get_adapter
 from llm_adapter.base import CompletionRequest
 global_emotion_system = EmotionSystem()
 global_self_review = None  # 懒加载
@@ -101,7 +105,7 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
 
 def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None) -> dict:
     """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
-    adapter = MiniMaxAdapter()
+    adapter = get_adapter()
 
     # 如果没有配置api_key（环境变量也没有），返回空
     if not adapter.is_configured():
@@ -256,7 +260,7 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
     # 因果记忆：召回相似历史，注入上下文
     causal_result = causal_memory.recall_causal_history(task_text)
     if causal_result["summary"]:
-        task_text = causal_memory.inject_to_judgment_input(original_task, task_text)
+        task_text = causal_memory.inject_to_judgment_input(task_text)
     
     if complexity == "auto":
         complexity = _judge_complexity(task_text)

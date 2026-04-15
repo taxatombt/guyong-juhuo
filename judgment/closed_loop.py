@@ -1,359 +1,230 @@
-"""
-judgment/closed_loop.py — 因果链闭环系统
+#!/usr/bin/env python3
+# judgment/closed_loop.py
 
-judgment 输出 → 因果链记录 → self_model 更新 → 下次置信度调整
-    ↑
-    ← ← ← ← ← ← ← ← ← ← ← ← 事后验证信号（反向修正）
-
-设计原则：
-- 文件有界：SQLite rolling buffer，100条上限
-- 更新有界：单次变化 ≤0.15，衰减系数 0.1
-- 饱和保护：置信度 >0.95 或 <0.05 时停止更新
-"""
-
-import sqlite3
-import json
-import time
-import hashlib
-import os
+import sqlite3,json,time,hashlib,os,threading,logging
 from threading import Lock
-from typing import Optional, Dict, List, Any
+from typing import Optional,Dict,List,Any
 
-# ── 数据库路径 ──────────────────────────────────────────────────────────────
-_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'evolutions', 'juhuo.db')
-_DIR = os.path.dirname(_DB_PATH)
+_DB=os.path.join(os.path.dirname(__file__),"..","data","evolutions","juhuo.db")
+_DIR=os.path.dirname(_DB)
+_OUT=os.path.join(os.path.dirname(__file__),"..","data","outcomes.jsonl")
+MAX=100;DECAY=0.1;MAXD=0.15;SH=0.95;SL=0.05
+DIMS=["cognitive","game_theory","economic","dialectical","emotional","intuitive","moral","social","temporal","metacognitive"]
+_lock=Lock();_lt=None;_lstop=threading.Event()
+_log=logging.getLogger("cl")
 
-MAX_CHAIN = 100          # rolling buffer 上限
-_DECAY = 0.1             # 衰减系数
-_MAX_DELTA = 0.15        # 单次最大变化
-_SATURATE_HIGH = 0.95   # 饱和上限
-_SATURATE_LOW = 0.05    # 饱和下限
-
-# ── 10个维度 ID ────────────────────────────────────────────────────────────
-DIM_IDS = [
-    "cognitive", "game_theory", "economic", "dialectical",
-    "emotional", "intuitive", "moral", "social",
-    "temporal", "metacognitive"
-]
-
-_lock = Lock()
-
-
-def _get_conn():
-    os.makedirs(_DIR, exist_ok=True)
-    conn = sqlite3.connect(_DB_PATH, timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
-
+def _g():
+    os.makedirs(_DIR,exist_ok=True)
+    c=sqlite3.connect(_DB,timeout=10)
+    c.execute("PRAGMA journal_mode=WAL");return c
+def _h(t):return hashlib.sha256(t.encode()).hexdigest()[:16]
+def _n():return time.time()
 
 def init():
-    """初始化数据库表（幂等）"""
-    conn = _get_conn()
+    c=_g()
     try:
-        # 因果链 rolling buffer
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS causal_chain (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                chain_id    TEXT    NOT NULL,
-                ts          REAL    NOT NULL,
-                task_hash   TEXT    NOT NULL,
-                task_text   TEXT,
-                dimensions  TEXT,
-                outcome     REAL,
-                corrected   INTEGER DEFAULT 0,
-                notes       TEXT
-            )
-        """)
-        # 维度信念（有界更新）
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS dimension_beliefs (
-                dim_id      TEXT PRIMARY KEY,
-                belief      REAL    NOT NULL DEFAULT 0.5,
-                hit_count   INTEGER NOT NULL DEFAULT 0,
-                miss_count  INTEGER NOT NULL DEFAULT 0,
-                last_id     TEXT
-            )
-        """)
-        # 初始化10个维度的信念（如果不存在）
-        for d in DIM_IDS:
-            conn.execute(
-                "INSERT OR IGNORE INTO dimension_beliefs (dim_id, belief, hit_count, miss_count) VALUES (?, 0.5, 0, 0)",
-                (d,)
-            )
-        conn.commit()
-    finally:
-        conn.close()
+        c.execute("CREATE TABLE IF NOT EXISTS causal_chain (id INTEGER PRIMARY KEY,chain_id TEXT,ts REAL,task_hash TEXT,task_text TEXT,dimensions TEXT,outcome REAL,corrected INTEGER DEFAULT 0,notes TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS dimension_beliefs (dim_id TEXT PRIMARY KEY,belief REAL DEFAULT 0.5,hit_count INTEGER DEFAULT 0,miss_count INTEGER DEFAULT 0,last_id TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS judgment_snapshots (id INTEGER PRIMARY KEY,chain_id TEXT UNIQUE,ts REAL,task_hash TEXT,task_text TEXT,dimensions TEXT,weights TEXT,answers TEXT,confidence TEXT,complexity TEXT,emotion_label TEXT,causal_has_history INTEGER DEFAULT 0,outcome_auto REAL,corrected INTEGER DEFAULT 0)")
+        for d in DIMS:c.execute("INSERT OR IGNORE INTO dimension_beliefs (dim_id,belief) VALUES (?,0.5)",(d,))
+        c.commit()
+    finally:c.close()
 
+def snapshot_judgment(chain_id,task_text,dimensions,weights,result,complexity):
+    """Frozen Snapshot: judgment调用时立即落盘，同时记录causal_chain"""  
+    task_hash=_h(task_text);now=_n()
+    answers=result.get("answers",{});emotion=result.get("emotion",{});curiosity=result.get("curiosity",{})
+    dim_conf=result.get("dim_confidence",{});confidence={d:dim_conf.get(d,0.5) for d in dimensions}
+    emotion_label=(emotion.get("detected_emotions",[""])[0] or "") if isinstance(emotion,dict) else ""
+    causal_hist=1 if curiosity.get("has_gap") else 0
+    c=_g()
+    try:
+        c.execute("INSERT OR REPLACE INTO judgment_snapshots (chain_id,ts,task_hash,task_text,dimensions,weights,answers,confidence,complexity,emotion_label,causal_has_history) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (chain_id,now,task_hash,task_text[:500] or "",json.dumps(dimensions,ensure_ascii=False),json.dumps(weights,ensure_ascii=False),json.dumps(answers,ensure_ascii=False),json.dumps(confidence,ensure_ascii=False),complexity,emotion_label,causal_hist))
+        c.execute("INSERT INTO causal_chain (chain_id,ts,task_hash,task_text,dimensions,outcome) VALUES (?,?,?,?,?,NULL)",
+            (chain_id,now,task_hash,task_text[:300] or "",json.dumps({"dims":dimensions,"weights":weights},ensure_ascii=False)))
+        c.execute("DELETE FROM causal_chain WHERE id NOT IN (SELECT id FROM causal_chain ORDER BY ts DESC LIMIT ?)",(MAX,))
+        c.commit()
+        _log.debug(f"[snapshot] {chain_id} dims={len(dimensions)}")
+        return True
+    except Exception as e:
+        _log.warning(f"[snapshot] failed: {e}");return False
+    finally:c.close()
 
-# ── 闭环 Hook：verdict → 各子系统 ────────────────────────────────────────
+def receive_verdict(chain_id=None,task_text=None,correct=True,notes=""):
+    """接收事后验证，更新维度信念，触发三个闭环hook"""  
+    c=_g()
+    try:
+        target=None
+        if chain_id:
+            r=c.execute("SELECT id,dimensions FROM causal_chain WHERE chain_id=? AND corrected=0",(chain_id,)).fetchone()
+            if r: target=r
+        elif task_text:
+            r=c.execute("SELECT id,dimensions FROM causal_chain WHERE task_hash=? AND corrected=0 ORDER BY ts DESC LIMIT 1",(_h(task_text),)).fetchone()
+            if r: target=r
+        if not target: return {"updated":False,"reason":"no_record_found"}
+        rec_id,dims_json=target;dims_data=json.loads(dims_json);correction=1.0 if correct else -1.0;changes={}
+        for dim_id in dims_data.get("dims",[]):
+            row=c.execute("SELECT belief,hit_count,miss_count FROM dimension_beliefs WHERE dim_id=?",(dim_id,)).fetchone()
+            if not row: continue
+            b,h,m=row;delta=max(-MAXD,min(MAXD,DECAY*correction));nb=max(SL,min(SH,b+delta))
+            c.execute("UPDATE dimension_beliefs SET belief=?,hit_count=?,miss_count=?,last_id=? WHERE dim_id=?",(nb,h+(1 if correct else 0),m+(0 if correct else 1),chain_id,dim_id))
+            changes[dim_id]={"belief_before":round(b,4),"belief_after":round(nb,4),"delta":round(delta,4)}
+        c.execute("UPDATE causal_chain SET corrected=1,outcome=?,notes=? WHERE id=?",(1.0 if correct else 0.0,notes[:200],rec_id))
+        c.execute("UPDATE judgment_snapshots SET outcome_auto=?,corrected=1 WHERE chain_id=?",(1.0 if correct else 0.0,chain_id))
+        c.commit()
+        _trigger_fitness(chain_id,task_text,correct,changes)
+        _trigger_curiosity(chain_id,task_text,correct,changes)
+        # 【闭环Step1】judgment → causal_memory
+        _trigger_causal_memory(chain_id,task_text,dims_data.get("dims",[]),dims_data.get("weights",{}),correct,notes,1.0 if correct else 0.0)
+        _log.info(f"[verdict] chain={chain_id} correct={correct} dims={list(changes.keys())}")
+        return {"updated":True,"chain_id":chain_id,"changes":changes}
+    finally:c.close()
 
-def _trigger_fitness_record(chain_id: str, task_text: str,
-                              correct: bool, notes: str,
-                              changes: Dict) -> None:
-    """Hook: receive_verdict → FitnessBaseline.record_from_verdict"""
+def _trigger_fitness(chain_id,task_text,correct,changes):
     try:
         from judgment.fitness_baseline import FitnessBaseline
-        fb = FitnessBaseline()
-        fb.record_from_verdict(chain_id, task_text, correct, notes, changes)
-    except Exception:
-        pass  # 孤立失败不影响主流程
+        FitnessBaseline().record(chain_id,task_text,correct,changes)
+    except Exception as e:_log.debug(f"fitness trigger skip: {e}")
 
-
-def _trigger_curiosity_from_verdict(chain_id: str, task_text: str,
-                                     correct: bool,
-                                     changes: Optional[Dict]) -> None:
-    """Hook: receive_verdict → curiosity_engine.trigger_from_verdict
-    PAD A > 0.7 → 自由探索概率提升"""
-    try:
-        # 尝试获取 emotion_system 的 PAD 状态
-        pad_state = _get_pad_state_from_emotion(task_text, correct)
-        from curiosity.curiosity_engine import trigger_from_verdict
-        trigger_from_verdict(chain_id, task_text, correct, pad_state, changes)
-    except Exception:
-        pass  # 孤立失败不影响主流程
-
-
-def _get_pad_state_from_emotion(task_text: str, correct: bool) -> Dict[str, float]:
-    """从 emotion_system 获取当前 PAD 状态"""
+def _trigger_curiosity(chain_id,task_text,correct,changes):
     try:
         from emotion_system.emotion_system import EmotionSystem
-        es = EmotionSystem()
-        # 构造最小 judgment_result 来触发情绪检测
-        result = {"task": task_text, "dim_confidence": {}, "meta": {}}
-        es.detect_emotion(task_text, result)
-        return es.get_pad_state()
-    except Exception:
-        # fallback：基于 verdict 正确性推断 PAD
-        return {"P": 0.6 if correct else 0.3, "A": 0.6, "D": 0.5}
+        es=EmotionSystem();es.detect_emotion(task_text,{"task":task_text,"dim_confidence":{},"meta":{}});pad=es.get_pad_state()
+        from curiosity.curiosity_engine import trigger_from_verdict
+        trigger_from_verdict(chain_id,task_text,correct,pad,changes)
+    except Exception as e:_log.debug(f"curiosity trigger skip: {e}")
 
-
-# ── 记录单条判断因果链 ───────────────────────────────────────────────────────
-
-def _hash_task(text: str) -> str:
-    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
-
-
-def record_judgment(
-    task_text: str,
-    dimensions: List[str],
-    weights: Dict[str, float],
-    reasoning: Dict[str, str],
-    outcome: Optional[float] = None,
-) -> str:
+def _trigger_causal_memory(chain_id, task_text, dimensions, weights, correct, notes, outcome_value):
     """
-    记录一次判断的因果链。
-    返回 chain_id（供后续 receive_verdict 引用）。
-    """
-    chain_id = f"j_{int(time.time()*1000)}"
-    task_hash = _hash_task(task_text)
+    【闭环Step1】judgment → causal_memory
+    把判定结果写入因果事件图，形成 judgment→outcome 闭环。
 
-    conn = _get_conn()
+    Args:
+        chain_id: 判定链ID
+        task_text: 任务描述
+        dimensions: 维度列表
+        weights: 维度权重
+        correct: 是否正确
+        notes: 备注
+        outcome_value: 原始 outcome 值 (1.0/0.0)
+    """
     try:
-        conn.execute("""
-            INSERT INTO causal_chain (chain_id, ts, task_hash, task_text, dimensions, outcome)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            chain_id,
-            time.time(),
-            task_hash,
-            task_text[:500] if task_text else "",
-            json.dumps({"dims": dimensions, "weights": weights, "reasoning": reasoning}, ensure_ascii=False),
-            outcome,
-        ))
+        from causal_memory.causal_memory import record_event, check_and_trigger_self_model_update
+        event_type = "judgment_verdict"
+        description = f"判断{'正确' if correct else '错误'}：{task_text[:80]}"
+        outcome_label = "correct" if correct else "incorrect"
+        judgment_summary = {
+            "dims": dimensions,
+            "weights": weights,
+            "correct": correct,
+            "outcome_value": outcome_value,
+        }
+        tags = ["judgment", "verdict", outcome_label] + [d for d in dimensions if d]
 
-        # Rolling：超过100条删最旧的
-        conn.execute("""
-            DELETE FROM causal_chain
-            WHERE id NOT IN (
-                SELECT id FROM causal_chain ORDER BY ts DESC LIMIT ?
-            )
-        """, (MAX_CHAIN,))
+        event_id = record_event(
+            event_type=event_type,
+            description=description,
+            what_happened=f"判断{'正确' if correct else '错误'}于 {task_text[:100]}",
+            why_i_think_so=f"维度={dimensions}, 权重={weights}",
+            outcome=outcome_label,
+            judgment_summary=judgment_summary,
+            tags=tags,
+            chain_id=chain_id,
+        )
 
-        conn.commit()
-    finally:
-        conn.close()
+        # 【闭环Step2】causal_memory 内部检测 pattern 阈值 → 触发 self_model 更新
+        check_and_trigger_self_model_update(
+            task=task_text,
+            dimensions=dimensions,
+            correct=correct,
+            pattern_key=f"chain:{chain_id}",
+        )
 
+        _log.debug(f"[causal_memory] recorded verdict event_id={event_id}")
+        return event_id
+    except Exception as e:
+        _log.debug(f"[causal_memory] trigger skip: {e}")
+        return None
+
+def get_prior_adjustments()->Dict[str,float]:
+    c=_g()
+    try:return {r[0]:r[1] for r in c.execute("SELECT dim_id,belief FROM dimension_beliefs")}
+    finally:c.close()
+
+def get_recent_chains(limit=10):
+    c=_g()
+    try:return [{"chain_id":r[0],"ts":r[1],"task_text":r[2],"outcome":r[3],"corrected":bool(r[4])} for r in c.execute("SELECT chain_id,ts,task_text,outcome,corrected FROM causal_chain ORDER BY ts DESC LIMIT ?",(limit,)).fetchall()]
+    finally:c.close()
+
+def get_dimension_beliefs()->Dict[str,Dict[str,Any]]:
+    c=_g()
+    try:return {r[0]:{"belief":r[1],"hit":r[2],"miss":r[3]} for r in c.execute("SELECT dim_id,belief,hit_count,miss_count FROM dimension_beliefs")}
+    finally:c.close()
+
+# ── 后台 verdict 监听器（Auto闭环核心）───────────────────────────────
+# 监听 data/outcomes.jsonl，新outcome写入时自动触发 receive_verdict
+# 轮询间隔：2秒，连续3次空读后退出（节省资源）
+
+def _verdict_signal_listener():
+    """后台线程：监听 outcomes.jsonl，自动调用 receive_verdict"""  
+    empty_count=0
+    while not _lstop.is_set():
+        _lstop.wait(timeout=2)
+        if _lstop.is_set(): break
+        try:
+            if not os.path.exists(_OUT): empty_count+=1; continue
+            with open(_OUT,encoding="utf-8") as f:
+                lines=[l for l in f if l.strip()]
+            if not lines:
+                empty_count+=1
+                if empty_count>=3: break
+                continue
+            empty_count=0
+            last=json.loads(lines[-1])
+            # 格式：{task_text, outcome (True/False/1.0/0.0), verdict_recorded, chain_id?}
+            if last.get("verdict_recorded"): continue
+            outcome_val=last.get("outcome",True)
+            correct=bool(outcome_val) if isinstance(outcome_val,bool) else (float(outcome_val)>0.5)
+            task_text=last.get("task_text","")
+            chain_id=last.get("chain_id")
+            result=receive_verdict(chain_id=chain_id,task_text=task_text if not chain_id else None,correct=correct,notes="auto_from_outcome_tracker")
+            if result.get("updated"):
+                last["verdict_recorded"]=True
+                lines[-1]=json.dumps(last,ensure_ascii=False)+"\n"
+                with open(_OUT,"w",encoding="utf-8") as f2:
+                    f2.writelines(lines)
+                _log.info(f"[listener] verdict recorded for chain={chain_id}")
+        except Exception as e:
+            _log.debug(f"[listener] poll error: {e}")
+    _log.info("[listener] stopped")
+
+def start_verdict_listener():
+    """启动后台 verdict 监听线程（幂等）"""  
+    global _lt
+    if _lt and _lt.is_alive(): return
+    _lstop.clear()
+    _lt=threading.Thread(target=_verdict_signal_listener,daemon=True,name="verdict_listener")
+    _lt.start()
+    _log.info("[listener] started")
+
+def stop_verdict_listener():
+    """停止监听线程"""  
+    _lstop.set()
+    if _lt: _lt.join(timeout=3)
+    _log.info("[listener] stop requested")
+
+def is_listener_active()->bool:
+    return _lt is not None and _lt.is_alive()
+
+# ── record_judgment wrapper（兼容 router.py 的调用方式）───────────────
+# 旧接口: record_judgment(task_text, dimensions, weights, reasoning, outcome)
+# 新实现: 内部调用 snapshot_judgment，同时写入 causal_chain + judgment_snapshots
+def record_judgment(task_text, dimensions, weights, reasoning=None, outcome=None):
+    chain_id = f"j_{int(time.time()*1000)}"
+    dummy_result = {"answers": {}, "meta": {"reasoning": reasoning or {}}, "emotion": {}, "curiosity": {}, "dim_confidence": {}}
+    snapshot_judgment(chain_id, task_text, dimensions, weights, dummy_result, "auto")
     return chain_id
 
-
-# ── 接收事后验证信号 ────────────────────────────────────────────────────────
-
-def receive_verdict(
-    chain_id: Optional[str] = None,
-    task_text: Optional[str] = None,
-    correct: bool = True,
-    notes: str = "",
-) -> Dict[str, Any]:
-    """
-    接收事后验证信号，更新维度信念（反向修正）。
-
-    参数：
-        chain_id: 判断记录ID（优先用它定位）
-        task_text: 任务文本（当 chain_id 不可用时模糊匹配）
-        correct: 判断是否正确
-        notes: 可选备注
-
-    返回：各维度的信念变化情况
-    """
-    conn = _get_conn()
-    try:
-        # 定位目标记录
-        target = None
-        if chain_id:
-            cur = conn.execute(
-                "SELECT id, dimensions FROM causal_chain WHERE chain_id = ? AND corrected = 0",
-                (chain_id,)
-            )
-            target = cur.fetchone()
-        elif task_text:
-            h = _hash_task(task_text)
-            cur = conn.execute(
-                "SELECT id, dimensions FROM causal_chain WHERE task_hash = ? AND corrected = 0 ORDER BY ts DESC LIMIT 1",
-                (h,)
-            )
-            target = cur.fetchone()
-
-        if not target:
-            return {"updated": False, "reason": "no_record_found"}
-
-        rec_id, dims_json = target
-        dims_data = json.loads(dims_json)
-
-        # 计算信念修正
-        correction = 1.0 if correct else -1.0
-        changes = {}
-
-        for dim_id in dims_data.get("dims", []):
-            cur = conn.execute(
-                "SELECT belief, hit_count, miss_count FROM dimension_beliefs WHERE dim_id = ?",
-                (dim_id,)
-            )
-            row = cur.fetchone()
-            if not row:
-                continue
-
-            belief, hit, miss = row
-
-            # 有界更新
-            delta = _DECAY * correction
-            delta = max(-_MAX_DELTA, min(_MAX_DELTA, delta))
-            new_belief = belief + delta
-
-            # 饱和保护
-            new_belief = max(_SATURATE_LOW, min(_SATURATE_HIGH, new_belief))
-
-            new_hit = hit + (1 if correct else 0)
-            new_miss = miss + (0 if correct else 1)
-
-            conn.execute(
-                "UPDATE dimension_beliefs SET belief=?, hit_count=?, miss_count=?, last_id=? WHERE dim_id=?",
-                (new_belief, new_hit, new_miss, chain_id, dim_id)
-            )
-
-            changes[dim_id] = {
-                "belief_before": round(belief, 4),
-                "belief_after": round(new_belief, 4),
-                "delta": round(delta, 4),
-                "hit": new_hit,
-                "miss": new_miss,
-            }
-
-        # 标记已修正
-        conn.execute(
-            "UPDATE causal_chain SET corrected = 1, notes = ? WHERE id = ?",
-            (notes[:200], rec_id)
-        )
-        conn.commit()
-
-        # ── 三个闭环 hook（在 conn.close() 之前，finally 之前）─────────────
-        # 1. FitnessBaseline ← verdict 记录
-        _trigger_fitness_record(chain_id, task_text, correct, notes, changes)
-        # 2. Curiosity       ← 情绪驱动好奇心
-        _trigger_curiosity_from_verdict(chain_id, task_text, correct, changes)
-        # 3. CausalMemory    ← 事后验证反馈（通过 closed_loop 作为唯一数据源）
-
-        return {"updated": True, "chain_id": chain_id, "changes": changes}
-    finally:
-        conn.close()
-
-
-# ── 读取信念调整值 ─────────────────────────────────────────────────────────
-
-def get_prior_adjustments() -> Dict[str, float]:
-    """
-    返回各维度的先验调整系数（0.0~1.5）。
-    1.0 = 无调整；>1.0 = 加权增强；<1.0 = 降低权重。
-    用于在 check10d 时调整维度权重。
-    """
-    conn = _get_conn()
-    try:
-        cur = conn.execute("SELECT dim_id, belief, hit_count, miss_count FROM dimension_beliefs")
-        rows = cur.fetchall()
-    finally:
-        conn.close()
-
-    adjustments = {}
-    for dim_id, belief, hit, miss in rows:
-        # 信念 >0.5：该维度历史判断质量好 → 加权
-        # 信念 <0.5：该维度历史判断质量差 → 降权
-        # map [0,1] → [0.7, 1.3]
-        if hit + miss < 3:
-            adjustments[dim_id] = 1.0  # 样本不足，不调整
-        else:
-            adjustments[dim_id] = 0.7 + 0.6 * belief  # 0.7~1.3
-    return adjustments
-
-
-# ── 查历史因果链 ──────────────────────────────────────────────────────────
-
-def get_recent_chains(limit: int = 5) -> List[Dict]:
-    """返回最近的因果链记录（供调试/回顾）"""
-    conn = _get_conn()
-    try:
-        cur = conn.execute(
-            "SELECT chain_id, ts, task_text, dimensions, outcome, corrected FROM causal_chain ORDER BY ts DESC LIMIT ?",
-            (limit,)
-        )
-        rows = cur.fetchall()
-    finally:
-        conn.close()
-
-    result = []
-    for chain_id, ts, task_text, dims_json, outcome, corrected in rows:
-        dims_data = json.loads(dims_json) if dims_json else {}
-        result.append({
-            "chain_id": chain_id,
-            "ts": ts,
-            "task": (task_text or "")[:100],
-            "dimensions": dims_data.get("dims", []),
-            "outcome": outcome,
-            "corrected": bool(corrected),
-        })
-    return result
-
-
-def get_belief_summary() -> Dict[str, Dict]:
-    """返回各维度信念概览"""
-    conn = _get_conn()
-    try:
-        cur = conn.execute("SELECT dim_id, belief, hit_count, miss_count FROM dimension_beliefs")
-        rows = cur.fetchall()
-    finally:
-        conn.close()
-
-    return {
-        dim_id: {
-            "belief": round(belief, 4),
-            "hit": hit,
-            "miss": miss,
-            "total": hit + miss,
-            "accuracy": round(hit / (hit + miss), 3) if (hit + miss) > 0 else None,
-        }
-        for dim_id, belief, hit, miss in rows
-    }
-
-
-
-
-
-       
+# 兼容别名
+record_judgment = record_judgment  # 已经是新函数

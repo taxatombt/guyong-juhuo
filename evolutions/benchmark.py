@@ -122,6 +122,104 @@ class SimulatedRunner(BaseRunner):
         )
 
 
+class RealRunner(BaseRunner):
+    """
+    真实运行器 — 使用 juhuo judgment 系统执行实际评测。
+
+    Phase 1（无 skill）：直接调用 check10d(task_text)
+    Phase 2（有 skill）：先检索相关 skill，将 skill context 注入 task，再调用 check10d
+
+    completion_rate = 平均维度置信度（0.0~1.0）
+    tokens = input_tokens + output_tokens（估算）
+    """
+
+    def __init__(self):
+        # 延迟导入，避免循环依赖
+        self._judgment = None
+        self._skill_storage = None
+
+    @property
+    def judgment(self):
+        if self._judgment is None:
+            from judgment import check10d
+            self._judgment = check10d
+        return self._judgment
+
+    @property
+    def skill_storage(self):
+        if self._skill_storage is None:
+            from hermes_evolution.skill_storage import SkillStorage
+            self._skill_storage = SkillStorage()
+        return self._skill_storage
+
+    def _inject_skill_context(self, task_text: str, skills: List[str]) -> str:
+        """将 skill 列表注入为 task 前缀上下文。"""
+        if not skills:
+            return task_text
+
+        ctx_parts = ["[Skill Context]"]
+        for skill_name in skills:
+            skill = self.skill_storage.get_skill(skill_name)
+            if skill:
+                ctx_parts.append(f"## {skill_name}")
+                ctx_parts.append(skill.get("description", ""))
+                triggers = skill.get("triggers", [])
+                if triggers:
+                    ctx_parts.append(f"触发词: {', '.join(triggers[:5])}")
+        ctx_parts.append(f"\n[Task]\n{task_text}")
+        return "\n".join(ctx_parts)
+
+    def _estimate_tokens(self, task_text: str, result: dict) -> int:
+        """估算本次调用的 token 消耗。"""
+        import json
+        input_str = json.dumps(result.get("reasoning", ""), ensure_ascii=False)
+        output_str = json.dumps(result, ensure_ascii=False)
+        # 粗估：中文约 2 字符/token，英文约 4 字符/token
+        return len(input_str) // 3 + len(output_str) // 3
+
+    def _compute_completion(self, result: dict) -> float:
+        """从 judgment 结果计算 completion_rate。"""
+        dims = result.get("dimensions", {})
+        if not dims:
+            return 0.5
+        scores = []
+        for dim_name, dim_data in dims.items():
+            if isinstance(dim_data, dict):
+                score = dim_data.get("score", 0.5)
+            else:
+                score = float(dim_data) if dim_data else 0.5
+            scores.append(score)
+        return sum(scores) / len(scores) if scores else 0.5
+
+    def run(self, task_id: str, task_text: str, skills: List[str]) -> PhaseResult:
+        """执行一次 judgment 评测。"""
+        import time
+        start = time.perf_counter()
+
+        # Phase 2：注入 skill context
+        actual_task = self._inject_skill_context(task_text, skills) if skills else task_text
+
+        # 调用真实 judgment
+        result = self.judgment(
+            task_text=actual_task,
+            agent_profile=None,  # 使用默认 profile
+            complexity="auto",
+        )
+
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        tokens = self._estimate_tokens(task_text, result)
+        completion = self._compute_completion(result)
+        success = completion > 0.4 and result.get("final_verdict") != "无法判断"
+
+        return PhaseResult(
+            task_id=task_id,
+            tokens=tokens,
+            completion_rate=completion,
+            duration_ms=duration_ms,
+            success=success,
+        )
+
+
 # ─── Benchmark 主类 ──────────────────────────────────────────────────────────
 
 class EvolutionMetrics:

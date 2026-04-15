@@ -1,6 +1,19 @@
 {
   "biases": {},
-  "strengths": {},
-  "total_decisions": 4,
-  "updated_at": "2026-04-11T05:50:06.157258"
+  "strengths": {
+    "cognitive": {
+      "dimension": "cognitive",
+      "correct_count": 1,
+      "last_used": "2026-04-15T02:36:25.397894",
+      "description": "在 cognitive 维度判断通常准确"
+    },
+    "emotional": {
+      "dimension": "emotional",
+      "correct_count": 1,
+      "last_used": "2026-04-15T02:36:25.397894",
+      "description": "在 emotional 维度判断通常准确"
+    }
+  },
+  "total_decisions": 1,
+  "updated_at": "2026-04-15T02:36:25.397894"
 }

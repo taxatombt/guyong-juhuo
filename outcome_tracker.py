@@ -129,3 +129,30 @@ def record_outcome_with_feedback(record_id, outcome_type, outcome_data, dims_che
                     pass
 
     return outcome_type
+
+# ── Auto闭环接口 ─────────────────────────────────────────────────────
+# 写入 verdict_signal，供 closed_loop.verdict_listener 自动消费
+# 格式：{task_text, outcome, chain_id, verdict_recorded=False}
+
+def record_judgment_outcome(chain_id, task_text, outcome):
+    """
+    记录判断结果到 outcomes.jsonl，触发 auto闭环监听器。
+    outcome: True(正确) / False(错误) / 1.0/0.0
+    """  
+    _e()
+    outcomes=_l()
+    correct_bool=bool(outcome) if isinstance(outcome,bool) else (float(outcome)>0.5)
+    record={
+        "record_id": chain_id,
+        "task_text": task_text,
+        "outcome": correct_bool,
+        "chain_id": chain_id,
+        "verdict_recorded": False,
+        "created_at": _dt.now().isoformat(),
+        "resolved": True,
+    }
+    # 避免重复 chain_id
+    outcomes=[o for o in outcomes if o.get("chain_id")!=chain_id]
+    outcomes.append(record)
+    _s(outcomes)
+    return correct_bool
