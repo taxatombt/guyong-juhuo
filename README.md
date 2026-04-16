@@ -6,15 +6,32 @@
 
 ---
 
-## 🚀 快速开始
+## 📥 下载方式
 
-### 下载地址
+### 方式一：下载项目压缩包（推荐）
 
-点击 **Code** → **Download ZIP**，或从 [Releases](https://github.com/taxatombt/guyong-juhuo/releases) 下载
+1. 点击 **Code** → **Download ZIP**
+2. 解压后找到 **`juhuo.exe`**（100MB）
+3. 双击 `juhuo.exe` 运行
 
-下载后找到 **`juhuo.exe`**（100MB）
+> 项目压缩包包含完整源码和exe文件
 
-### 使用方法
+---
+
+### 方式二：单独下载exe
+
+从 Releases 页面下载：
+```
+https://github.com/taxatombt/guyong-juhuo/releases
+```
+
+下载 `juhuo.exe` 即可
+
+> 适合只想运行程序、不需要源码的用户
+
+---
+
+## 🚀 使用方法
 
 1. **双击 `juhuo.exe`**
 2. 等待自动打开浏览器
@@ -24,26 +41,25 @@
 
 ---
 
-## 📖 使用指南
+## 📖 使用说明
 
-### 1. 打开网页控制台
+### 网页控制台
 
-运行 `juhuo.exe` 后，浏览器自动打开 `http://localhost:9876`
+运行后浏览器自动打开 `http://localhost:9876`
 
-可以看到：
+功能：
 - **判断系统** - 输入问题，获取十维判断结果
 - **记忆系统** - 查看因果记忆
 - **好奇清单** - 查看今日好奇任务
 - **Fitness** - 查看个人一致性评分
 
-### 2. 命令行判断
+### 命令行判断
 
 ```cmd
-# 如果在同一目录
 python cli.py "我应该接受这个offer吗"
 ```
 
-### 3. 停止程序
+### 停止程序
 
 在命令行窗口按 **Ctrl+C**
 
@@ -64,13 +80,10 @@ python cli.py "我应该接受这个offer吗"
 ## ❓ 常见问题
 
 ### Q: 提示"Python not found"
-**A**: 不需要Python！`juhuo.exe` 已经包含Python运行环境。
+**A**: 不需要Python！`juhuo.exe` 已包含Python运行环境。
 
 ### Q: 防火墙提示
-**A**: 点击"允许"即可，这是正常的程序运行提示。
-
-### Q: 端口9876被占用
-**A**: 关闭占用9876端口的程序，或联系我们修改端口。
+**A**: 点击"允许"即可。
 
 ### Q: 无法打开浏览器
 **A**: 手动打开浏览器访问 `http://localhost:9876`
@@ -86,41 +99,6 @@ python cli.py "我应该接受这个offer吗"
 
 ---
 
-## 📁 文件说明
-
-| 文件 | 说明 |
-|------|------|
-| `juhuo.exe` | 完整打包版（推荐下载） |
-| `setup.iss` | Inno Setup脚本（用于重新打包） |
-| `launcher.bat` | 启动脚本（源码版使用） |
-| `INSTALL_GUIDE.md` | 详细安装指南 |
-
----
-
-## 🔧 开发者信息
-
-### 从源码运行
-
-```bash
-# 克隆项目
-git clone https://github.com/taxatombt/guyong-juhuo.git
-cd guyong-juhuo
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 运行
-python web_console.py
-# 或
-launcher.bat
-```
-
-### 重新打包
-
-用 Inno Setup 打开 `setup.iss`，编译生成新的安装包。
-
----
-
 ## 铁律
 
 > **模拟特定具体个体，最终在判断力上超越人类整体。**
@@ -130,7 +108,7 @@ launcher.bat
 ## 技术支持
 
 - GitHub: https://github.com/taxatombt/guyong-juhuo
-- Issues: https://github.com/taxatombt/guyong-juhuo/issues
+- Releases: https://github.com/taxatombt/guyong-juhuo/releases
 
 ---
 
