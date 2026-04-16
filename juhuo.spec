@@ -1,11 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
 import sys, os
 
-# 获取项目根目录
 ROOT = os.getcwd()
+SSL_DLL = r'E:\qwenpaw\Library\bin\libssl-3-x64.dll'
 
-# 收集所有子目录的数据
+# 收集子目录数据
 datas = []
 dirs = ['judgment', 'causal_memory', 'curiosity', 'self_model', 
         'emotion_system', 'feedback_system', 'goal_system', 
@@ -17,10 +16,15 @@ for d in dirs:
     if os.path.isdir(src):
         datas.append((src, d))
 
+# 添加SSL DLL到binaries
+binaries = []
+if os.path.exists(SSL_DLL):
+    binaries.append((SSL_DLL, '.'))
+
 a = Analysis(
     ['juhuo.py'],
     pathex=[ROOT],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=['fastapi', 'uvicorn', 'pydantic', 'python_multipart'],
     hookspath=[],
