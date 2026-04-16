@@ -52,6 +52,9 @@ from llm_adapter.base import CompletionRequest
 # P0改进：因果推断引擎 - 给judgment提供推理底座
 from causal_memory.causal_inference import CausalInferenceEngine, infer_causal_chain
 
+# P3改进：十维推理规则引擎
+from .judgment_rules import rule_based_precheck, get_rule_scores
+
 # P1改进：验证层
 from .verifier import JudgmentVerifier
 _verifier = None
@@ -276,6 +279,10 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
     if causal_result["summary"]:
         task_text = causal_memory.inject_to_judgment_input(task_text)
     
+    # P3改进：规则预检 - 先用规则快速判断，降低LLM调用
+    rule_precheck = rule_based_precheck(original_task)
+    rule_scores = rule_precheck["rule_scores"]
+    
     if complexity == "auto":
         complexity = _judge_complexity(task_text)
 
@@ -360,8 +367,14 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             "similar_events": causal_result["similar_events"],
             "causal_chains": causal_result["causal_chains"],
             "summary": causal_result["summary"],
-            # P0改进：因果推断结果
-            "causal_inference": None,  # 懒加载
+            "causal_inference": None,
+        },
+        # P3改进：规则预检结果
+        "rule_precheck": {
+            "needs_llm": rule_precheck["needs_llm"],
+            "llm_dimensions": rule_precheck["llm_dimensions"],
+            "low_score_dimensions": rule_precheck["low_score_dimensions"],
+            "all_passed": rule_precheck["all_passed"],
         },
         "self_model": {
             "warnings": self_warnings,
