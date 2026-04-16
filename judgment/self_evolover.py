@@ -17,10 +17,10 @@ from typing import Dict, List, Optional
 
 # 配置
 BIAS_THRESHOLD = 0.7
-BIAS_CONSECUTIVE = 3
+BIAS_CONSECUTIVE = 2  # 连续2次错误就触发（降低阈值以便测试）
 ACCURACY_THRESHOLD = 0.4
-MIN_SAMPLES = 5
-COOLDOWN_HOURS = 24
+MIN_SAMPLES = 3  # 至少3个样本即可触发
+COOLDOWN_HOURS = 1  # 冷却1小时（测试用）
 
 # 数据库
 DB_PATH = Path(__file__).parent.parent / "data" / "judgment_data" / "juhuo_judgment.db"
@@ -91,27 +91,26 @@ def sync_to_self_model(chain_id: str) -> Optional[Dict]:
 def check_trigger() -> Dict:
     """检查是否触发进化"""
     with get_conn() as conn:
-        # 连续高偏差检查 - 使用judgment_records
+        # 连续错误检查 - 优先使用 verdict_outcomes（实际有数据的表）
         recent = conn.execute("""
-            SELECT * FROM judgment_records WHERE outcome IN ('坏','错','wrong','bad','')
-            ORDER BY created_at DESC LIMIT 6
+            SELECT v.*, j.dimensions 
+            FROM verdict_outcomes v
+            LEFT JOIN judgments j ON v.chain_id = j.chain_id
+            ORDER BY v.created_at DESC LIMIT 6
         """).fetchall()
         
-        consecutive = 0
+        # 检查连续错误
+        consecutive_wrong = 0
         for row in recent[:3]:
-            # 从verdict表获取deviation
-            v = conn.execute(
-                "SELECT deviation FROM verdict WHERE chain_id=?", (row["chain_id"],)
-            ).fetchone()
-            if v and v["deviation"] and v["deviation"] >= BIAS_THRESHOLD:
-                consecutive += 1
+            if row["correct"] == 0 or row["correct"] is False:
+                consecutive_wrong += 1
         
-        if consecutive >= 3:
-            return {"triggered": True, "reason": "连续3次偏差超过0.7", "type": "consecutive_bias"}
+        if consecutive_wrong >= BIAS_CONSECUTIVE:
+            return {"triggered": True, "reason": f"连续{consecutive_wrong}次判断错误", "type": "consecutive_wrong"}
         
-        # 维度准确率检查
+        # 维度准确率检查（如果样本够多）
         dim = conn.execute("""
-            SELECT * FROM dimension_stats WHERE total_count>=5 ORDER BY accuracy ASC LIMIT 1
+            SELECT * FROM dimension_stats WHERE total_count>=3 ORDER BY accuracy ASC LIMIT 1
         """).fetchone()
         
         if dim and dim["accuracy"] <= ACCURACY_THRESHOLD:
@@ -136,23 +135,22 @@ def check_trigger() -> Dict:
 def get_cases() -> List[Dict]:
     """获取历史案例用于规则训练"""
     with get_conn() as conn:
-        # 优先使用judgment_records
+        # 优先使用 verdict_outcomes（实际有数据的表）
         rows = conn.execute("""
-            SELECT r.*, v.deviation, v.accuracy as verdict_accuracy
-            FROM judgment_records r
-            LEFT JOIN verdict v ON r.chain_id = v.chain_id
-            WHERE r.outcome IS NOT NULL
-            ORDER BY r.created_at DESC LIMIT 100
+            SELECT v.chain_id, v.task_text, v.correct as outcome, v.created_at,
+                   j.dimensions, j.weights
+            FROM verdict_outcomes v
+            LEFT JOIN judgments j ON v.chain_id = j.chain_id
+            ORDER BY v.created_at DESC LIMIT 100
         """).fetchall()
         
         if not rows:
-            # 备选：使用judgments + verdict_outcomes
+            # 备选：使用 judgment_records
             rows = conn.execute("""
-                SELECT j.*, vo.correct as outcome, v.deviation
-                FROM judgments j
-                LEFT JOIN verdict_outcomes vo ON j.chain_id = vo.chain_id
-                LEFT JOIN verdict v ON j.chain_id = v.chain_id
-                ORDER BY j.created_at DESC LIMIT 100
+                SELECT r.*, j.dimensions, j.weights
+                FROM judgment_records r
+                LEFT JOIN judgments j ON r.chain_id = j.chain_id
+                ORDER BY r.created_at DESC LIMIT 100
             """).fetchall()
         
         return [dict(row) for row in rows]
@@ -217,6 +215,57 @@ def compare(old_rules: Dict, new_rules: Dict, cases: List[Dict]) -> Dict:
         "improvement": new_s - old_s
     }
 
+# 5.5 应用进化后的规则（新增）
+def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
+    """将进化后的规则应用到 dynamic_weights.py 和 self_model.json"""
+    success = True
+    
+    # 1. 写入 self_model.json
+    try:
+        from self_model.self_model import load_model, save_model
+        model = load_model()
+        # 更新权重
+        if not hasattr(model, 'weights'):
+            model.weights = {}
+        model.weights.update(new_weights)
+        save_model(model)
+        print(f"[Self-Evolver] 已更新 self_model.json: {new_weights}")
+    except Exception as e:
+        print(f"[Self-Evolver] self_model.json 更新失败: {e}")
+        success = False
+    
+    # 2. 写入 evolutions/evolved_weights.json（动态权重备份）
+    try:
+        import os
+        evol_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "evolutions")
+        os.makedirs(evol_dir, exist_ok=True)
+        evol_file = os.path.join(evol_dir, "evolved_weights.json")
+        
+        # 读取旧文件
+        old_evolved = {}
+        if os.path.exists(evol_file):
+            with open(evol_file, "r", encoding="utf-8") as f:
+                old_evolved = json.load(f)
+        
+        # 追加新进化记录
+        evol_record = {
+            "timestamp": datetime.now().isoformat(),
+            "weights": new_weights,
+        }
+        history = old_evolved.get("history", [])
+        history.append(evol_record)
+        # 只保留最近10次
+        history = history[-10:]
+        
+        with open(evol_file, "w", encoding="utf-8") as f:
+            json.dump({"current": new_weights, "history": history}, f, ensure_ascii=False, indent=2)
+        print(f"[Self-Evolver] 已写入 evolutions/evolved_weights.json")
+    except Exception as e:
+        print(f"[Self-Evolver] evolutions/evolved_weights.json 更新失败: {e}")
+        success = False
+    
+    return success
+
 # 6. 主闭环
 def run_evolution_cycle() -> Dict:
     """执行完整的Self-Evolver闭环"""
@@ -236,9 +285,13 @@ def run_evolution_cycle() -> Dict:
     result["triggered"] = True
     
     cases = get_cases()
-    if len(cases) < 5:
+    # 过滤掉没有 dimensions 的案例
+    valid_cases = [c for c in cases if c.get("dimensions")]
+    if len(valid_cases) < MIN_SAMPLES:
         result["status"] = "insufficient_samples"
+        result["reason"] = f"有效案例{len(valid_cases)}个，需要{MIN_SAMPLES}个"
         return result
+    cases = valid_cases
     
     try:
         from self_model.self_model import load_model
@@ -264,7 +317,19 @@ def run_evolution_cycle() -> Dict:
         )
         conn.commit()
     
-    result["status"] = "completed"
+    # 【关键】如果新规则更好，应用它！
+    if comp["winner"] == "new" and comp.get("improvement", 0) > 0.05:
+        applied = apply_evolved_weights(new_rules["weights"])
+        result["applied"] = applied
+        if applied:
+            result["status"] = "evolved"
+            print(f"[Self-Evolver] SUCCESS: New rules applied! Improvement: {comp.get('improvement', 0):.2%}")
+        else:
+            result["status"] = "apply_failed"
+    else:
+        result["status"] = "completed"
+        result["applied"] = False
+    
     return result
 
 if __name__ == "__main__":

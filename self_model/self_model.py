@@ -85,6 +85,7 @@ class SelfModel:
     """自我模型"""
     biases: Dict[str, KnownBias] = field(default_factory=dict)
     strengths: Dict[str, Strength] = field(default_factory=dict)
+    weights: Dict[str, float] = field(default_factory=dict)  # 进化后的维度权重
     total_decisions: int = 0
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -92,6 +93,7 @@ class SelfModel:
         return {
             "biases": {k: v.to_dict() for k, v in self.biases.items()},
             "strengths": {k: v.to_dict() for k, v in self.strengths.items()},
+            "weights": self.weights,
             "total_decisions": self.total_decisions,
             "updated_at": self.updated_at,
         }
@@ -101,6 +103,7 @@ class SelfModel:
         model = cls()
         model.total_decisions = data.get("total_decisions", 0)
         model.updated_at = data.get("updated_at", datetime.now().isoformat())
+        model.weights = data.get("weights", {})  # 支持权重字段
         
         for dim, bias_data in data.get("biases", {}).items():
             model.biases[dim] = KnownBias(

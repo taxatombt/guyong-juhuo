@@ -1,0 +1,19 @@
+{
+  "current": {
+    "cognitive": 0.75,
+    "game_theory": 0.75,
+    "安全性": 0.75,
+    "效率": 0.75
+  },
+  "history": [
+    {
+      "timestamp": "2026-04-17T00:00:12.919560",
+      "weights": {
+        "cognitive": 0.75,
+        "game_theory": 0.75,
+        "安全性": 0.75,
+        "效率": 0.75
+      }
+    }
+  ]
+}

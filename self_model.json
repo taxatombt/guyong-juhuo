@@ -14,6 +14,12 @@
       "description": "在 emotional 维度判断通常准确"
     }
   },
+  "weights": {
+    "cognitive": 0.75,
+    "game_theory": 0.75,
+    "安全性": 0.75,
+    "效率": 0.75
+  },
   "total_decisions": 2,
-  "updated_at": "2026-04-16T20:59:50.891977"
+  "updated_at": "2026-04-17T00:00:12.916559"
 }

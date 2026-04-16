@@ -241,6 +241,50 @@ python cli.py "你的问题"
 - 准确率阈值：0.4（某维度低于此值触发）
 - 冷却时间：24小时（避免频繁重训）
 
+### 进化机制
+
+```
+判断完成 → verdict_outcomes 表记录
+                ↓
+    check_trigger() 检查阈值
+                ↓
+    触发 → get_cases() 获取历史案例
+                ↓
+    compute_new_weights() 计算新权重
+                ↓
+    compare() 新旧规则对比
+                ↓
+    新规则更好 → apply_evolved_weights()
+                    ↓
+            self_model.json + evolved_weights.json
+                    ↓
+            下次判断使用新权重
+```
+
+### CLI 命令
+
+```bash
+# 十维判断
+python cli.py "要不要辞职创业"
+
+# 查看判断统计
+python cli.py --stats
+
+# 查看历史
+python cli.py --history
+
+# 运行 Self-Evolver 闭环
+python cli.py hub evolver
+
+# 查看好奇心清单
+python cli.py curiosity list
+python cli.py curiosity add "你的探索问题"
+python cli.py curiosity close 1 answer "探索答案"
+
+# 查看维度准确率
+python cli.py --lessons
+```
+
 ---
 
 ## 📁 文件说明
