@@ -1,9 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys, os
-
 ROOT = os.getcwd()
 
-# 收集子目录数据
 datas = []
 dirs = ['judgment', 'causal_memory', 'curiosity', 'self_model', 
         'emotion_system', 'feedback_system', 'goal_system', 
@@ -15,6 +13,11 @@ for d in dirs:
     if os.path.isdir(src):
         datas.append((src, d))
 
+# 添加HTML模板
+html_file = os.path.join(ROOT, 'web_console.html')
+if os.path.exists(html_file):
+    datas.append((html_file, '.'))
+
 a = Analysis(
     ['juhuo.py'],
     pathex=[ROOT],
@@ -24,7 +27,6 @@ a = Analysis(
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
     console=True,
 )
 
@@ -37,6 +39,6 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='juhuo',
+    name='juhuo2',
     console=True,
 )

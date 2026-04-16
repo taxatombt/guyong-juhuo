@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Juhuo Console</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Segoe UI,sans-serif;background:#1a1a2e;color:#eee;line-height:1.6}
+.sidebar{width:220px;background:#16213e;position:fixed;top:0;left:0;bottom:0;padding:20px 0}
+.sidebar h1{color:#e94560;font-size:24px;text-align:center;padding:10px;margin-bottom:30px}
+.nav-item{padding:14px 20px;cursor:pointer;color:#888;font-size:14px}
+.nav-item:hover,.nav-item.active{background:#1f4068;color:#fff}
+.content{margin-left:220px;padding:30px;min-height:100vh}
+.page{display:none}
+.page.active{display:block}
+h2{color:#fff;margin-bottom:20px;font-size:22px}
+.card{background:#16213e;border-radius:12px;padding:24px;margin-bottom:20px}
+textarea{width:100%;padding:15px;border-radius:8px;border:1px solid #333;background:#0f0f23;color:#fff;font-size:14px;resize:vertical;min-height:100px;font-family:inherit}
+textarea:focus{outline:none;border-color:#e94560}
+.btn{background:#e94560;color:#fff;border:none;padding:12px 28px;border-radius:8px;cursor:pointer;margin-top:12px;font-size:14px}
+.btn:hover{background:#d63650}
+.result{background:#0f0f23;border-radius:8px;padding:15px;margin-top:15px;min-height:60px}
+pre{white-space:pre-wrap;word-break:break-all;font-family:Consolas,monospace;font-size:13px}
+.dimension{display:inline-block;padding:4px 10px;border-radius:4px;margin:3px;font-size:12px}
+.high{background:#e94560}.medium{background:#f39c12}.low{background:#27ae60}
+.info{color:#888;font-size:13px;margin-top:15px}
+</style>
+</head>
+<body>
+<div class="sidebar">
+<h1>Juhuo</h1>
+<div class="nav-item active" onclick="navigate('chat',this)">Chat</div>
+<div class="nav-item" onclick="navigate('judgment',this)">Judgment</div>
+<div class="nav-item" onclick="navigate('memory',this)">Memory</div>
+<div class="nav-item" onclick="navigate('fitness',this)">Fitness</div>
+<div class="nav-item" onclick="navigate('status',this)">Status</div>
+</div>
+<div class="content">
+<div id="page-chat" class="page active">
+<h2>Chat</h2>
+<div class="card">
+<textarea id="chatInput" placeholder="Type your message..."></textarea>
+<button class="btn" onclick="sendChat()">Send</button>
+<div class="result" id="chatResult" style="display:none"></div>
+</div>
+</div>
+<div id="page-judgment" class="page">
+<h2>10D Judgment</h2>
+<p class="info">Cognitive / Game / Economy / Dialogue / Emotion / Intuition / Moral / Social / Temporal / Meta</p>
+<div class="card">
+<textarea id="judgeInput" placeholder="Enter your decision question..."></textarea>
+<button class="btn" onclick="runJudgment()">Analyze</button>
+<div class="result" id="judgeResult" style="display:none"></div>
+</div>
+</div>
+<div id="page-memory" class="page">
+<h2>Causal Memory</h2>
+<div class="card">
+<div id="memoryResult">Loading...</div>
+</div>
+</div>
+<div id="page-fitness" class="page">
+<h2>Fitness Score</h2>
+<div class="card">
+<div id="fitnessResult">Loading...</div>
+</div>
+</div>
+<div id="page-status" class="page">
+<h2>System Status</h2>
+<div class="card">
+<div id="statusResult"></div>
+</div>
+</div>
+</div>
+<script>
+function navigate(page, el){
+document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+document.getElementById('page-'+page).classList.add('active');
+document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+el.classList.add('active');
+if(page==='memory')loadMemory();
+if(page==='fitness')loadFitness();
+if(page==='status')loadStatus();
+}
+async function sendChat(){
+var msg=document.getElementById('chatInput').value;
+var res=document.getElementById('chatResult');
+if(!msg.trim())return;
+res.style.display='block'; res.innerHTML='<pre>Thinking...</pre>';
+var r=await fetch('/api/chat',{method:'POST',body:msg,headers:{'Content-Type':'text/plain'}});
+res.innerHTML='<pre>'+await r.text()+'</pre>';
+}
+async function runJudgment(){
+var q=document.getElementById('judgeInput').value;
+var res=document.getElementById('judgeResult');
+if(!q.trim())return;
+res.style.display='block'; res.innerHTML='<pre>Analyzing 10 dimensions...</pre>';
+var r=await fetch('/api/judgment',{method:'POST',body:q,headers:{'Content-Type':'text/plain'}});
+var d=await r.json();
+var html='<pre>Question: '+d.question+'\n\n';
+html+='Dimensions:\n';
+for(var k in d.dimensions){
+var v=d.dimensions[k];
+var cls=v>=0.7?'high':v>=0.4?'medium':'low';
+html+='  '+k+': <span class="dimension '+cls+'">'+(v*100).toFixed(0)+'%</span>\n';
+}
+html+='\nSummary: '+d.summary+'</pre>';
+res.innerHTML=html;
+}
+async function loadMemory(){
+var r=await fetch('/api/memory');
+var d=await r.json();
+document.getElementById('memoryResult').innerHTML='<pre>Total Records: '+d.records+'\nPath: '+d.path+'</pre>';
+}
+async function loadFitness(){
+var r=await fetch('/api/fitness');
+var d=await r.json();
+document.getElementById('fitnessResult').innerHTML='<pre>Fitness Score: '+d.score+'\nStatus: '+d.status+'</pre>';
+}
+async function loadStatus(){
+var r=await fetch('/api/status');
+var d=await r.json();
+var html='<pre>';
+for(var k in d)html+=k+': '+d[k]+'\n';
+html+='</pre>';
+document.getElementById('statusResult').innerHTML=html;
+}
+loadStatus();
+</script>
+</body>
+</html>
