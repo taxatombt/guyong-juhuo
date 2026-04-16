@@ -164,12 +164,15 @@ class CuriositySystem:
         from curiosity import curiosity_engine, CuriosityEngine
         from curiosity import trigger_from_low_confidence, trigger_from_causal_mismatch
         from curiosity import full_report, get_top_open, get_daily_list
+        from curiosity.curiosity_engine import evolve_from_judgment, get_context_for_judgment
         self._engine = curiosity_engine
         self._trigger_low = trigger_from_low_confidence
         self._trigger_causal = trigger_from_causal_mismatch
         self._full_report = full_report
         self._top_open = get_top_open
         self._daily = get_daily_list
+        self._evolve_from_judgment = evolve_from_judgment
+        self._get_context = get_context_for_judgment
 
     def trigger_from_low_confidence(self, judgment_result: dict) -> Optional[dict]:
         """根据判断结果低置信度触发好奇心探索。"""
@@ -190,6 +193,16 @@ class CuriositySystem:
     def daily_trigger_count(self) -> int:
         """今日触发次数。"""
         return len(self._daily())
+
+    # P1改进：判断塑造好奇心
+    def evolve_from_judgment(self, judgment_result: dict) -> None:
+        """根据判断结果调整好奇心优先级"""
+        self._evolve_from_judgment(judgment_result)
+
+    # P1改进：好奇心驱动判断
+    def get_context_for_judgment(self, task_text: str) -> str:
+        """为判断提供好奇上下文"""
+        return self._get_context(task_text)
 
 
 class CausalMemorySystem:
@@ -824,12 +837,21 @@ class Juhuo:
     def think(self, input_text: str) -> dict:
         """
         完整思考流程：判断 → 好奇心检测 → 元认知复盘。
+        
+        P1改进：判断塑造好奇心，好奇心驱动判断
         """
+        # P1：好奇心驱动判断 - 获取好奇上下文
+        curiosity_context = self.curiosity.get_context_for_judgment(input_text)
+        
+        # 判断（带好奇上下文）
         result = self.judgment.check10d(input_text)
 
         # 好奇心检测
         triggered = self.curiosity.trigger_from_low_confidence(result)
         result["_curiosity_triggered"] = triggered
+        
+        # P1：判断塑造好奇心 - 根据结果调整好奇优先级
+        self.curiosity.evolve_from_judgment(result)
 
         return result
 

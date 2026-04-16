@@ -36,6 +36,7 @@ from .metacognitive import (
     metacognitive_self_check,
     get_bias_checklist,
 )
+from .verifier import JudgmentVerifier, verify_judgment
 
 __all__ = [
     'check10d',

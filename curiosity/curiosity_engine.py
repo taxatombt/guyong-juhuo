@@ -664,6 +664,63 @@ def trigger_from_low_confidence(judgment_result, current_task=None) -> Optional[
     )
 
 
+# P1改进：判断塑造好奇心
+def evolve_from_judgment(judgment_result) -> None:
+    """
+    P1改进：判断结果反哺好奇心引擎
+    
+    判断完成后，根据判断结果调整好奇心优先级：
+    - 高权重维度的缺口 → 提高探索优先级
+    - 低置信度维度 → 触发新的好奇项
+    """
+    engine = CuriosityEngine()
+    
+    weights = judgment_result.get("weights", {})
+    dim_confidence = judgment_result.get("dim_confidence", {})
+    task = judgment_result.get("original_task", "")[:60]
+    
+    # 高权重但低置信度的维度 → 提高探索优先级
+    for dim_id, weight in weights.items():
+        conf = dim_confidence.get(dim_id, 0.5)
+        if weight > 0.3 and conf < 0.5:
+            # 这个维度权重高但置信度低，应该多探索
+            question = f"深入了解{dim_id}维度，提高{conf:.0%}→70%+置信度"
+            engine.add_gap_trigger(
+                question=question,
+                topic=task,
+                gap_description=f"权重{weight:.2f}但置信度仅{conf:.2f}",
+                priority="high" if weight > 0.5 else "normal"
+            )
+
+
+# P1改进：好奇心驱动判断
+def get_context_for_judgment(task_text: str) -> str:
+    """
+    P1改进：为判断提供好奇上下文
+    
+    在判断前，查询好奇心引擎中与当前任务相关的高优先级议题
+    作为额外上下文注入判断
+    """
+    engine = CuriosityEngine()
+    
+    # 获取与当前任务相关的开放好奇项
+    related_items = []
+    for item in engine.get_top_open(limit=3):
+        # 简单相关性：任务文本包含好奇项的关键词
+        if any(kw in task_text.lower() for kw in item.topic.lower().split()):
+            related_items.append(item)
+    
+    if not related_items:
+        return ""
+    
+    # 构造好奇上下文
+    context_parts = ["[好奇驱动] 相关开放议题："]
+    for item in related_items[:2]:
+        context_parts.append(f"- {item.topic}: {item.question}")
+    
+    return "\n".join(context_parts)
+
+
 # 接入因果记忆：因果不匹配自动触发异常
 def trigger_from_causal_mismatch(context: str, expected: str, actual: str, current_task=None) -> CuriosityItem:
     """预期因果结果不符 → 自动触发异常好奇"""

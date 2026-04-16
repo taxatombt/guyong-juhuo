@@ -48,6 +48,20 @@ from .fitness_baseline import FitnessBaseline
 # LLM接入：MiniMax适配器
 from llm_adapter.minimax import get_adapter
 from llm_adapter.base import CompletionRequest
+
+# P0改进：因果推断引擎 - 给judgment提供推理底座
+from causal_memory.causal_inference import CausalInferenceEngine, infer_causal_chain
+
+# P1改进：验证层
+from .verifier import JudgmentVerifier
+_verifier = None
+
+def _get_verifier():
+    global _verifier
+    if _verifier is None:
+        _verifier = JudgmentVerifier()
+    return _verifier
+
 global_emotion_system = EmotionSystem()
 global_self_review = None  # 懒加载
 
@@ -346,6 +360,8 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             "similar_events": causal_result["similar_events"],
             "causal_chains": causal_result["causal_chains"],
             "summary": causal_result["summary"],
+            # P0改进：因果推断结果
+            "causal_inference": None,  # 懒加载
         },
         "self_model": {
             "warnings": self_warnings,
@@ -380,6 +396,26 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             reasoning={},
         )
         _ret["meta"]["chain_id"] = _chain_id
+        
+        # P1改进：验证层 - 自我反驳（critical模式自动验证）
+        if complexity == "critical":
+            verifier = _get_verifier()
+            verification = verifier.verify(_ret)
+            _ret["meta"]["verification"] = verification
+            
+            # P0改进：因果推断 - 给判断提供推理底座
+            inference_engine = CausalInferenceEngine()
+            causal_infer = inference_engine.infer(
+                situation=original_task,
+                judgment_dimensions=must + important
+            )
+            _ret["causal_memory"]["causal_inference"] = {
+                "best_explanation": causal_infer.best_explanation,
+                "reasoning_chain": causal_infer.reasoning_chain,
+                "confidence": causal_infer.confidence,
+                "needs_more_data": causal_infer.needs_more_data,
+                "hypotheses_count": len(causal_infer.hypotheses)
+            }
     except Exception:
         pass
     return _ret
