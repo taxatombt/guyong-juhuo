@@ -1,11 +1,17 @@
+# Python
 __pycache__
 *.pyc
 *.pyo
 *.pyd
 .Python
+.venv
+venv/
+
+# Build
 build/
-develop-eggs/
 dist/
+*.egg-info
+develop-eggs/
 downloads/
 eggs/
 .eggs/
@@ -15,27 +21,47 @@ parts/
 sdist/
 var/
 wheels/
-*.egg-info
 .installed.cfg
 
-# OpenSpace skills
+# Git
+.git
+.github
+
+# Legacy (外部啃读代码，不打包)
+_legacy/
+installer/
+
+# Skills
 .skills-db.json
 skills/**/.skill_id
 
-# data
-chat_history/
-evolution_suggestions/
-exports/
+# Logs
+*.log
 action_log.jsonl
 feedback_log.jsonl
 emotion_log.jsonl
-*.log
 
-# config
+# Config
+.env
+.env.local
 config.json
 local/
 
-# 用户级配置（永不提交）
-.env
-.env.local
+# Chat history
+chat_history/
+evolution_suggestions/
+exports/
 
+# IDE
+.vscode/
+.idea/
+
+# Setup scripts (不打包)
+*.iss
+*.nsi
+build_*.py
+setup.py
+precheck.bat
+
+# Database (用户数据，不打包)
+*.db
