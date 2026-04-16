@@ -282,6 +282,27 @@ class LifeCycleHooks:
                             pass
                 except:
                     pass
+                
+                # 4. 反馈 → 4类记忆（judgment完成后保存反馈）
+                try:
+                    outcome = data.get("outcome", data.get("feedback"))
+                    if outcome:
+                        # 判断是否正确
+                        outcome_type = "correct" if outcome in ("success", True) else "incorrect"
+                        
+                        # 保存反馈记忆
+                        from memory_system import save_feedback_memory, MemoryEngine
+                        engine = MemoryEngine()
+                        
+                        # 判断是否值得保存
+                        if engine.is_worth_saving(data.get("task", "")):
+                            save_feedback_memory(
+                                content=f"判断「{data.get('task', '')[:50]}」的结果是{outcome_type}",
+                                outcome=outcome_type,
+                                trigger_context=data.get("task", ""),
+                            )
+                except:
+                    pass
             
             return True
         except Exception as e:
