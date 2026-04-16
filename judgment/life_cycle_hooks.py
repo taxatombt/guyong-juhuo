@@ -23,6 +23,7 @@ from threading import Thread
 import queue
 
 from judgment.judgment_db import get_conn
+from judgment.pre_tool_hook import PreToolUseOutcome
 
 
 @dataclass
@@ -406,6 +407,50 @@ class LifeCycleHooks:
         self.turn_count = 0
         return result
 
+    # ── 钩子10: on_pre_action ────────────────────────────────────────
+    def on_pre_action(self, tool_name: str, args: Dict, command: str = "") -> PreToolUseOutcome:
+        """
+        Codex启发: 动作执行前安全检查
+        
+        检测:
+        - 危险命令
+        - 权限问题
+        - 频率限制
+        """
+        try:
+            from judgment.pre_tool_hook import get_pre_hook, PreToolUseRequest
+            hook = get_pre_hook()
+            request = PreToolUseRequest(
+                tool_name=tool_name,
+                args=args,
+                command=command,
+                session_id=self.session_id,
+            )
+            return hook.check(request)
+        except Exception as e:
+            print(f"[Hook错误] on_pre_action: {e}")
+            from judgment.pre_tool_hook import PreToolUseOutcome, HookAction
+            return PreToolUseOutcome(action=HookAction.ALLOW, should_block=False)
+
+    # ── 钩子11: on_post_action ───────────────────────────────────────
+    def on_post_action(self, tool_name: str, success: bool, output: str = "", error: str = "", duration_ms: float = 0.0):
+        """
+        Codex启发: 动作执行后记录
+        """
+        try:
+            from judgment.pre_tool_hook import get_post_hook, PostToolUseResult
+            hook = get_post_hook()
+            result = PostToolUseResult(
+                tool_name=tool_name,
+                success=success,
+                output=output,
+                error=error,
+                duration_ms=duration_ms,
+            )
+            hook.record(result)
+        except Exception as e:
+            print(f"[Hook错误] on_post_action: {e}")
+
 
 # ── 数据库表 ─────────────────────────────────────────────────────
 def init_hook_db():
@@ -470,5 +515,16 @@ def on_session_end() -> Dict:
 def on_delegation(agent_id: str, task: str, fn: Callable, timeout: float = 300.0) -> DelegationResult:
     """快捷函数：子Agent委托"""
     return get_lifecycle_hooks().on_delegation(agent_id, task, fn, timeout)
+
+# ── Codex钩子 ──────────────────────────────────────────────────────
+from judgment.pre_tool_hook import PreToolUseOutcome
+
+def on_pre_action(tool_name: str, args: Dict, command: str = "") -> PreToolUseOutcome:
+    """Codex启发: 动作执行前安全检查"""
+    return get_lifecycle_hooks().on_pre_action(tool_name, args, command)
+
+def on_post_action(tool_name: str, success: bool, output: str = "", error: str = "", duration_ms: float = 0.0):
+    """Codex启发: 动作执行后记录"""
+    return get_lifecycle_hooks().on_post_action(tool_name, success, output, error, duration_ms)
 
 init_hook_db()
