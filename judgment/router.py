@@ -58,6 +58,10 @@ from .judgment_rules import rule_based_precheck, get_rule_scores
 # Stop Hook：事件捕获
 from .stop_hook import capture_judgment, capture_verdict, finalize_session
 
+# Hermes启发：上下文围栏 + 生命周期钩子
+from .context_fence import build_judgment_context, scan_threats
+from .life_cycle_hooks import prefetch_all, get_lifecycle_hooks
+
 # P1改进：验证层
 from .verifier import JudgmentVerifier
 _verifier = None
@@ -271,6 +275,10 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             }
         }
     """
+    # Hermes启发：prefetch_all - 每轮前背景召回
+    hook_context = prefetch_all(task_text)
+    fenced_context = hook_context.get("fenced_context", "")
+    
     # 情绪系统：第一步就检测情绪信号，需要重视就注入上下文
     original_task = task_text
     emotion_signal = inject_emotion_signal(original_task)
@@ -378,6 +386,15 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             "llm_dimensions": rule_precheck["llm_dimensions"],
             "low_score_dimensions": rule_precheck["low_score_dimensions"],
             "all_passed": rule_precheck["all_passed"],
+        },
+        # Hermes启发：上下文围栏
+        "fenced_context": fenced_context,
+        # Hermes启发：Hook召回的上下文
+        "hook_context": {
+            "causal_memory": hook_context.get("causal_memory"),
+            "fitness": hook_context.get("fitness"),
+            "instinct": hook_context.get("instinct"),
+            "low_confidence_dims": hook_context.get("low_confidence_dims"),
         },
         "self_model": {
             "warnings": self_warnings,
