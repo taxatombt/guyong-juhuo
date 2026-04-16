@@ -1,214 +1,116 @@
-<header class="header">
-<div class="logo"><div class="logo-icon">J</div><span class="logo-text">Juhuo</span></div>
-</header>
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Juhuo Console</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Segoe UI,sans-serif;background:#0f0f23;color:#e0e0e0}
+.header{position:fixed;top:0;left:0;right:0;height:56px;background:linear-gradient(135deg,#e94560,#c73e54);display:flex;align-items:center;padding:0 24px;z-index:100}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{width:36px;height:36px;background:rgba(255,255,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700}
+.logo-text{font-size:20px;font-weight:700;color:#fff}
+.main-layout{display:flex;padding-top:56px}
+.sidebar{width:240px;background:#16213e;position:fixed;top:56px;left:0;bottom:0;overflow-y:auto;border-right:1px solid rgba(233,69,96,.2)}
+.nav-section{padding:20px 0}
+.nav-title{font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:1.5px;padding:0 20px;margin-bottom:12px}
+.nav-item{display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer;color:#888;border-left:3px solid transparent;transition:all .2s}
+.nav-item:hover{background:rgba(233,69,96,.1);color:#fff}
+.nav-item.active{background:rgba(233,69,96,.15);color:#e94560;border-left-color:#e94560}
+.nav-icon{width:32px;height:32px;background:rgba(255,255,255,.05);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.nav-item.active .nav-icon{background:#e94560;color:#fff}
+.content{flex:1;margin-left:240px;padding:32px;max-width:900px}
+.page{display:none}
+.page.active{display:block}
+.page-title{font-size:28px;font-weight:700;color:#fff;margin-bottom:32px}
+.card{background:#16213e;border-radius:16px;padding:24px;margin-bottom:24px;border:1px solid rgba(233,69,96,.15)}
+.card-title{font-size:16px;font-weight:600;color:#fff;margin-bottom:16px}
+.input{width:100%;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:10px;font-size:14px;background:#0f0f23;color:#fff;resize:vertical;min-height:100px}
+.input:focus{outline:none;border-color:#e94560}
+.btn{background:linear-gradient(135deg,#e94560,#c73e54);color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+.result-box{background:rgba(0,0,0,.3);border-radius:10px;padding:16px;margin-top:16px}
+.result-box pre{font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap;word-break:break-all}
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:13px;color:#888;margin-bottom:8px}
+.form-select,.api-key-input{width:100%;padding:12px 16px;border:1px solid rgba(255,255,255,.1);border-radius:8px;font-size:14px;background:#0f0f23;color:#fff}
+.form-select:focus,.api-key-input:focus{outline:none;border-color:#e94560}
+.row{display:flex;gap:16px;margin-bottom:16px}
+.col{flex:1}
+.badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:12px}
+.b-h{background:rgba(233,69,96,.2);color:#e94560}
+.b-m{background:rgba(243,156,18,.2);color:#f39c12}
+.b-l{background:rgba(39,174,96,.2);color:#27ae60}
+</style></head>
+<body>
+<header class="header"><div class="logo"><div class="logo-icon">J</div><span class="logo-text">Juhuo · 聚活</span></div></header>
 <div class="main-layout">
 <aside class="sidebar">
-<div class="nav-section">
-<div class="nav-section-title">Core</div>
-<div class="nav-item active" data-page="chat" onclick="navigateTo('chat')"><div class="nav-icon">C</div><div class="nav-name">Chat</div></div>
-<div class="nav-item" data-page="judgment" onclick="navigateTo('judgment')"><div class="nav-icon">J</div><div class="nav-name">Judgment</div></div>
-<div class="nav-item" data-page="action_plan" onclick="navigateTo('action_plan')"><div class="nav-icon">A</div><div class="nav-name">Action Plan</div></div>
-<div class="nav-item" data-page="action_signal" onclick="navigateTo('action_signal')"><div class="nav-icon">S</div><div class="nav-name">Action Signal</div></div>
+<div class="nav-section"><div class="nav-title">Core</div>
+<div class="nav-item active" onclick="nav('chat',this)"><div class="nav-icon">C</div>Chat</div>
+<div class="nav-item" onclick="nav('judgment',this)"><div class="nav-icon">J</div>Judgment</div>
+<div class="nav-item" onclick="nav('action_plan',this)"><div class="nav-icon">A</div>Action Plan</div>
+<div class="nav-item" onclick="nav('action_signal',this)"><div class="nav-icon">S</div>Action Signal</div>
 </div>
-<div class="nav-section">
-<div class="nav-section-title">Growth</div>
-<div class="nav-item" data-page="goal" onclick="navigateTo('goal')"><div class="nav-icon">G</div><div class="nav-name">Goal</div></div>
-<div class="nav-item" data-page="causal_memory" onclick="navigateTo('causal_memory')"><div class="nav-icon">M</div><div class="nav-name">Causal Memory</div></div>
-<div class="nav-item" data-page="curiosity" onclick="navigateTo('curiosity')"><div class="nav-icon">X</div><div class="nav-name">Curiosity</div></div>
-<div class="nav-item" data-page="openspace" onclick="navigateTo('openspace')"><div class="nav-icon">O</div><div class="nav-name">OpenSpace</div></div>
+<div class="nav-section"><div class="nav-title">LLM</div>
+<div class="nav-item" onclick="nav('llm',this)"><div class="nav-icon">L</div>LLM Console</div>
+<div class="nav-item" onclick="nav('models',this)"><div class="nav-icon">M</div>Models</div>
 </div>
-<div class="nav-section">
-<div class="nav-section-title">Tools</div>
-<div class="nav-item" data-page="chat_history" onclick="navigateTo('chat_history')"><div class="nav-icon">H</div><div class="nav-name">History</div></div>
-<div class="nav-item" data-page="export" onclick="navigateTo('export')"><div class="nav-icon">E</div><div class="nav-name">Export</div></div>
-<div class="nav-item" data-page="llm_config" onclick="navigateTo('llm_config')"><div class="nav-icon">S</div><div class="nav-name">Settings</div></div>
+<div class="nav-section"><div class="nav-title">Growth</div>
+<div class="nav-item" onclick="nav('goal',this)"><div class="nav-icon">G</div>Goal</div>
+<div class="nav-item" onclick="nav('causal_memory',this)"><div class="nav-icon">M</div>Causal Memory</div>
+<div class="nav-item" onclick="nav('curiosity',this)"><div class="nav-icon">X</div>Curiosity</div>
+<div class="nav-item" onclick="nav('openspace',this)"><div class="nav-icon">O</div>OpenSpace</div>
+</div>
+<div class="nav-section"><div class="nav-title">Tools</div>
+<div class="nav-item" onclick="nav('history',this)"><div class="nav-icon">H</div>History</div>
+<div class="nav-item" onclick="nav('export',this)"><div class="nav-icon">E</div>Export</div>
+<div class="nav-item" onclick="nav('settings',this)"><div class="nav-icon">S</div>Settings</div>
 </div>
 </aside>
 <main class="content">
-<div id="page-chat" class="page active">
-<h1 class="page-title">Chat</h1>
-<p class="page-subtitle">Continuous dialogue</p>
-<div class="card">
-<textarea class="input" id="chatInput" placeholder="Type your message..." rows="3"></textarea>
-<div style="margin-top:16px"><button class="btn" onclick="sendChat()">Send</button></div>
-</div>
-<div class="card" id="chatResult" style="display:none">
-<div class="result-box" id="chatResultContent"></div>
-</div>
-</div>
-<div id="page-judgment" class="page">
-<h1 class="page-title">10D Judgment</h1>
-<p class="page-subtitle">Cog/Gam/Eco/Dia/Emo/Int/Mor/Soc/Tem/Met</p>
-<div class="card">
-<textarea class="input" id="judgmentInput" placeholder="Enter question..." rows="3"></textarea>
-<div style="margin-top:16px"><button class="btn" onclick="runJudgment()">Analyze</button></div>
-</div>
-<div class="card" id="judgmentResult" style="display:none">
-<div class="result-box" id="judgmentResultContent"></div>
-</div>
-</div>
-<div id="page-action_plan" class="page">
-<h1 class="page-title">Action Plan</h1>
-<p class="page-subtitle">Eisenhower Matrix</p>
-<div class="card">
-<textarea class="input" id="actionPlanInput" placeholder="Describe goal..." rows="3"></textarea>
-<div style="margin-top:16px"><button class="btn" onclick="generateActionPlan()">Generate</button></div>
-</div>
-<div class="card" id="actionPlanResult" style="display:none">
-<div class="result-box" id="actionPlanResultContent"></div>
-</div>
-</div>
-<div id="page-action_signal" class="page">
-<h1 class="page-title">Action Signal</h1>
-<p class="page-subtitle">Robot executable signal</p>
-<div class="card">
-<textarea class="input" id="actionSignalInput" placeholder="Describe task..." rows="3"></textarea>
-<div style="margin-top:16px"><button class="btn" onclick="generateActionSignal()">Generate</button></div>
-</div>
-<div class="card" id="actionSignalResult" style="display:none">
-<div class="result-box" id="actionSignalResultContent"></div>
-</div>
-</div>
-<div id="page-goal" class="page">
-<h1 class="page-title">Goal System</h1>
-<p class="page-subtitle">Onion Time Anchoring</p>
-<div class="card"><div class="result-box" id="goalContent">Loading...</div></div>
-</div>
-<div id="page-causal_memory" class="page">
-<h1 class="page-title">Causal Memory</h1>
-<p class="page-subtitle">Fast/Slow Dual Flow</p>
-<div class="card"><div class="result-box" id="causalMemoryContent">Loading...</div></div>
-</div>
-<div id="page-curiosity" class="page">
-<h1 class="page-title">Curiosity</h1>
-<p class="page-subtitle">Dual Random Walk</p>
-<div class="card"><div class="result-box" id="curiosityContent">Loading...</div></div>
-</div>
-<div id="page-openspace" class="page">
-<h1 class="page-title">OpenSpace</h1>
-<p class="page-subtitle">Version DAG Evolution</p>
-<div class="card"><div class="result-box" id="openspaceContent">Loading...</div></div>
-</div>
-<div id="page-chat_history" class="page">
-<h1 class="page-title">History</h1>
-<p class="page-subtitle">View past sessions</p>
-<div class="card"><div class="result-box" id="chatHistoryContent">Loading...</div></div>
-</div>
-<div id="page-export" class="page">
-<h1 class="page-title">Export</h1>
-<p class="page-subtitle">Markdown format</p>
-<div class="card">
-<select class="input" id="exportLevel" style="max-width:200px;margin-bottom:16px">
-<option value="high">High</option>
-<option value="medium">Medium</option>
-<option value="low">Low</option>
-<option value="all">All</option>
-</select>
-<button class="btn" onclick="exportDialogue()">Export</button>
-</div>
-</div>
-<div id="page-llm_config" class="page">
-<h1 class="page-title">LLM Settings</h1>
-<p class="page-subtitle">MiniMax/OpenAI/Ollama</p>
-<div class="card">
-<div style="margin-bottom:16px">
-<label style="display:block;margin-bottom:4px">Provider</label>
-<select class="input" id="llmProvider" style="max-width:200px">
-<option value="minimax">MiniMax</option>
-<option value="openai">OpenAI</option>
-<option value="ollama">Ollama</option>
-</select>
-</div>
-<div style="margin-bottom:16px">
-<label style="display:block;margin-bottom:4px">API Key</label>
-<input type="password" class="input" id="llmApiKey" style="max-width:400px">
-</div>
-<div style="margin-bottom:16px">
-<label style="display:block;margin-bottom:4px">API Base URL</label>
-<input type="text" class="input" id="llmApiBase" placeholder="https://api.minimax.chat/v1" style="max-width:400px">
-</div>
-<div style="margin-bottom:16px">
-<label style="display:block;margin-bottom:4px">Model</label>
-<input type="text" class="input" id="llmModel" placeholder="mini-max-latest" style="max-width:200px">
-</div>
-<button class="btn" onclick="saveLlmConfig()">Save</button>
-</div>
-</div>
-</main>
-</div>
-<div class="toast" id="toast"></div>
+<div id="page-chat" class="page active"><h1 class="page-title">Chat</h1><div class="card"><div class="form-label">Message</div><textarea class="input" id="chatInput" rows="4" placeholder="Type your message..."></textarea><button class="btn" onclick="sendChat()" style="margin-top:16px">Send</button><div class="result-box" id="chatResult" style="display:none;margin-top:16px"></div></div></div>
+<div id="page-judgment" class="page"><h1 class="page-title">10D Judgment</h1><div class="card"><div class="form-label">Question</div><textarea class="input" id="judgeInput" rows="3" placeholder="Enter your decision question..."></textarea><button class="btn" onclick="runJudgment()" style="margin-top:16px">Analyze</button><div class="result-box" id="judgeResult" style="display:none;margin-top:16px"></div></div></div>
+<div id="page-action_plan" class="page"><h1 class="page-title">Action Plan</h1><div class="card"><div class="form-label">Goal</div><textarea class="input" id="planInput" rows="3" placeholder="Describe your goal..."></textarea><button class="btn" onclick="genPlan()" style="margin-top:16px">Generate</button><div class="result-box" id="planResult" style="display:none;margin-top:16px"></div></div></div>
+<div id="page-action_signal" class="page"><h1 class="page-title">Action Signal</h1><div class="card"><div class="form-label">Signal</div><textarea class="input" id="signalInput" rows="3" placeholder="Enter signal..."></textarea><button class="btn" onclick="processSignal()" style="margin-top:16px">Process</button><div class="result-box" id="signalResult" style="display:none;margin-top:16px"></div></div></div>
+<div id="page-llm" class="page"><h1 class="page-title">LLM Console</h1><div class="card"><div class="card-title">API Configuration</div><div class="form-group"><label class="form-label">Provider</label><select class="form-select" id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="local">Local</option><option value="ollama">Ollama</option></select></div><div class="form-group"><label class="form-label">API Key</label><input type="password" class="api-key-input" id="apiKey" placeholder="sk-..."></div><div class="form-group"><label class="form-label">Base URL</label><input type="text" class="api-key-input" id="baseUrl" placeholder="https://api.openai.com/v1"></div><button class="btn" onclick="saveLLM()">Save</button></div><div class="card"><div class="card-title">Status</div><div id="llmStatus">Not configured</div></div></div>
+<div id="page-models" class="page"><h1 class="page-title">Models</h1><div class="card"><div class="card-title">Available Models</div><div id="modelList"><pre>Loading...</pre></div></div></div>
+<div id="page-goal" class="page"><h1 class="page-title">Goal System</h1><div class="card"><div class="card-title">Current Goals</div><div id="goalList"><pre>No goals set</pre></div></div></div>
+<div id="page-causal_memory" class="page"><h1 class="page-title">Causal Memory</h1><div class="card"><div class="card-title">Memory Records</div><div id="memoryList"><pre>Loading...</pre></div></div></div>
+<div id="page-curiosity" class="page"><h1 class="page-title">Curiosity</h1><div class="card"><div class="card-title">Curiosity Tasks</div><div id="curiosityList"><pre>No tasks</pre></div></div></div>
+<div id="page-openspace" class="page"><h1 class="page-title">OpenSpace</h1><div class="card"><div class="card-title">Skills</div><div id="skillList"><pre>Loading...</pre></div></div></div>
+<div id="page-history" class="page"><h1 class="page-title">History</h1><div class="card"><div class="card-title">Recent History</div><div id="historyList"><pre>No history</pre></div></div></div>
+<div id="page-export" class="page"><h1 class="page-title">Export</h1><div class="card"><button class="btn" onclick="exportData()">Export All Data</button></div></div>
+<div id="page-settings" class="page"><h1 class="page-title">Settings</h1><div class="card"><div class="card-title">System</div><div id="sysStatus">Loading...</div></div></div>
+</main></div>
 <script>
-function navigateTo(page){
+function nav(page, el){
 document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
 document.getElementById('page-'+page).classList.add('active');
 document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-document.querySelector('.nav-item[data-page="'+page+'"]').classList.add('active');
-if(page==='goal')loadGoalData();
-if(page==='causal_memory')loadCausalMemoryData();
-if(page==='curiosity')loadCuriosityData();
-if(page==='openspace')loadOpenSpaceData();
-if(page==='chat_history')loadChatHistoryData();
+el.classList.add('active');
 }
-function showToast(msg){
-const t=document.getElementById('toast');
-t.textContent=msg;t.classList.add('show');
-setTimeout(()=>t.classList.remove('show'),3000);
+function sendChat(){
+var msg=document.getElementById('chatInput').value;
+if(!msg)return;
+var res=document.getElementById('chatResult');
+res.style.display='block';res.innerHTML='<pre>Loading...</pre>';
+fetch('/api/chat',{method:'POST',body:msg,headers:{'Content-Type':'text/plain'}}).then(r=>r.json()).then(d=>{res.innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});
 }
-async function sendChat(){
-const m=document.getElementById('chatInput').value.trim();
-if(!m)return;
-const r=document.getElementById('chatResult');
-const c=document.getElementById('chatResultContent');
-r.style.display='block';c.textContent='Processing...';
-try{
-const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});
-const d=await res.json();
-c.innerHTML='<pre>'+(d.content||d.error||'No response')+'</pre>';
-}catch(e){c.textContent='Error: '+e.message;}
+function runJudgment(){
+var q=document.getElementById('judgeInput').value;
+if(!q)return;
+var res=document.getElementById('judgeResult');
+res.style.display='block';res.innerHTML='<pre>Analyzing 10 dimensions...</pre>';
+fetch('/api/judgment',{method:'POST',body:q,headers:{'Content-Type':'text/plain'}}).then(r=>r.json()).then(d=>{
+var html='<pre>Question: '+d.question+'\n\n';
+html+='Dimensions:\n';
+for(var k in d.dimensions){var v=d.dimensions[k];html+=k+': '+Math.round(v*100)+'%\n';}
+html+='\nSummary: '+d.summary+'</pre>';
+res.innerHTML=html;
+});
 }
-async function runJudgment(){
-const m=document.getElementById('judgmentInput').value.trim();
-if(!m)return;
-const r=document.getElementById('judgmentResult');
-const c=document.getElementById('judgmentResultContent');
-r.style.display='block';c.textContent='Analyzing...';
-try{
-const res=await fetch('/api/judgment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});
-const d=await res.json();
-c.innerHTML='<pre>'+(d.content||d.error||'No response')+'</pre>';
-}catch(e){c.textContent='Error: '+e.message;}
-}
-async function generateActionPlan(){
-const m=document.getElementById('actionPlanInput').value.trim();
-if(!m)return;
-const r=document.getElementById('actionPlanResult');
-const c=document.getElementById('actionPlanResultContent');
-r.style.display='block';c.textContent='Generating...';
-try{
-const res=await fetch('/api/action_plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});
-const d=await res.json();
-c.innerHTML='<pre>'+(d.content||d.error||'No response')+'</pre>';
-}catch(e){c.textContent='Error: '+e.message;}
-}
-async function generateActionSignal(){
-const m=document.getElementById('actionSignalInput').value.trim();
-if(!m)return;
-const r=document.getElementById('actionSignalResult');
-const c=document.getElementById('actionSignalResultContent');
-r.style.display='block';c.textContent='Generating...';
-try{
-const res=await fetch('/api/action_signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});
-const d=await res.json();
-c.innerHTML='<pre>'+(d.robot_json||d.content||d.error||'No response')+'</pre>';
-}catch(e){c.textContent='Error: '+e.message;}
-}
-async function loadGoalData(){try{const r=await fetch('/api/module/goal');const d=await r.json();document.getElementById('goalContent').innerHTML='<pre>'+(d.content||'No data')+'</pre>';}catch(e){document.getElementById('goalContent').textContent='Load failed';}}
-async function loadCausalMemoryData(){try{const r=await fetch('/api/module/causal_memory');const d=await r.json();document.getElementById('causalMemoryContent').innerHTML='<pre>'+(d.content||'No data')+'</pre>';}catch(e){document.getElementById('causalMemoryContent').textContent='Load failed';}}
-async function loadCuriosityData(){try{const r=await fetch('/api/module/curiosity');const d=await r.json();document.getElementById('curiosityContent').innerHTML='<pre>'+(d.content||'No data')+'</pre>';}catch(e){document.getElementById('curiosityContent').textContent='Load failed';}}
-async function loadOpenSpaceData(){try{const r=await fetch('/api/module/openspace');const d=await r.json();document.getElementById('openspaceContent').innerHTML='<pre>'+(d.content||'No data')+'</pre>';}catch(e){document.getElementById('openspaceContent').textContent='Load failed';}}
-async function loadChatHistoryData(){try{const r=await fetch('/api/module/chat_history');const d=await r.json();document.getElementById('chatHistoryContent').innerHTML='<pre>'+(d.content||'No data')+'</pre>';}catch(e){document.getElementById('chatHistoryContent').textContent='Load failed';}}
-async function exportDialogue(){const l=document.getElementById('exportLevel').value;try{const r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:'current',level:l})});const d=await r.json();showToast(d.content||'Exported');}catch(e){showToast('Export failed');}}
-async function saveLlmConfig(){const pr=document.getElementById('llmProvider').value;const ak=document.getElementById('llmApiKey').value;const ab=document.getElementById('llmApiBase').value;const m=document.getElementById('llmModel').value;try{const r=await fetch('/api/save_llm_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:pr,api_key:ak,api_base:ab,model_name:m})});const d=await r.json();showToast(d.content||'Saved');}catch(e){showToast('Save failed');}}
-</script>
-</body>
-</html>
+function genPlan(){var g=document.getElementById('planInput').value;if(!g)return;var r=document.getElementById('planResult');r.style.display='block';r.innerHTML='<pre>Generating...</pre>';fetch('/api/action_plan',{method:'POST',body:g,headers:{'Content-Type':'text/plain'}}).then(r=>r.json()).then(d=>{r.innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});}
+function processSignal(){var s=document.getElementById('signalInput').value;if(!s)return;var r=document.getElementById('signalResult');r.style.display='block';r.innerHTML='<pre>Processing...</pre>';fetch('/api/action_signal',{method:'POST',body:s,headers:{'Content-Type':'text/plain'}}).then(r=>r.json()).then(d=>{r.innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});}
+function saveLLM(){var p=document.getElementById('provider').value;var k=document.getElementById('apiKey').value;var u=document.getElementById('baseUrl').value;fetch('/api/llm',{method:'POST',body:JSON.stringify({provider:p,apiKey:k,baseUrl:u}),headers:{'Content-Type':'application/json'}}).then(r=>r.json()).then(d=>{document.getElementById('llmStatus').innerHTML='<pre>'+JSON.stringify(d)+'</pre>'});}
+function exportData(){fetch('/api/export',{method:'POST'}).then(r=>r.blob()).then(b=>{var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='juhuo_export.json';a.click();});}
+fetch('/api/models').then(r=>r.json()).then(d=>{document.getElementById('modelList').innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});
+fetch('/api/memory').then(r=>r.json()).then(d=>{document.getElementById('memoryList').innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});
+fetch('/api/status').then(r=>r.json()).then(d=>{document.getElementById('sysStatus').innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});
+</script></body></html>

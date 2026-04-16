@@ -19,7 +19,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(HTML.encode('utf-8'))
         elif self.path == '/api/status':
-            self.send_json({'status': 'running', 'version': '1.3.0'})
+            self.send_json({'status': 'running', 'version': '1.3.0', 'uptime': datetime.datetime.now().isoformat()})
+        elif self.path == '/api/models':
+            self.send_json({'models': ['gpt-4', 'gpt-3.5-turbo', 'claude-3', 'local-model']})
         elif self.path == '/api/memory':
             db = os.path.join(ROOT, 'data', 'judgment_data', 'juhuo_judgment.db')
             if os.path.exists(db):
@@ -32,11 +34,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     conn.close()
                     self.send_json({'records': count})
                 except: self.send_json({'records': 0})
-            else:
-                self.send_json({'records': 0})
-        elif self.path.startswith('/api/module/'):
-            module = self.path.replace('/api/module/', '')
-            self.send_json({'content': f'{module} data - Demo mode'})
+            else: self.send_json({'records': 0})
         else:
             self.send_error(404)
     
@@ -45,17 +43,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode('utf-8')
         
         if self.path == '/api/chat':
-            self.send_json({'content': 'Chat response - Demo mode. Configure LLM in Settings.'})
+            self.send_json({'content': 'Chat response - Demo mode', 'timestamp': datetime.datetime.now().isoformat()})
         elif self.path == '/api/judgment':
-            self.send_json({'content': 'Judgment analysis - Demo mode. Configure LLM in Settings.'})
+            self.send_json({'question': body, 'dimensions': {'cognitive': 0.75, 'game': 0.60, 'economy': 0.80, 'dialogue': 0.70, 'emotion': 0.65, 'intuition': 0.55, 'moral': 0.70, 'social': 0.60, 'temporal': 0.50, 'meta': 0.45}, 'summary': 'Demo judgment - configure LLM for full analysis'})
         elif self.path == '/api/action_plan':
-            self.send_json({'content': 'Action Plan - Demo mode'})
+            self.send_json({'goal': body, 'plan': {'urgent': [], 'important': [], 'delegate': [], 'eliminate': []}})
         elif self.path == '/api/action_signal':
-            self.send_json({'content': 'Action Signal - Demo mode'})
+            self.send_json({'signal': body, 'action': 'pending'})
+        elif self.path == '/api/llm':
+            self.send_json({'status': 'saved', 'message': 'LLM configuration saved'})
         elif self.path == '/api/export':
-            self.send_json({'content': 'Export - Demo mode'})
-        elif self.path == '/api/save_llm_config':
-            self.send_json({'content': 'LLM config saved'})
+            self.send_json({'export': 'data'})
         else:
             self.send_error(404)
     
@@ -68,9 +66,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def main():
     print("=" * 50)
     print("  juhuo - Personal AI Agent")
-    print("=" * 50)
-    print(f"\n  Server: http://localhost:{PORT}")
-    print("\n  Press Ctrl+C to stop")
+    print("  ==============================")
+    print()
+    print(f"  Server: http://localhost:{PORT}")
+    print()
+    print("  Pages:")
+    print("  - Chat")
+    print("  - Judgment (10D)")
+    print("  - LLM Console")
+    print("  - Causal Memory")
+    print("  - OpenSpace")
+    print()
+    print("  Press Ctrl+C to stop")
     print("=" * 50)
     
     webbrowser.open(f"http://localhost:{PORT}")
