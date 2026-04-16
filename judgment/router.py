@@ -55,6 +55,9 @@ from causal_memory.causal_inference import CausalInferenceEngine, infer_causal_c
 # P3改进：十维推理规则引擎
 from .judgment_rules import rule_based_precheck, get_rule_scores
 
+# Stop Hook：事件捕获
+from .stop_hook import capture_judgment, capture_verdict, finalize_session
+
 # P1改进：验证层
 from .verifier import JudgmentVerifier
 _verifier = None
@@ -409,6 +412,14 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             reasoning={},
         )
         _ret["meta"]["chain_id"] = _chain_id
+        
+        # Stop Hook: 捕获judgment行为
+        capture_judgment(
+            task=original_task,
+            dimensions=_dims_chosen,
+            result={"decision": _ret.get("decision"), "scores": _ret.get("scores")},
+            rule_precheck=rule_precheck
+        )
         
         # P1改进：验证层 - 自我反驳（critical模式自动验证）
         if complexity == "critical":

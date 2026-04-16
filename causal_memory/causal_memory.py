@@ -43,6 +43,9 @@ from .types import (
     CausalStats,
 )
 
+# P3改进：四道压缩叠加（借鉴Claude Code TS）
+from .compressor import fast_compress, slow_compress, compress_for_context
+
 # 集成自我模型更新（延迟导入，避免循环依赖）
 # self_model → causal_memory → self_model 循环
 # 用法：from causal_memory.causal_memory import update_from_feedback as _lazy_update
@@ -628,20 +631,29 @@ def inject_to_judgment_input(task: str) -> str:
     返回自然语言总结，注入到 judgment 输入
     
     同时包含 causal_memory 历史积累和 closed_loop 最新判断链。
+    
+    P3改进：使用四道压缩叠加
     """
     recall_result = recall_causal_history(task, max_events=3)
     
     parts = []
-    if recall_result.get("summary"):
-        parts.append(recall_result["summary"])
     
-    # 附加 closed_loop 最新链
+    # 四道压缩：先压缩recall_result
+    if recall_result.get("summary"):
+        # 快流：snippet提取
+        compressed = fast_compress(recall_result["summary"])
+        parts.append(compressed.content)
+    
+    # 附加 closed_loop 最新链（使用micro压缩）
     cl_chains = recall_result.get("closed_loop_chains", [])
     if cl_chains:
         cl_lines = ["[Closed Loop 判断链]"]
         for c in cl_chains[:3]:
             status = "已验证" if c.get("corrected") else "待验证"
-            cl_lines.append(f"  [{status}] {c['chain_id']}: {c.get('task', '')[:50]}")
+            # micro压缩
+            chain_text = f"  [{status}] {c['chain_id']}: {c.get('task', '')[:50]}"
+            compressed = fast_compress(chain_text)
+            cl_lines.append(compressed.content)
         parts.append("\n".join(cl_lines))
     
     return "\n\n".join(parts) if parts else ""

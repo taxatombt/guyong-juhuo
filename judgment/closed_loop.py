@@ -77,6 +77,14 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes=""):
         _trigger_curiosity(chain_id,task_text,correct,changes)
         # 【闭环Step1】judgment → causal_memory
         _trigger_causal_memory(chain_id,task_text,dims_data.get("dims",[]),dims_data.get("weights",{}),correct,notes,1.0 if correct else 0.0)
+        
+        # Stop Hook: 捕获verdict行为
+        try:
+            from judgment.stop_hook import capture_verdict
+            capture_verdict(chain_id, correct, notes)
+        except Exception:
+            pass
+        
         _log.info(f"[verdict] chain={chain_id} correct={correct} dims={list(changes.keys())}")
         return {"updated":True,"chain_id":chain_id,"changes":changes}
     finally:c.close()
