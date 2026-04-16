@@ -52,6 +52,9 @@ def main():
         print("    hub evolver      — 运行 Self-Evolver 闭环")
         print("    hub evolver --summarize — 输出学习摘要")
         print("    hub sqlite       — SQLite 数据状态")
+        print("  python cli.py curiosity              # 查看好奇心清单")
+        print("  python cli.py curiosity --add \"问题\" # 添加新探索项")
+        print("  python cli.py curiosity --close <id> --answer \"答案\"  # 填入答案并关闭")
         print()
         print("Profile 类型: rational / emotional / intuitive / balanced")
         sys.exit(0)
@@ -94,6 +97,9 @@ def main():
         elif arg == "hub":
             cmd_mode = "hub"
             # hub 子命令在 cmd_mode 块中处理，i 指向子命令
+            i += 1
+        elif arg == "curiosity":
+            cmd_mode = "curiosity"
             i += 1
         elif arg == "web":
             cmd_mode = "web"
@@ -180,6 +186,73 @@ def main():
                 print(f"未知 hub 子命令: {sub}")
                 print("用法: hub subsystems|check|ralph|collision|evolver")
             return
+
+        if cmd_mode == "curiosity":
+            from curiosity.curiosity_engine import CuriosityEngine
+            ce = CuriosityEngine()
+            # 解析 curiosity 子命令
+            sub_cmd = args[i] if i < len(args) else "list"
+            if sub_cmd == "list":
+                # 列出所有好奇事项
+                items = ce.get_top_open(limit=20)
+                print("=== 好奇心清单 ===")
+                if not items:
+                    print("暂无开放的好奇项")
+                for item in items:
+                    print(f"  [{item.id}] {item.question}")
+                    print(f"       topic={item.topic}, priority={item.priority_level}")
+                    if item.trigger.description:
+                        print(f"       trigger: {item.trigger.description}")
+                    print()
+                return
+            elif sub_cmd in ("add", "--add"):
+                # 添加新探索项
+                question = " ".join(args[i+1:])
+                if not question:
+                    print("用法: curiosity add <问题>")
+                    return
+                # 使用 add_gap_trigger 添加新好奇项
+                item = ce.add_gap_trigger(
+                    question=question,
+                    topic="用户探索",
+                    gap_description="用户主动探索",
+                )
+                print(f"[OK] 添加好奇项 #{item.id}: {item.question}")
+                return
+            elif sub_cmd in ("close", "--close", "resolve"):
+                # 关闭探索项并填入答案
+                # 解析: close <id> [answer <答案>]
+                j = i + 1
+                item_id = None
+                answer = None
+                while j < len(args):
+                    if args[j] in ("close", "--close", "resolve") and j + 1 < len(args):
+                        item_id = int(args[j + 1])
+                        j += 2
+                    elif args[j] in ("answer", "--answer", "--ans", "ans") and j + 1 < len(args):
+                        answer = " ".join(args[j+1:])
+                        j = len(args)
+                    elif item_id is None:
+                        # 尝试解析为 item_id
+                        try:
+                            item_id = int(args[j])
+                            j += 1
+                        except ValueError:
+                            j += 1
+                    else:
+                        j += 1
+                if not item_id:
+                    print("用法: curiosity close <id> [answer <答案>]")
+                    return
+                if not answer:
+                    answer = "(未提供答案)"
+                ce.resolve(item_id, answer)
+                print(f"[OK] 关闭好奇项 #{item_id}，答案已记录")
+                return
+            else:
+                print(f"未知 curiosity 子命令: {sub_cmd}")
+                print("用法: curiosity [list|add|close]")
+                return
 
         # judgment 模块不存在，尝试兼容导入
         try:

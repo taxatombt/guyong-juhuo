@@ -1295,6 +1295,51 @@
       "is_signal": false,
       "description": "",
       "created_at": "2026-04-15T08:49:24.172669"
+    },
+    {
+      "id": 145,
+      "task_id": "unknown",
+      "emotion_label": "excitement",
+      "intensity": 0.7,
+      "is_signal": true,
+      "description": "兴奋提示：检测到高价值关键词【突破、机会、重大】，对齐长期目标，值得深入探索",
+      "created_at": "2026-04-16T23:44:32.583229"
+    },
+    {
+      "id": 146,
+      "task_id": "unknown",
+      "emotion_label": "anxiety",
+      "intensity": 0.6000000000000001,
+      "is_signal": true,
+      "description": "焦虑提示：低置信度维度【game_theory、economic、emotional】3个，信息不足，建议补充后再判断",
+      "created_at": "2026-04-16T23:44:32.590756"
+    },
+    {
+      "id": 147,
+      "task_id": "unknown",
+      "emotion_label": "fear",
+      "intensity": 0.6,
+      "is_signal": true,
+      "description": "恐惧提示：检测到风险关键词【风险、失败】，需要谨慎评估潜在损失",
+      "created_at": "2026-04-16T23:44:32.599185"
+    },
+    {
+      "id": 148,
+      "task_id": "unknown",
+      "emotion_label": "confusion",
+      "intensity": 0.5,
+      "is_signal": true,
+      "description": "困惑提示：检测到决策冲突【纠结、怎么选】，需要多维度分析利弊",
+      "created_at": "2026-04-16T23:44:32.605790"
+    },
+    {
+      "id": 149,
+      "task_id": "unknown",
+      "emotion_label": "urgency",
+      "intensity": 0.7,
+      "is_signal": true,
+      "description": "紧迫提示：检测到时间压力【马上、deadline】，注意不要仓促决策",
+      "created_at": "2026-04-16T23:44:32.613377"
     }
   ],
   "patterns": [
@@ -1327,5 +1372,5 @@
       "signal_count": 1
     }
   ],
-  "updated_at": "2026-04-15T08:49:24.172669"
+  "updated_at": "2026-04-16T23:44:32.613955"
 }

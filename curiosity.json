@@ -58,5 +58,20 @@
     "created_at": "2026-04-10T22:48:54.952774",
     "status": "open",
     "resolved_answer": null
+  },
+  {
+    "id": 5,
+    "question": "测试探索问题：如何优化判断准确率？",
+    "topic": "用户探索",
+    "trigger": {
+      "trigger_type": "gap",
+      "description": "用户主动探索"
+    },
+    "priority_level": 0,
+    "aligned_to_long_term": false,
+    "serves_current_task": null,
+    "created_at": "2026-04-16T23:51:39.522104",
+    "status": "resolved",
+    "resolved_answer": "通过增加样本量和迭代闭环来优化"
   }
 ]

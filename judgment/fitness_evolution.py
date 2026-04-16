@@ -49,13 +49,25 @@ class FitnessEvolution:
         weights: Dict[str, float],
         correct: bool,
     ) -> Dict:
-        """记录判断结果，更新维度准确率"""
+        """记录判断结果，更新维度准确率，并触发Self-Evolver闭环"""
         # 写入verdict表
         save_verdict(chain_id, task_text, correct, "fitness_evolution")
         
         # 更新每个维度的准确率
         for dim in dimensions:
             update_dimension_stats(dim, correct)
+
+        # Self-Evolver: 同步到self_model
+        try:
+            from judgment.self_evolover import sync_to_self_model, run_evolution_cycle
+            sync_to_self_model(chain_id)  # Hook数据写入self_model
+            # 运行进化闭环（检查是否需要重训规则）
+            evo_result = run_evolution_cycle()
+            # 如果触发进化，把结果带上
+            if evo_result.get("triggered"):
+                print(f"[Self-Evolver] 触发: {evo_result.get('trigger', {}).get('reason')}, 优胜: {evo_result.get('winner')}")
+        except Exception as e:
+            print(f"[Self-Evolver] 闭环异常: {e}")
 
         return self.get_stats()
 

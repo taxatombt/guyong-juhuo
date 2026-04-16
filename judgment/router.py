@@ -20,12 +20,20 @@ router.py — 十维判断框架核心路由
 
 import re
 import asyncio
-from paths import PATHS
+try:
+    from paths import PATHS
+except ImportError:
+    import os
+    PATHS = {"DATA": os.path.join(os.path.dirname(__file__), "..", "data")}
 from judgment.dimensions import DIMENSIONS
 from causal_memory import recall_causal_history, inject_to_judgment_input, find_similar_events, init
+from judgment.closed_loop import start_verdict_listener
 
 # 初始化
 init()
+
+# 启动 verdict 自动监听线程（后台闭环核心）
+start_verdict_listener()
 
 # 兼容旧接口命名
 class _CausalMemoryCompat:

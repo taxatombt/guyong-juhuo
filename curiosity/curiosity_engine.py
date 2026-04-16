@@ -425,16 +425,30 @@ class CuriosityEngine:
             return False
         
         # 回流因果记忆：把探索结果作为一个事件节点写入
-        from ..causal_memory.causal_memory import log_causal_event
+        try:
+            from causal_memory.causal_memory import log_causal_event
+        except ImportError:
+            # 尝试绝对导入路径
+            import sys, os
+            pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if pkg_dir not in sys.path:
+                sys.path.insert(0, pkg_dir)
+            try:
+                from causal_memory.causal_memory import log_causal_event
+            except ImportError:
+                log_causal_event = None  # 跳过因果记忆记录
         item = self._get_item(item_id)
-        if item is not None:
+        if item is not None and log_causal_event is not None:
             # 创建因果事件：探索了这个好奇，得到答案
-            log_causal_event(
-                task=item.question,
-                result=f"探索完成，答案: {answer[:200]}",
-                confidence=0.9,
-                feedback=None,
-            )
+            try:
+                log_causal_event(
+                    task=item.question,
+                    result=f"探索完成，答案: {answer[:200]}",
+                    confidence=0.9,
+                    feedback=None,
+                )
+            except Exception:
+                pass  # 因果记忆记录失败不影响主流程
         
         return True
 

@@ -157,34 +157,68 @@ class EmotionSystem:
         is_signal = False
 
         # 规则1：低置信度维度多 → 容易焦虑
-        low_conf_count = sum(
-            1 for dim, conf in judgment_result.get("dim_confidence", {}).items()
+        low_conf_dims = [
+            (dim, conf) for dim, conf in judgment_result.get("dim_confidence", {}).items()
             if conf < 0.5
-        )
+        ]
+        low_conf_count = len(low_conf_dims)
         if low_conf_count >= 2:
             label = "anxiety"
             intensity = min(1.0, low_conf_count * 0.2)
-            description = "焦虑提示：多个维度置信度不足，建议补充信息再下结论"
+            dims_str = "、".join([d for d, c in low_conf_dims[:4]])  # 最多4个维度
+            description = f"焦虑提示：低置信度维度【{dims_str}】{low_conf_count}个，信息不足，建议补充后再判断"
             pattern = self.patterns.get("anxiety")
             is_signal = pattern.signal_probability > 0.5 if pattern else True
 
         # 规则2：对齐高优先级目标 + 高价值关键词 → 兴奋
-        has_high_value = any(kw in task_text for kw in ["突破", "机会", "新发现", "超越", "永生"])
-        if has_high_value and not label == "anxiety":
+        has_high_value_keywords = [kw for kw in ["突破", "机会", "新发现", "超越", "永生", "创新", "成功", "重大"] if kw in task_text]
+        if has_high_value_keywords and not label == "anxiety":
             label = "excitement"
             intensity = 0.7
-            description = "兴奋提示：发现和长期目标对齐的高价值机会，值得深入探索"
+            keywords_str = "、".join(has_high_value_keywords[:3])  # 最多3个关键词
+            description = f"兴奋提示：检测到高价值关键词【{keywords_str}】，对齐长期目标，值得深入探索"
             pattern = self.patterns.get("excitement")
             is_signal = pattern.signal_probability > 0.5 if pattern else True
 
         # 规则3：文本中带负面情绪词 → 愤怒
-        has_anger = any(kw in task_text for kw in ["生气", "愤怒", "违反", "欺骗", "底线"])
-        if has_anger:
+        has_anger_keywords = [kw for kw in ["生气", "愤怒", "违反", "欺骗", "底线", "背叛", "恶意"] if kw in task_text]
+        if has_anger_keywords:
             label = "anger"
             intensity = 0.9
-            description = "愤怒提示：触及原则底线，需要重新评估"
+            keywords_str = "、".join(has_anger_keywords[:3])
+            description = f"愤怒提示：检测到负面关键词【{keywords_str}】，触及原则底线，需要重新评估"
             pattern = self.patterns.get("anger")
             is_signal = pattern.signal_probability > 0.5 if pattern else True
+
+        # 规则4：风险/损失关键词 → 恐惧
+        has_fear_keywords = [kw for kw in ["风险", "损失", "失败", "危险", "失去", "担心", "害怕"] if kw in task_text]
+        if has_fear_keywords and label == "calm":
+            label = "fear"
+            intensity = 0.6
+            keywords_str = "、".join(has_fear_keywords[:3])
+            description = f"恐惧提示：检测到风险关键词【{keywords_str}】，需要谨慎评估潜在损失"
+            pattern = self.patterns.get("fear")
+            is_signal = pattern.signal_probability > 0.5 if pattern else True
+
+        # 规则5：纠结/矛盾关键词 → 困惑
+        has_conflict_keywords = [kw for kw in ["纠结", "矛盾", "两难", "不确定", "怎么选", "选哪个"] if kw in task_text]
+        if has_conflict_keywords and label == "calm":
+            label = "confusion"
+            intensity = 0.5
+            keywords_str = "、".join(has_conflict_keywords[:3])
+            description = f"困惑提示：检测到决策冲突【{keywords_str}】，需要多维度分析利弊"
+            pattern = self.patterns.get("confusion")
+            is_signal = True  # 困惑总是信号
+
+        # 规则6：紧迫/时间压力 → 紧迫感
+        has_urgency_keywords = [kw for kw in ["紧急", "马上", "立刻", "时间紧", "来不及", "deadline"] if kw in task_text]
+        if has_urgency_keywords and label == "calm":
+            label = "urgency"
+            intensity = 0.7
+            keywords_str = "、".join(has_urgency_keywords[:3])
+            description = f"紧迫提示：检测到时间压力【{keywords_str}】，注意不要仓促决策"
+            pattern = self.patterns.get("urgency")
+            is_signal = True
 
         # 创建信号
         signal = EmotionSignal(
