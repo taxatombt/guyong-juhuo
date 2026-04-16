@@ -2,7 +2,6 @@
 import sys, os
 
 ROOT = os.getcwd()
-SSL_DLL = r'E:\qwenpaw\Library\bin\libssl-3-x64.dll'
 
 # 收集子目录数据
 datas = []
@@ -16,17 +15,12 @@ for d in dirs:
     if os.path.isdir(src):
         datas.append((src, d))
 
-# 添加SSL DLL到binaries
-binaries = []
-if os.path.exists(SSL_DLL):
-    binaries.append((SSL_DLL, '.'))
-
 a = Analysis(
     ['juhuo.py'],
     pathex=[ROOT],
-    binaries=binaries,
+    binaries=[],
     datas=datas,
-    hiddenimports=['fastapi', 'uvicorn', 'pydantic', 'python_multipart'],
+    hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
