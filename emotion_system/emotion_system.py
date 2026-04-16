@@ -145,7 +145,7 @@ class EmotionSystem:
         with open(EMOTIONS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def detect_emotion(self, task_text: str, judgment_result: dict) -> EmotionSignal:
+    def detect_emotion(self, task_text: str, judgment_result: dict = None) -> EmotionSignal:
         """
         从当前判断任务中检测情绪，判断是不是信号
         核心入口：每次判断完成后调用
@@ -157,10 +157,12 @@ class EmotionSystem:
         is_signal = False
 
         # 规则1：低置信度维度多 → 容易焦虑
-        low_conf_dims = [
-            (dim, conf) for dim, conf in judgment_result.get("dim_confidence", {}).items()
-            if conf < 0.5
-        ]
+        low_conf_dims = []
+        if judgment_result:
+            low_conf_dims = [
+                (dim, conf) for dim, conf in judgment_result.get("dim_confidence", {}).items()
+                if conf < 0.5
+            ]
         low_conf_count = len(low_conf_dims)
         if low_conf_count >= 2:
             label = "anxiety"

@@ -7,20 +7,29 @@ self_evolover.py — Juhuo Self-Evolver 自动闭环引擎
 1. Hook捕获判断数据 → self_model更新
 2. 偏差超过阈值 → 触发规则重训  
 3. 新旧规则对比 → 优胜劣汰
+4. 进化验证 → 有效则强化，无效则回滚
+
+触发方式：
+- 自动：EvolverScheduler (定时检查)
+- 手动：run_evolution_cycle()
+- CLI: python -m judgment.self_evolover
 """
 
 import json
 import sqlite3
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
+from threading import Timer, Lock
 
 # 配置
 BIAS_THRESHOLD = 0.7
 BIAS_CONSECUTIVE = 2  # 连续2次错误就触发（降低阈值以便测试）
 ACCURACY_THRESHOLD = 0.4
 MIN_SAMPLES = 3  # 至少3个样本即可触发
-COOLDOWN_HOURS = 1  # 冷却1小时（测试用）
+COOLDOWN_HOURS = 24  # 冷却24小时（生产用）
+VALIDATION_WINDOW = 10  # 验证窗口：进化后追踪10次判断
 
 # 数据库
 DB_PATH = Path(__file__).parent.parent / "data" / "judgment_data" / "juhuo_judgment.db"
@@ -339,3 +348,322 @@ if __name__ == "__main__":
     if r.get("triggered"):
         print(f"触发: {r.get('trigger', {}).get('reason')}")
         print(f"优胜: {r.get('winner')} 提升: {r.get('improvement', 0):.2%}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# P0: 自动触发层 - EvolverScheduler
+# ═══════════════════════════════════════════════════════════════════════════
+
+class EvolverScheduler:
+    """
+    最小触发层：定时检查 + 自动进化 + 进化验证
+    
+    数据流：
+        Timer.tick() → should_evolve() → run_evolution_cycle()
+            ↓
+        apply_evolved_weights() → 记录 evolution_validation
+            ↓
+        Timer.tick() → validate_evolution() → 强化/回滚
+    """
+    
+    _instance = None
+    _lock = Lock()
+    
+    def __new__(cls, cooldown_hours: int = COOLDOWN_HOURS):
+        """单例模式"""
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
+    
+    def __init__(self, cooldown_hours: int = COOLDOWN_HOURS):
+        if self._initialized:
+            return
+        self.cooldown_hours = cooldown_hours
+        self._last_evolution = None  # 上次进化时间
+        self._last_validation = None  # 上次验证时间
+        self._pending_validations: Dict[str, Dict] = {}  # 待验证的进化
+        self._timer: Optional[Timer] = None
+        self._running = False
+        self._initialized = True
+    
+    def should_evolve(self) -> bool:
+        """是否应该触发进化"""
+        # 冷却期检查
+        if self._last_evolution:
+            elapsed = time.time() - self._last_evolution
+            if elapsed < self.cooldown_hours * 3600:
+                return False
+        
+        # 样本量检查
+        with get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) as cnt FROM verdict_outcomes").fetchone()
+            count = row["cnt"] if row else 0
+        
+        return count >= MIN_SAMPLES
+    
+    def register_evolution(self, evolution_id: int, new_weights: Dict) -> None:
+        """
+        注册一次进化，为后续验证做准备
+        在 apply_evolved_weights() 后调用
+        """
+        # 记录应用时的准确率基准
+        with get_conn() as conn:
+            # 获取应用前的准确率
+            pre_row = conn.execute("""
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) as correct
+                FROM verdict_outcomes
+            """).fetchone()
+            
+            pre_accuracy = (pre_row["correct"] / pre_row["total"]) if pre_row["total"] > 0 else 0.5
+        
+        self._pending_validations[str(evolution_id)] = {
+            "evolution_id": evolution_id,
+            "applied_at": time.time(),
+            "new_weights": new_weights,
+            "pre_accuracy": pre_accuracy,
+            "post_judgments": 0,
+            "post_correct": 0
+        }
+        
+        self._last_evolution = time.time()
+    
+    def record_outcome(self, correct: int) -> None:
+        """
+        记录每次判断结果，用于验证进化效果
+        在 judgment_engine 每次判断后调用
+        """
+        for evo_id, data in self._pending_validations.items():
+            if data["post_judgments"] < VALIDATION_WINDOW:
+                data["post_judgments"] += 1
+                data["post_correct"] += correct
+    
+    def validate_evolution(self, evolution_id: str) -> Dict:
+        """
+        验证进化效果
+        - 有效（提升>5%）→ 强化
+        - 无效（下降>5%）→ 回滚
+        - 不确定 → 继续追踪
+        """
+        data = self._pending_validations.get(evolution_id)
+        if not data:
+            return {"status": "unknown", "reason": "evolution not found"}
+        
+        # 验证窗口未满
+        if data["post_judgments"] < VALIDATION_WINDOW:
+            return {"status": "pending", "progress": f"{data['post_judgments']}/{VALIDATION_WINDOW}"}
+        
+        # 计算准确率变化
+        post_accuracy = data["post_correct"] / data["post_judgments"]
+        delta = post_accuracy - data["pre_accuracy"]
+        
+        result = {
+            "evolution_id": evolution_id,
+            "pre_accuracy": data["pre_accuracy"],
+            "post_accuracy": post_accuracy,
+            "delta": delta,
+            "post_judgments": data["post_judgments"]
+        }
+        
+        if delta > 0.05:
+            # 提升>5%，强化
+            result["status"] = "validated"
+            result["action"] = "reinforced"
+            print(f"[Self-Evolver] ✅ 进化{evolution_id}验证通过：准确率提升 {delta:.2%}")
+        
+        elif delta < -0.05:
+            # 下降>5%，回滚
+            self._rollback(evolution_id, data, delta)
+            result["status"] = "rolled_back"
+            result["action"] = "rolled_back"
+            result["rollback_reason"] = f"准确率下降 {-delta:.2%}"
+            print(f"[Self-Evolver] ⚠️ 进化{evolution_id}回滚：准确率下降 {-delta:.2%}")
+        
+        else:
+            result["status"] = "inconclusive"
+            result["action"] = "continued"
+            print(f"[Self-Evolver] ⏳ 进化{evolution_id}验证不确定：delta={delta:.2%}")
+        
+        # 更新数据库
+        self._update_validation_record(result)
+        
+        # 清理
+        del self._pending_validations[evolution_id]
+        
+        return result
+    
+    def _rollback(self, evolution_id: str, data: Dict, delta: float) -> bool:
+        """回滚到旧规则"""
+        try:
+            from self_model.self_model import load_model, save_model
+            
+            model = load_model()
+            
+            # 从 fitness_baseline 获取旧权重
+            try:
+                from judgment.fitness_baseline import load_baseline
+                baseline = load_baseline()
+                if baseline and "weights" in baseline:
+                    model.weights = baseline["weights"].copy()
+                    save_model(model)
+                    return True
+            except:
+                pass
+            
+            return False
+        except:
+            return False
+    
+    def _update_validation_record(self, result: Dict) -> None:
+        """更新验证记录到数据库"""
+        with get_conn() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO evolution_validation 
+                (evolution_id, applied_at, post_judgments, post_correct, 
+                 accuracy_delta, status, validated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                result.get("evolution_id"),
+                datetime.now().isoformat(),
+                result.get("post_judgments", 0),
+                result.get("post_correct", 0),
+                result.get("delta", 0),
+                result.get("status"),
+                datetime.now().isoformat()
+            ))
+            conn.commit()
+    
+    def run_if_needed(self) -> Optional[Dict]:
+        """条件满足则执行进化"""
+        if self.should_evolve():
+            result = run_evolution_cycle()
+            
+            # 注册进化
+            if result.get("applied"):
+                with get_conn() as conn:
+                    row = conn.execute(
+                        "SELECT last_insert_rowid() as id"
+                    ).fetchone()
+                    if row:
+                        self.register_evolution(row["id"], result.get("new_weights", {}))
+            
+            return result
+        return None
+    
+    def start(self, interval_hours: float = 1.0) -> None:
+        """
+        启动定时调度器
+        - interval_hours: 检查间隔（默认1小时）
+        """
+        if self._running:
+            return
+        
+        self._running = True
+        
+        def _tick():
+            if not self._running:
+                return
+            
+            # 1. 检查是否需要进化
+            self.run_if_needed()
+            
+            # 2. 验证待验证的进化
+            for evo_id in list(self._pending_validations.keys()):
+                self.validate_evolution(evo_id)
+            
+            # 3. 下一次检查
+            self._timer = Timer(interval_hours * 3600, _tick)
+            self._timer.start()
+        
+        # 首次启动：60秒后执行
+        self._timer = Timer(60, _tick)
+        self._timer.start()
+        print(f"[Self-Evolver] 调度器已启动，间隔 {interval_hours} 小时")
+    
+    def stop(self) -> None:
+        """停止调度器"""
+        self._running = False
+        if self._timer:
+            self._timer.cancel()
+            self._timer = None
+        print("[Self-Evolver] 调度器已停止")
+    
+    def status(self) -> Dict:
+        """获取调度器状态"""
+        return {
+            "running": self._running,
+            "cooldown_hours": self.cooldown_hours,
+            "last_evolution": self._last_evolution,
+            "pending_validations": len(self._pending_validations),
+            "validations": list(self._pending_validations.keys())
+        }
+
+
+# 全局调度器实例
+_scheduler: Optional[EvolverScheduler] = None
+
+
+def get_scheduler(cooldown_hours: int = COOLDOWN_HOURS) -> EvolverScheduler:
+    """获取全局调度器实例"""
+    global _scheduler
+    if _scheduler is None:
+        _scheduler = EvolverScheduler(cooldown_hours)
+    return _scheduler
+
+
+def start_evolver_scheduler(cooldown_hours: int = COOLDOWN_HOURS, interval_hours: float = 1.0) -> EvolverScheduler:
+    """启动进化调度器（便捷函数）"""
+    sched = get_scheduler(cooldown_hours)
+    sched.start(interval_hours)
+    return sched
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLI 入口
+# ═══════════════════════════════════════════════════════════════════════════
+
+def main():
+    """CLI 入口"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Juhuo Self-Evolver")
+    parser.add_argument("--run", action="store_true", help="运行一次进化")
+    parser.add_argument("--start", action="store_true", help="启动定时调度器")
+    parser.add_argument("--status", action="store_true", help="查看调度器状态")
+    parser.add_argument("--cooldown", type=int, default=COOLDOWN_HOURS, help=f"冷却时间(小时, 默认{COOLDOWN_HOURS})")
+    parser.add_argument("--interval", type=float, default=1.0, help="检查间隔(小时, 默认1.0)")
+    
+    args = parser.parse_args()
+    
+    if args.run:
+        result = run_evolution_cycle()
+        print(f"状态: {result['status']}")
+        if result.get("triggered"):
+            print(f"触发: {result.get('trigger', {}).get('reason')}")
+            print(f"优胜: {result.get('winner')} 提升: {result.get('improvement', 0):.2%}")
+    
+    elif args.start:
+        sched = start_evolver_scheduler(args.cooldown, args.interval)
+        print(f"调度器已启动，冷却时间 {args.cooldown} 小时")
+        print("按 Ctrl+C 停止")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            sched.stop()
+    
+    elif args.status:
+        sched = get_scheduler(args.cooldown)
+        status = sched.status()
+        print("调度器状态:")
+        for k, v in status.items():
+            print(f"  {k}: {v}")
+    
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

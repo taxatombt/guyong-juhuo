@@ -9,6 +9,8 @@ P2改进: 把judgment_data/的JSON/JSONL迁移到SQLite
 - judgments: 每次判断快照
 - verdict_outcomes: 判断结果反馈
 - dimension_stats: 维度准确率统计
+- fitness_records: fitness记录
+- evolution_validation: 进化验证记录
 """
 
 import sqlite3, json
@@ -85,6 +87,23 @@ def init_db():
             );
             
             CREATE INDEX IF NOT EXISTS idx_fitness_created ON fitness_records(created_at);
+            
+            CREATE TABLE IF NOT EXISTS evolution_validation (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                evolution_id TEXT NOT NULL,
+                applied_at TEXT NOT NULL,
+                new_weights TEXT,
+                pre_accuracy REAL DEFAULT 0.5,
+                post_judgments INTEGER DEFAULT 0,
+                post_correct INTEGER DEFAULT 0,
+                accuracy_delta REAL DEFAULT 0,
+                status TEXT DEFAULT 'pending',
+                validated_at TEXT,
+                rollback_reason TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_evolution_status ON evolution_validation(status);
         """)
         c.commit()
 

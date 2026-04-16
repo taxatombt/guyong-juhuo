@@ -260,8 +260,26 @@ class LifeCycleHooks:
             # 触发关联模块
             if event_type == "judgment":
                 try:
+                    # 1. curiosity ← judgment
                     from curiosity.curiosity_engine import trigger_from_judgment
                     trigger_from_judgment(data)
+                except:
+                    pass
+                
+                try:
+                    # 2. emotion ← judgment
+                    from emotion_system.emotion_system import EmotionSystem
+                    emotion_sys = EmotionSystem()
+                    task_text = data.get("task", data.get("task_text", ""))
+                    emotion_result = emotion_sys.detect_emotion(task_text)
+                    
+                    if emotion_result and emotion_result.get("is_signal"):
+                        # 3. emotion → curiosity（情绪触发好奇心）
+                        try:
+                            from curiosity.curiosity_engine import activate_from_emotion
+                            activate_from_emotion(emotion_result)
+                        except:
+                            pass
                 except:
                     pass
             

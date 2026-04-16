@@ -790,3 +790,85 @@ if __name__ == "__main__":
     )
     
     print(engine.get_daily_list())
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# judgment ↔ emotion ↔ curiosity 三角闭环
+# ═══════════════════════════════════════════════════════════════════════════
+
+def trigger_from_judgment(judgment_data: Dict) -> Optional[CuriosityItem]:
+    """
+    judgment → curiosity：判断置信度低时触发探索
+    
+    当判断遇到低置信度维度时，自动触发好奇心
+    """
+    try:
+        engine = CuriosityEngine()
+        task = judgment_data.get("task", judgment_data.get("task_text", ""))
+        dimensions = judgment_data.get("dimensions", {})
+        confidence = judgment_data.get("confidence", {})
+        
+        # 找低置信度维度
+        low_conf_dims = [
+            (dim, conf) for dim, conf in confidence.items()
+            if isinstance(conf, (int, float)) and conf < 0.6
+        ]
+        
+        if not low_conf_dims:
+            return None
+        
+        # 构造好奇问题
+        dim_str = "、".join([d for d, c in low_conf_dims[:3]])
+        question = f"深入分析：{task}中{dim_str}维度如何权衡"
+        
+        return engine.add_gap_trigger(
+            question=question,
+            topic=task[:50],  # 截断主题
+            gap_description=f"置信度低的维度: {dim_str}",
+            priority="high"
+        )
+    except Exception as e:
+        print(f"[Curiosity] trigger_from_judgment 错误: {e}")
+        return None
+
+
+def activate_from_emotion(emotion_result: Dict) -> Optional[CuriosityItem]:
+    """
+    emotion → curiosity：情绪信号触发好奇心
+    
+    焦虑 → 信息不足 → 触发知识探索
+    兴奋 → 高价值机会 → 触发机会探索
+    """
+    try:
+        engine = CuriosityEngine()
+        emotion_label = emotion_result.get("emotion_label", "")
+        intensity = emotion_result.get("intensity", 0)
+        description = emotion_result.get("description", "")
+        
+        if not emotion_result.get("is_signal", False):
+            return None
+        
+        if emotion_label == "anxiety":
+            # 焦虑 → 需要更多信息
+            topic = description[:30] if description else "信息补充"
+            return engine.add_gap_trigger(
+                question=f"焦虑信号: {description}",
+                topic=topic,
+                gap_description="情绪提示需要更多信息",
+                priority="high"
+            )
+        
+        elif emotion_label == "excitement":
+            # 兴奋 → 高价值机会
+            topic = description[:30] if description else "机会探索"
+            return engine.add_gap_trigger(
+                question=f"兴奋信号: {description}",
+                topic=topic,
+                gap_description="情绪提示高价值机会",
+                priority="normal"
+            )
+        
+        return None
+    except Exception as e:
+        print(f"[Curiosity] activate_from_emotion 错误: {e}")
+        return None
