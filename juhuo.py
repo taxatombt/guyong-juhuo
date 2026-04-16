@@ -19,9 +19,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(HTML.encode('utf-8'))
         elif self.path == '/api/status':
-            self.send_json({'status': 'running', 'version': '1.3.0', 'uptime': datetime.datetime.now().isoformat()})
-        elif self.path == '/api/fitness':
-            self.send_json({'score': 'N/A', 'status': 'Demo mode'})
+            self.send_json({'status': 'running', 'version': '1.3.0'})
         elif self.path == '/api/memory':
             db = os.path.join(ROOT, 'data', 'judgment_data', 'juhuo_judgment.db')
             if os.path.exists(db):
@@ -36,6 +34,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except: self.send_json({'records': 0})
             else:
                 self.send_json({'records': 0})
+        elif self.path.startswith('/api/module/'):
+            module = self.path.replace('/api/module/', '')
+            self.send_json({'content': f'{module} data - Demo mode'})
         else:
             self.send_error(404)
     
@@ -44,13 +45,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode('utf-8')
         
         if self.path == '/api/chat':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(f"You: {body}\n\nJuhuo: Demo response.".encode())
+            self.send_json({'content': 'Chat response - Demo mode. Configure LLM in Settings.'})
         elif self.path == '/api/judgment':
-            result = {'question': body, 'dimensions': {'cognitive': 0.7, 'economy': 0.6}}
-            self.send_json(result)
+            self.send_json({'content': 'Judgment analysis - Demo mode. Configure LLM in Settings.'})
+        elif self.path == '/api/action_plan':
+            self.send_json({'content': 'Action Plan - Demo mode'})
+        elif self.path == '/api/action_signal':
+            self.send_json({'content': 'Action Signal - Demo mode'})
+        elif self.path == '/api/export':
+            self.send_json({'content': 'Export - Demo mode'})
+        elif self.path == '/api/save_llm_config':
+            self.send_json({'content': 'LLM config saved'})
         else:
             self.send_error(404)
     
