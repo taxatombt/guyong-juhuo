@@ -6,6 +6,59 @@
 
 ---
 
+## 项目介绍
+
+### 是什么
+
+juhuo是一个个人AI判断系统，具有以下核心能力：
+
+- **十维判断系统** - 从多维度分析两难问题
+- **因果记忆** - 追踪判断与结果的因果关系
+- **Fitness反馈循环** - 自我进化的评分机制
+- **危险命令检测** - PreToolUse/PostToolUse安全钩子
+
+### 能做什么
+
+```
+判断两难问题：
+python cli.py "我应该接受这个offer还是继续找?"
+
+危险命令检测：
+"rm -rf /" → 拦截
+
+因果推断：
+用户抱怨速度慢 → 推断原因：数据库负载高
+```
+
+### 架构
+
+```
+judgment（判断）
+    ↓
+causal_memory（因果记忆）
+    ↓
+self_model（自我模型更新）
+    ↓
+下次判断改善（闭环）
+```
+
+### 目录结构
+
+```
+juhuo/
+├── judgment/          # 十维判断系统
+├── causal_memory/     # 因果记忆
+├── self_model/        # 自我模型
+├── curiosity/         # 好奇心引擎
+├── emotion_system/    # 情感系统
+├── openspace/         # Skill进化系统
+├── web/               # 网页控制台
+├── cli.py             # 命令行入口
+└── launcher.bat       # 启动器
+```
+
+---
+
 ## 📥 下载安装（两种方式）
 
 ### 方式一：从项目压缩包下载（推荐）
@@ -60,6 +113,24 @@ guyong-juhuo-main/
 
 ---
 
+## 🔧 从源码运行（开发者）
+
+```bash
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行网页控制台
+python web_console.py
+
+# 或用启动器
+launcher.bat
+
+# 命令行判断
+python cli.py "你的问题"
+```
+
+---
+
 ## ❓ 常见问题
 
 ### Q: 双击后什么都没发生？
@@ -91,7 +162,7 @@ guyong-juhuo-main/
 
 ---
 
-## 🔧 技术规格
+## 技术规格
 
 | 项目 | 说明 |
 |------|------|
