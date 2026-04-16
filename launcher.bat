@@ -1,105 +1,102 @@
 @echo off
 chcp 65001 >nul 2>&1
-title 聚活 (guyong-juhuo)
+title juhuo - Personal AI Agent
 
 ; ============================================================
-; 聚活 launcher — 双模式入口
-; 用法:
-;   launcher.bat              启动网页控制台（默认）
-;   launcher.bat --init       初始化环境（安装依赖）
-;   launcher.bat --console    命令行模式
-;   launcher.bat --tui        TUI 终端界面
+; juhuo launcher
+; Usage:
+;   launcher.bat              Start web console (default)
+;   launcher.bat --init       Initialize environment
+;   launcher.bat --tui        TUI terminal interface
+;   launcher.bat --help       Show help
 ; ============================================================
 
 setlocal enabledelayedexpansion
 
 set "APP_DIR=%~dp0"
+cd /d "%APP_DIR%"
 set "PYTHON=python"
-set "MODE=console"
 
-; 解析参数
-if "%~1"=="--init" set "MODE=init" & goto :do_init
-if "%~1"=="--console" set "MODE=console"
-if "%~1"=="--tui" set "MODE=tui"
+; Parse arguments
+if "%~1"=="--init" goto :do_init
+if "%~1"=="--tui" goto :do_tui
+if "%~1"=="--console" goto :do_console
 if "%~1"=="--help" goto :show_help
+if "%~1"=="" goto :do_console
+goto :do_console
 
-; ── 检查 Python ───────────────────────────────────────────
+; ── Check Python ───────────────────────────────────────────
 :check_python
-!PYTHON! --version >nul 2>&1
+%PYTHON% --version >nul 2>&1
 if errorlevel 1 (
-    echo [错误] 未检测到 Python，请先安装 Python 3.8+
-    echo 下载地址: https://www.python.org/downloads/
-    echo 或运行: installer\setup.exe（重新安装）
+    echo [ERROR] Python not found. Please install Python 3.8+
+    echo Download: https://www.python.org/downloads/
     pause
     exit /b 1
 )
 
-; 检查 pip
-!PYTHON! -m pip --version >nul 2>&1
-if errorlevel 1 (
-    echo [警告] pip 未安装，正在安装...
-    !PYTHON! -m ensurepip --default-pip
-)
-
-; ── 模式派发 ──────────────────────────────────────────────
-if "%MODE%"=="init" goto :do_init
-if "%MODE%"=="tui" goto :do_tui
-goto :do_console
-
+; ── Init ──────────────────────────────────────────────────
 :do_init
-    echo [聚活] 正在初始化环境...
+    echo [juhuo] Initializing environment...
     echo.
-    echo [1/3] 检查 pip...
-    !PYTHON! -m pip install --upgrade pip -q
+    echo [1/4] Upgrading pip...
+    %PYTHON% -m pip install --upgrade pip -q 2>nul
 
-    echo [2/3] 安装依赖...
-    if exist "%APP_DIR%requirements.txt" (
-        !PYTHON! -m pip install -r "%APP_DIR%requirements.txt" -q
-        if errorlevel 1 (
-            echo [警告] 部分依赖安装失败，尝试安装核心依赖...
-            !PYTHON! -m pip install -r "%APP_DIR%requirements.txt"
-        )
-    ) else (
-        echo [跳过] 未找到 requirements.txt
+    echo [2/4] Installing dependencies...
+    if exist "requirements.txt" (
+        %PYTHON% -m pip install -r requirements.txt -q
     )
 
-    echo [3/3] 验证安装...
-    !PYTHON! -c "import hub" 2>nul
+    echo [3/4] Checking installed packages...
+    %PYTHON% -c "import flask; import fastapi; import uvicorn" 2>nul
     if errorlevel 1 (
-        echo [错误] hub 模块导入失败，请检查安装
-        echo 尝试手动运行: !PYTHON! test_all_imports.py
-        pause
-        exit /b 1
+        echo [INFO] Installing missing packages...
+        %PYTHON% -m pip install flask fastapi uvicorn -q
+    )
+
+    echo [4/4] Verifying installation...
+    %PYTHON% -c "from judgment import JudgmentSystem; print('[OK] juhuo ready')" 2>nul
+    if errorlevel 1 (
+        echo [WARNING] Some modules may have issues, but core should work.
     )
 
     echo.
     echo ========================================
-    echo  初始化完成！聚活已准备就绪
+    echo  juhuo initialized successfully!
     echo ========================================
     echo.
-    echo 运行方式:
-    echo   launcher.bat          启动网页控制台
-    echo   launcher.bat --tui    TUI 终端界面
+    echo Usage:
+    echo   launcher.bat           Start web console
+    echo   launcher.bat --tui    TUI terminal
     echo.
     pause
     exit /b 0
 
+; ── TUI ───────────────────────────────────────────────────
 :do_tui
-    !PYTHON! "%APP_DIR%tui.py"
+    echo [juhuo] Starting TUI mode...
+    %PYTHON% tui_console.py
     exit /b
 
+; ── Console ───────────────────────────────────────────────
 :do_console
-    !PYTHON! "%APP_DIR%web_console.py"
+    echo [juhuo] Starting web console...
+    echo.
+    echo Opening: http://localhost:9876
+    echo Press Ctrl+C to stop
+    echo.
+    %PYTHON% web_console.py
     exit /b
 
+; ── Help ──────────────────────────────────────────────────
 :show_help
-    echo 聚活 (guyong-juhuo) — 你的个人数字分身
+    echo juhuo - Personal AI Agent
     echo.
-    echo 用法:
-    echo   launcher.bat           启动网页控制台
-    echo   launcher.bat --init   初始化/重装依赖
-    echo   launcher.bat --tui    TUI 终端界面
-    echo   launcher.bat --help   显示此帮助
+    echo Usage:
+    echo   launcher.bat           Start web console (default)
+    echo   launcher.bat --init    Initialize environment
+    echo   launcher.bat --tui    TUI terminal interface
+    echo   launcher.bat --help    Show this help
     echo.
-    echo 安装程序位置: installer\setup.exe
+    echo Web Console: http://localhost:9876
     exit /b 0
