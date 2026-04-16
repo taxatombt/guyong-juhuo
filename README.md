@@ -193,7 +193,42 @@ self_model（自我模型更新）
 
 ---
 
-## 安装
+## 安装与卸载
+
+### 安装包
+
+| 文件 | 说明 |
+|------|------|
+| `dist/guyong-juhuo-1.0.0-setup.exe` | 安装包（48MB）双击运行 |
+| `dist/guyong-juhuo.exe` | 免安装版（41MB）直接双击 |
+| `dist/uninstall_juhuo.exe` | 卸载程序（5MB） |
+
+### 安装
+
+```bash
+# 方式1: 运行安装包
+dist\guyong-juhuo-1.0.0-setup.exe   # 安装向导
+
+# 方式2: 免安装版
+dist\guyong-juhuo.exe               # 直接运行
+```
+
+### 卸载
+
+```bash
+# 方式1: 从开始菜单 → 聚活 → 卸载
+# 方式2: 直接运行卸载程序
+dist\uninstall_juhuo.exe            # 右键"以管理员身份运行"
+```
+
+卸载功能：
+- 自动检测安装目录
+- 删除安装目录
+- 删除桌面/开始菜单快捷方式
+- 删除用户数据（可选）
+- 管理员权限检查
+
+### 命令行运行
 
 ```bash
 # Windows
