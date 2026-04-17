@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.eggs
+dist
+build
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# 测试
+.pytest_cache
+.coverage
+htmlcov
+
+# 数据
+*.db
+*.sqlite
+data/
+*.log
+
+# 环境
+.env
+.env.local
+
+# 文档
+*.md
+docs/
+
+# 其他
+*.tmp
+.DS_Store

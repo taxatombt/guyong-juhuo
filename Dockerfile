@@ -1,27 +1,36 @@
-# 聚活 (guyong-juhuo) Dockerfile
-# 用法:
-#   docker build -t taxatombt/guyong-juhuo .
-#   docker run -d -p 9876:9876 -v $(pwd)/data:/app/data --name juhuo taxatombt/guyong-juhuo:latest
+# Juhuo Docker 配置
 
 FROM python:3.11-slim
 
-# 工作目录
+# 设置工作目录
 WORKDIR /app
 
-# 复制依赖文件
-COPY requirements.txt ./
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# 安装依赖
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装 Python 依赖
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制整个项目
+# 复制项目文件
 COPY . .
 
+# 创建数据目录
+RUN mkdir -p /root/.juhuo/data
+
+# 环境变量
+ENV COPAW_WORKING_DIR=/root/.copaw
+ENV JUHuo_DATA_DIR=/root/.juhuo
+
 # 暴露端口
-EXPOSE 9876
+EXPOSE 18768
 
-#  volumes 用于持久化数据
-VOLUME ["/app/data", "/app/chat_history", "/app/evolution_suggestions", "/app/skill_db"]
-
-# 启动命令
+# 默认命令：Web Console
 CMD ["python", "web_console.py"]
+
+# 备用命令
+# CMD ["python", "-m", "juhuo", "shell"]
