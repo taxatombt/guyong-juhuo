@@ -1,450 +1,215 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-cli.py — guyong-juhuo Agent 入口
+cli.py — Juhuo CLI
 
-用法:
-    python cli.py                      # 交互模式
-    python cli.py "任务描述"           # single judgment
-    python cli.py --profile "<persona>" "任务"  # specify persona
-    python cli.py pdf <file.pdf>       # 提取PDF并做十维分析
-    python cli.py --list               # 列出所有 profile
-    python cli.py --stats              # 查看统计
-    python cli.py --lessons            # 查看教训
-    python cli.py --history            # 查看历史
-    python cli.py --evolution          # 生成OpenSpace进化建议
-    python cli.py --create-profile "<persona>" --type rational  # 创建 profile
+命令行工具：
+- juhuo [task]        # 单次判断
+- juhuo shell         # 交互模式
+- juhuo web           # 启动 Web Console
+- juhuo status         # 查看状态
+- juhuo verdict       # verdict 管理
+- juhuo config        # 配置管理
 """
 
+import argparse
 import sys
 import os
-import json
+from pathlib import Path
 
-pkg_dir = os.path.dirname(os.path.abspath(__file__))
-parent = os.path.dirname(pkg_dir)
-if parent not in sys.path:
-    sys.path.insert(0, parent)
+# 添加项目根目录到 path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from judgment.logging_config import get_logger
+from judgment.pipeline import check10d_full, PipelineConfig, format_full_report
+from judgment.self_model.belief import get_belief_status
+from judgment.verdict_collector import get_verdict_stats, mark_verdict_correct, mark_verdict_wrong
+from causal_memory.causal_chain import get_recent_chains, get_chain_detail
+from config.env_loader import EnvVarLoader, create_env_template, JUHuo_USER_DIR, JUHuo_USER_ENV
+
+log = get_logger("juhuo.cli")
+
+
+def cmd_judge(task: str, verbose: bool = False):
+    """执行判断"""
+    print(f"\n⚖️  正在分析: {task}\n")
+    
+    result = check10d_full(task)
+    
+    if verbose:
+        print(format_full_report(result))
+    else:
+        print(f"→ 建议: {result.get('verdict', '无法判断')}")
+        print(f"→ 置信度: {result.get('confidence', 0) * 100:.1f}%")
+        print(f"→ Chain ID: {result.get('chain_id', '')}")
+
+
+def cmd_shell():
+    """交互模式"""
+    print("\n" + "="*50)
+    print("⚖️  Juhuo Interactive Shell")
+    print("="*50)
+    print("输入问题让 Juhuo 帮助判断")
+    print("输入 quit / exit 退出\n")
+    
+    while True:
+        try:
+            task = input("问题> ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n再见!")
+            break
+        
+        if task.lower() in ("quit", "exit", "q"):
+            print("再见!")
+            break
+        
+        if not task:
+            continue
+        
+        cmd_judge(task)
+
+
+def cmd_status():
+    """查看状态"""
+    belief = get_belief_status()
+    stats = get_verdict_stats()
+    chains = get_recent_chains(limit=5)
+    
+    print("\n" + "="*50)
+    print("📊 Juhuo 状态")
+    print("="*50)
+    
+    print("\n【置信度状态】")
+    for dim, info in belief.items():
+        score = info.get("confidence", 0) * 100
+        status = "🔴" if score < 50 else "🟡" if score < 70 else "🟢"
+        print(f"  {status} {dim}: {score:.1f}%")
+    
+    print("\n【Verdict 统计】")
+    print(f"  总判断数: {stats.get('total', 0)}")
+    print(f"  正确数: {stats.get('correct', 0)}")
+    print(f"  错误数: {stats.get('wrong', 0)}")
+    if stats.get('total', 0) > 0:
+        acc = stats['correct'] / stats['total'] * 100
+        print(f"  准确率: {acc:.1f}%")
+    
+    print("\n【最近判断】")
+    for chain in chains:
+        cid = chain.get("chain_id", "")[:8]
+        task = chain.get("task", "")[:40]
+        verdict = chain.get("verdict", "")[:20]
+        print(f"  [{cid}] {task}... → {verdict}")
+
+
+def cmd_verdict(args):
+    """Verdict 管理"""
+    if args.action == "list":
+        chains = get_recent_chains(limit=args.limit)
+        print(f"\n【最近 {len(chains)} 条判断】\n")
+        for chain in chains:
+            cid = chain.get("chain_id", "")
+            task = chain.get("task", "")[:50]
+            verdict = chain.get("verdict", "")
+            correct = chain.get("correct")
+            mark = "✅" if correct == True else "❌" if correct == False else "❓"
+            print(f"{mark} [{cid}] {task}...")
+            print(f"    → {verdict}\n")
+    
+    elif args.action == "correct":
+        mark_verdict_correct(args.chain_id)
+        print(f"✅ 已标记为正确: {args.chain_id}")
+    
+    elif args.action == "wrong":
+        mark_verdict_wrong(args.chain_id)
+        print(f"❌ 已标记为错误: {args.chain_id}")
+    
+    elif args.action == "detail":
+        detail = get_chain_detail(args.chain_id)
+        if detail:
+            print(format_full_report(detail))
+        else:
+            print(f"未找到: {args.chain_id}")
+
+
+def cmd_config(args):
+    """配置管理"""
+    if args.action == "show":
+        print(f"\n【Juhuo 配置】")
+        print(f"  配置目录: {JUHuo_USER_DIR}")
+        print(f"  环境文件: {JUHuo_USER_ENV}")
+        print(f"  存在: {JUHuo_USER_ENV.exists()}")
+        
+        print("\n【环境变量】")
+        for key in ["DEFAULT_PROVIDER", "DEFAULT_MODEL", "MINIMAX_API_KEY"]:
+            val = os.environ.get(key, "(未设置)")
+            if "API_KEY" in key and val != "(未设置)":
+                val = val[:8] + "..."
+            print(f"  {key}: {val}")
+    
+    elif args.action == "init":
+        path = create_env_template()
+        print(f"✅ 配置文件已创建: {path}")
+        print("   请编辑文件填入 API Key")
+    
+    elif args.action == "edit":
+        if JUHuo_USER_ENV.exists():
+            os.startfile(JUHuo_USER_ENV) if sys.platform == "win32" else None
+            print(f"已打开: {JUHuo_USER_ENV}")
+        else:
+            print("配置文件不存在，先运行: juhuo config init")
 
 
 def main():
-    args = sys.argv[1:]
-
-    if not args or "--help" in args or "-h" in args:
-        print("guyong-juhuo Agent — 数字分身，持续自我进化")
-        print()
-        print("用法:")
-        print("  python cli.py                      # 交互模式")
-        print("  python cli.py \"任务描述\"           # 单次十维判断")
-        print("  python cli.py --profile NAME \"任务\"  # 指定 persona")
-        print("  python cli.py pdf <file.pdf>       # 提取PDF并做十维分析")
-        print("  python cli.py web <url>            # 提取网页并做十维分析")
-        print("  python cli.py --list                # 列出所有 profile")
-        print("  python cli.py --stats               # 查看统计")
-        print("  python cli.py --lessons             # 查看教训")
-        print("  python cli.py --history             # 查看历史")
-        print("  python cli.py --evolution          # 生成OpenSpace进化建议")
-        print("  python cli.py --create-profile NAME --type rational  # 创建 profile")
-        print("  python cli.py hub <sub>            # Hub 子系统调试")
-        print()
-        print("  Hub 子命令:")
-        print("    hub subsystems   — 列出所有子系统")
-        print("    hub check <code> — 安全检查（危险模式检测）")
-        print("    hub ralph        — Ralph 循环检测状态")
-        print("    hub collision   — Skill 碰撞检测")
-        print("    hub evolver      — 运行 Self-Evolver 闭环")
-        print("    hub evolver --summarize — 输出学习摘要")
-        print("    hub sqlite       — SQLite 数据状态")
-        print("  python cli.py curiosity              # 查看好奇心清单")
-        print("  python cli.py curiosity --add \"问题\" # 添加新探索项")
-        print("  python cli.py curiosity --close <id> --answer \"答案\"  # 填入答案并关闭")
-        print()
-        print("Profile 类型: rational / emotional / intuitive / balanced")
-        sys.exit(0)
-
-    profile_name = None
-    task = None
-    cmd_mode = None  # stats/lessons/history/list/evolution/pdf/web/hub
-    pdf_path = None
-    create_profile = None
-    create_type = "balanced"
-
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "--profile":
-            profile_name = args[i + 1]
-            i += 2
-        elif arg == "--list":
-            cmd_mode = "list"
-            i += 1
-        elif arg == "--stats":
-            cmd_mode = "stats"
-            i += 1
-        elif arg == "--lessons":
-            cmd_mode = "lessons"
-            i += 1
-        elif arg == "--history":
-            cmd_mode = "history"
-            i += 1
-        elif arg == "--summary":
-            cmd_mode = "summary"
-            i += 1
-        elif arg == "--evolution":
-            cmd_mode = "evolution"
-            i += 1
-        elif arg == "pdf":
-            cmd_mode = "pdf"
-            pdf_path = args[i + 1]
-            i += 2
-        elif arg == "hub":
-            cmd_mode = "hub"
-            # hub 子命令在 cmd_mode 块中处理，i 指向子命令
-            i += 1
-        elif arg == "curiosity":
-            cmd_mode = "curiosity"
-            i += 1
-        elif arg == "web":
-            cmd_mode = "web"
-            web_url = args[i + 1]
-            i += 2
-        elif arg == "--create-profile":
-            create_profile = args[i + 1]
-            i += 2
-        elif arg == "--type":
-            create_type = args[i + 1]
-            i += 2
-        elif not arg.startswith("--"):
-            # 尝试 hub 子命令（hub subsystems / hub check 等）
-            if arg == "hub" and i + 1 < len(args):
-                cmd_mode = "hub"
-                i += 1  # 跳过 "hub"，保留子命令在 args[i]
-            else:
-                task = " ".join(args[i:])
-            break
-        else:
-            i += 1
-
-    # 命令模式
-    if cmd_mode:
-        # Hub 命令先行（避免 judgment.profile 等无效 import）
-        if cmd_mode == "hub":
-            import hub as _hub
-            _h = _hub.get_hub()
-            sub = args[i] if i < len(args) else "subsystems"
-            if sub == "check":
-                code = " ".join(args[i+1:]) if i+1 < len(args) else ""
-                if not code:
-                    print("用法: hub check <代码>")
-                    return
-                findings = _h.security.check(code)
-                print(_h.security.format_findings(findings))
-            elif sub == "collision":
-                print("[!] 请直接用 Python 调用:")
-                print("    detector = hub.get_hub().collision.create()")
-                print("    hub.get_hub().collision.detect(detector, {'tdd': ['test'], 'unit-test': ['test']})")
-            elif sub == "ralph":
-                from curiosity.ralph_loop import RalphLoop, RalphState
-                print("RalphLoop 子系统:")
-                print(f"  RalphState 是 @dataclass，包含字段:")
-                print(f"    iteration, has_new_info, promise_met, deadlock, message")
-                print()
-                print("  使用示例:")
-                print("    loop = hub.get_hub().ralph.create(promise=lambda: len(items) >= 5)")
-                print("    result = loop.run()")
-            elif sub == "evolver":
-                evo = _h.evolver
-                # 检查 --summarize flag
-                if i + 1 < len(args) and args[i + 1] == "--summarize":
-                    print(evo.summarize())
-                else:
-                    result = evo.run_cycle()
-                    print(f"[OK] Self-Evolver 闭环完成")
-                    print(f"  记录处理: {result.records_processed}")
-                    print(f"  新模式: {result.new_patterns}")
-                    print(f"  Lessons 新增: {result.lessons_added}")
-            elif sub == "sqlite":
-                print(_h.sqlite.summary())
-            elif sub == "subsystems":
-                print("=== Hub 子系统列表 ===")
-                subs = [
-                    ("judgment",     "十维判断引擎"),
-                    ("curiosity",    "好奇心引擎"),
-                    ("causal",       "因果记忆"),
-                    ("output",       "格式化输出"),
-                    ("emotion",      "情绪系统"),
-                    ("feedback",     "反馈记录"),
-                    ("action_signal","行动信号"),
-                    ("ralph",        "Ralph 循环检测"),
-                    ("collision",    "Skill 碰撞检测"),
-                    ("security",     "安全检查"),
-                    ("benchmark",    "GDPVal 基准测试"),
-                    ("observe",      "被动工具捕获"),
-                    ("diff_tracker", "决策影响追踪"),
-                    ("evolver",      "Self-Evolver 闭环"),
-                ]
-                for name, desc in subs:
-                    print(f"  hub.{name:15s} — {desc}")
-            else:
-                print(f"未知 hub 子命令: {sub}")
-                print("用法: hub subsystems|check|ralph|collision|evolver")
-            return
-
-        if cmd_mode == "curiosity":
-            from curiosity.curiosity_engine import CuriosityEngine
-            ce = CuriosityEngine()
-            # 解析 curiosity 子命令
-            sub_cmd = args[i] if i < len(args) else "list"
-            if sub_cmd == "list":
-                # 列出所有好奇事项
-                items = ce.get_top_open(limit=20)
-                print("=== 好奇心清单 ===")
-                if not items:
-                    print("暂无开放的好奇项")
-                for item in items:
-                    print(f"  [{item.id}] {item.question}")
-                    print(f"       topic={item.topic}, priority={item.priority_level}")
-                    if item.trigger.description:
-                        print(f"       trigger: {item.trigger.description}")
-                    print()
-                return
-            elif sub_cmd in ("add", "--add"):
-                # 添加新探索项
-                question = " ".join(args[i+1:])
-                if not question:
-                    print("用法: curiosity add <问题>")
-                    return
-                # 使用 add_gap_trigger 添加新好奇项
-                item = ce.add_gap_trigger(
-                    question=question,
-                    topic="用户探索",
-                    gap_description="用户主动探索",
-                )
-                print(f"[OK] 添加好奇项 #{item.id}: {item.question}")
-                return
-            elif sub_cmd in ("close", "--close", "resolve"):
-                # 关闭探索项并填入答案
-                # 解析: close <id> [answer <答案>]
-                j = i + 1
-                item_id = None
-                answer = None
-                while j < len(args):
-                    if args[j] in ("close", "--close", "resolve") and j + 1 < len(args):
-                        item_id = int(args[j + 1])
-                        j += 2
-                    elif args[j] in ("answer", "--answer", "--ans", "ans") and j + 1 < len(args):
-                        answer = " ".join(args[j+1:])
-                        j = len(args)
-                    elif item_id is None:
-                        # 尝试解析为 item_id
-                        try:
-                            item_id = int(args[j])
-                            j += 1
-                        except ValueError:
-                            j += 1
-                    else:
-                        j += 1
-                if not item_id:
-                    print("用法: curiosity close <id> [answer <答案>]")
-                    return
-                if not answer:
-                    answer = "(未提供答案)"
-                ce.resolve(item_id, answer)
-                print(f"[OK] 关闭好奇项 #{item_id}，答案已记录")
-                return
-            else:
-                print(f"未知 curiosity 子命令: {sub_cmd}")
-                print("用法: curiosity [list|add|close]")
-                return
-
-        # judgment 模块不存在，尝试兼容导入
-        try:
-            from judgment.profile import list_profiles
-            from judgment.memory import get_stats, get_lessons, get_decisions, summary as memory_summary
-            _jm_available = True
-        except ImportError:
-            _jm_available = False
-
-        if cmd_mode == "list":
-            if not _jm_available:
-                print("[!] judgment.profile 模块不可用，跳过")
-                return
-            profiles = list_profiles()
-            print("Profiles:", ", ".join(profiles) if profiles else "(空)")
-            return
-        elif cmd_mode == "stats":
-            if not _jm_available:
-                print("[!] judgment.memory 模块不可用，跳过")
-                return
-            stats = get_stats()
-            print(f"总判断数: {stats['total']}")
-            print(f"正确判断: {stats['good']}")
-            print(f"准确率: {stats['accuracy']:.1f}%")
-            return
-        elif cmd_mode == "lessons":
-            if not _jm_available:
-                print("[!] judgment.memory 模块不可用，跳过")
-                return
-            lessons = get_lessons()
-            if not lessons:
-                print("暂无教训")
-            for l in lessons[:10]:
-                print(f"  [{l['count']}次] {l['dimension']}: {l['pattern']}")
-            return
-        elif cmd_mode == "history":
-            if not _jm_available:
-                print("[!] judgment.memory 模块不可用，跳过")
-                return
-            decisions = get_decisions(10)
-            for d in decisions:
-                fb = d.get("feedback", "")
-                print(f"  [{d['timestamp'][:10]}] {d['task'][:40]}: {d['decision'][:25]} [{fb}]")
-            return
-        elif cmd_mode == "summary":
-            if not _jm_available:
-                print("[!] judgment.memory 模块不可用，跳过")
-                return
-            s = memory_summary()
-            print(f"总判断数: {s['total_decisions']}")
-            print(f"准确率: {s['stats']['accuracy']:.1f}%")
-            print(f"教训数: {len(s['top_lessons'])}")
-            return
-        elif cmd_mode == "evolution":
-            # OpenSpace 进化建议
-            from execution_analyzer import ExecutionAnalyzer
-            analyzer = ExecutionAnalyzer()
-            suggestions = analyzer.generate_evolution_suggestions()
-            print("=== OpenSpace 进化建议 ===")
-            print()
-            if not suggestions:
-                print("没有需要进化的技能")
-            else:
-                for s in suggestions:
-                    print(f"[{s['suggestion']}] skill={s['skill_id']} 成功率={s['success_rate']:.1%}")
-                    print(f"  原因: {s['reason']}")
-                    print()
-            return
-        elif cmd_mode == "pdf":
-            # PDF提取 + 十维分析
-            from perception import extract_pdf_to_judgment_input
-            from judgment.router import check10d, format_report
-
-            print(f"提取PDF: {pdf_path}")
-            print("正在提取并过滤...")
-            content = extract_pdf_to_judgment_input(pdf_path)
-            print()
-            print("=== 过滤后内容（前800字符）===")
-            if len(content) > 800:
-                print(content[:800] + "...\n(内容被截断，完整内容用于分析)")
-            else:
-                print(content)
-            print()
-            print("=== 十维分析结果 ===")
-            result = check10d(content, profile_name=profile_name)
-            print(format_report(result))
-            return
-        elif cmd_mode == "web":
-            # 网页提取 + 十维分析
-            from perception import extract_web_to_judgment_input
-            from judgment.router import check10d, format_report
-
-            print(f"提取网页: {web_url}")
-            print("正在提取并过滤...")
-            content = extract_web_to_judgment_input(web_url)
-            print()
-            print("=== 过滤后内容（前800字符）===")
-            if len(content) > 800:
-                print(content[:800] + "...\n(内容被截断，完整内容用于分析)")
-            else:
-                print(content)
-            print()
-            print("=== 十维分析结果 ===")
-            result = check10d(content, profile_name=profile_name)
-            print(format_report(result))
-            return
-        elif cmd_mode == "hub":
-            # Hub 统一入口 — 各子系统调试
-            import hub as _hub
-            _h = _hub.get_hub()
-
-            sub = args[i] if i < len(args) else "subsystems"
-            if sub == "check":
-                code = " ".join(args[i+1:]) if i+1 < len(args) else ""
-                if not code:
-                    print("用法: hub check <代码>")
-                    return
-                findings = _h.security.check(code)
-                print(_h.security.format_findings(findings))
-            elif sub == "collision":
-                print("[!] 请提供 skills dict，或用 python -c 直接调用")
-                print("    detector = hub.get_hub().collision.create()")
-                print("    hub.get_hub().collision.detect(detector, {'tdd': ['test'], 'unit-test': ['test']})")
-            elif sub == "ralph":
-                from curiosity.ralph_loop import RalphLoop, RalphState
-                print("RalphLoop 子系统:")
-                print(f"  RalphState 是 @dataclass，包含字段:")
-                print(f"    iteration, has_new_info, promise_met, deadlock, message")
-                print()
-                print("  使用示例:")
-                print("    loop = hub.get_hub().ralph.create(promise=lambda: len(items) >= 5)")
-                print("    result = loop.run()")
-            elif sub == "evolver":
-                evo = _h.evolver
-                # 检查 --summarize flag
-                if i + 1 < len(args) and args[i + 1] == "--summarize":
-                    print(evo.summarize())
-                else:
-                    result = evo.run_cycle()
-                    print(f"[OK] Self-Evolver 闭环完成")
-                    print(f"  记录处理: {result.records_processed}")
-                    print(f"  新模式: {result.new_patterns}")
-                    print(f"  Lessons 新增: {result.lessons_added}")
-            elif sub == "sqlite":
-                print(_h.sqlite.summary())
-            elif sub == "subsystems":
-                print("=== Hub 子系统列表 ===")
-                subs = [
-                    ("judgment",     "十维判断引擎"),
-                    ("curiosity",    "好奇心引擎"),
-                    ("causal",       "因果记忆"),
-                    ("output",       "格式化输出"),
-                    ("emotion",      "情绪系统"),
-                    ("feedback",     "反馈记录"),
-                    ("action_signal","行动信号"),
-                    ("ralph",        "Ralph 循环检测"),
-                    ("collision",    "Skill 碰撞检测"),
-                    ("security",     "安全检查"),
-                    ("benchmark",    "GDPVal 基准测试"),
-                    ("observe",      "被动工具捕获"),
-                    ("diff_tracker", "决策影响追踪"),
-                    ("evolver",      "Self-Evolver 闭环"),
-                ]
-                for name, desc in subs:
-                    print(f"  hub.{name:15s} — {desc}")
-            elif sub == "observe":
-                hook = _h.observe.create()
-                print(f"ObserveHook 创建成功: {hook}")
-                print("  工具调用将被动记录到 data/memory/fast/")
-            else:
-                print(f"未知 hub 子命令: {sub}")
-                print("用法: hub check|collision|ralph|subsystems")
-            return
-
-    # 创建 profile
-    if create_profile:
-        from judgment.profile import create_persona
-        p = create_persona(create_profile, create_type)
-        print(f"已创建 profile: {p['name']} ({p['style']})")
-        print(f"  价值观: {', '.join(p['values'])}")
-        print(f"  已知偏差: {', '.join(p['biases'])}")
-        return
-
-    # 初始化 agent
-    from judgment.agent import JudgmentAgent
-    agent = JudgmentAgent(profile_name=profile_name)
-
-    # 运行
-    if task:
-        agent.run(task=task)
+    parser = argparse.ArgumentParser(
+        description="⚖️ Juhuo - Judgment System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    
+    subparsers = parser.add_subparsers(dest="cmd", help="子命令")
+    
+    # judge
+    judge_parser = subparsers.add_parser("judge", help="执行判断")
+    judge_parser.add_argument("task", help="判断问题")
+    judge_parser.add_argument("-v", "--verbose", action="store_true", help="详细输出")
+    
+    # shell
+    subparsers.add_parser("shell", help="交互模式")
+    
+    # web
+    web_parser = subparsers.add_parser("web", help="启动 Web Console")
+    web_parser.add_argument("--port", type=int, default=18768, help="端口")
+    
+    # status
+    subparsers.add_parser("status", help="查看状态")
+    
+    # verdict
+    verdict_parser = subparsers.add_parser("verdict", help="Verdict 管理")
+    verdict_parser.add_argument("action", choices=["list", "correct", "wrong", "detail"], help="操作")
+    verdict_parser.add_argument("chain_id", nargs="?", help="Chain ID")
+    verdict_parser.add_argument("-n", "--limit", type=int, default=20, help="列表数量")
+    
+    # config
+    config_parser = subparsers.add_parser("config", help="配置管理")
+    config_parser.add_argument("action", choices=["show", "init", "edit"], help="操作")
+    
+    args = parser.parse_args()
+    
+    if args.cmd == "judge":
+        cmd_judge(args.task, args.verbose)
+    elif args.cmd == "shell":
+        cmd_shell()
+    elif args.cmd == "web":
+        from web_console import run
+        run(args.port)
+    elif args.cmd == "status":
+        cmd_status()
+    elif args.cmd == "verdict":
+        cmd_verdict(args)
+    elif args.cmd == "config":
+        cmd_config(args)
     else:
-        agent.run(interactive=True)
+        # 无参数时进入交互模式
+        cmd_shell()
 
 
 if __name__ == "__main__":
