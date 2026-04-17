@@ -23,13 +23,13 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from threading import Timer, Lock
 
-# 配置
+# 配置（生产参数）
 BIAS_THRESHOLD = 0.7
-BIAS_CONSECUTIVE = 2  # 连续2次错误就触发（降低阈值以便测试）
+BIAS_CONSECUTIVE = 3      # 连续3次错误触发
 ACCURACY_THRESHOLD = 0.4
-MIN_SAMPLES = 3  # 至少3个样本即可触发
-COOLDOWN_HOURS = 24  # 冷却24小时（生产用）
-VALIDATION_WINDOW = 10  # 验证窗口：进化后追踪10次判断
+MIN_SAMPLES = 5           # 至少5个样本
+COOLDOWN_HOURS = 24       # 冷却24小时
+VALIDATION_WINDOW = 10    # 验证窗口：进化后追踪10次判断
 
 # 数据库
 DB_PATH = Path(__file__).parent.parent / "data" / "judgment_data" / "juhuo_judgment.db"

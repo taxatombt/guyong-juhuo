@@ -359,6 +359,21 @@ def format_self_report() -> str:
     return "\n".join(lines)
 
 
+def load_from_file(self_model_json: str) -> "SelfModel":
+    """从 JSON 文件加载自我模型"""
+    data = json.loads(self_model_json)
+    return _dict_to_model(data)
+
+
+def save_to_file(self_model_json: str) -> bool:
+    """保存自我模型到 JSON 文件"""
+    model = load_model()
+    data = _model_to_dict(model)
+    with open(self_model_json, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return True
+
+
 # 测试
 if __name__ == "__main__":
     init()

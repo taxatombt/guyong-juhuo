@@ -57,11 +57,26 @@ juhuo/
 ├── self_model/        # 自我模型（贝叶斯盲区追踪）
 ├── curiosity/         # 好奇心引擎（锁定兴趣域+双随机游走）
 ├── emotion_system/    # 情感系统（情绪信号检测）
-├── openspace/         # Skill进化系统
+├── mcp/               # MCP 客户端（MCP服务器集成）
+├── skills/            # Skill 系统
+├── tools/             # 52个工具接口
+├── evolver/           # Self-Evolver 验证闭环
 ├── web/               # 网页控制台
 ├── test/              # 测试套件
 ├── cli.py             # 命令行入口
 └── launcher.bat       # 启动器
+```
+
+### Emotion → Judgment 集成
+
+```
+emotion_system (情绪分析)
+        ↓
+emotion_output → 注入 judgment_context["emotion_state"]
+        ↓
+judgment_engine 在做 verdict 时能看到情绪状态
+        ↓
+情绪信号 → 影响维度权重（如焦虑→降低自信度）
 ```
 
 ---
