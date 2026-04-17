@@ -1,7 +1,7 @@
 # ⚖️ guyong-juhuo · 判断系统
 
 <p align="center">
-  <img src="juhuo-web-console.png" width="480" alt="juhuo console">
+  <img src="logo_preview.png" width="480" alt="juhuo logo">
 </p>
 
 **An evolving personal AI agent that mimics a specific individual, then surpasses human-level judgment.**
