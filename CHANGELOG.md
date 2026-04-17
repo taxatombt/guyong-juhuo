@@ -1,5 +1,63 @@
 # Juhuo 更新日志
 
+## v1.5 (2026-04-17)
+
+### Tools 系统 (52个工具)
+
+| 类别 | 数量 | 核心功能 |
+|------|------|----------|
+| judgment | 9 | check10d/verify/confidence/weights/bias/route/error |
+| memory | 9 | 4类记忆/因果链/统计 |
+| perception | 7 | 注意力/PDF/Web/RSS/邮件 |
+| emotion | 7 | 情绪分析/PAD/好奇心 |
+| action | 6 | 规划/执行/安全 |
+| goal | 4 | 设置/进度/完成 |
+| output | 4 | 格式化/优先级 |
+| evolution | 6 | 触发/基准/验证 |
+
+### MCP 集成
+
+- `mcp_protocol.py` - 协议类型定义
+- `mcp_client.py` - Stdio/HTTP 传输 + 多服务器管理
+- 支持 stdio 和 HTTP 两种传输方式
+- MCPServerManager 统一管理多服务器
+
+### Skill 系统
+
+- `skills/skill_types.py` - SkillDefinition/SkillExecution
+- `skills/skill_registry.py` - 注册表 + 双向触发匹配
+- `skills/builtin_skills.py` - 11个内置技能
+- 钩子系统 (pre/post/error)
+
+### 测试覆盖
+
+- `test/test_memory_system.py` - 8个测试
+- `test/test_skills.py` - 7个测试
+- `test/test_mcp.py` - 5个测试
+- `test/test_tools.py` - 7个测试
+- `.github/workflows/ci.yml` - CI/CD 自动化
+
+---
+
+## v1.4 (2026-04-17)
+
+### 4类记忆系统完成
+
+| 类型 | 说明 |
+|------|------|
+| UserMemory | 用户偏好、习惯、背景 |
+| FeedbackMemory | 判断反馈、信念更新 |
+| ProjectMemory | 项目上下文、进展 |
+| ReferenceMemory | 知识、文档、参考资料 |
+
+### Self-Evolver 完整闭环
+
+- `evolver/self_evolver.py` - 定时触发层
+- `evolutions/evolution_validation` - 进化验证/回滚
+- judgment ↔ emotion ↔ curiosity 三角闭环
+
+---
+
 ## v1.3 (2026-04-16)
 
 ### Codex Rust启发实现
