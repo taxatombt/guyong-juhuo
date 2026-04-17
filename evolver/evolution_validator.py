@@ -18,6 +18,10 @@ evolution_validator.py — Self-Evolver 验证闭环
     准确率下降 → 回滚 + status='reverted'
 """
 
+import logging
+
+log = logging.getLogger("juhuo.evolution_validator")
+
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -138,6 +142,7 @@ def verify_evolution(evolution_id: str) -> Tuple[bool, str]:
     Returns:
         (success, message)
     """
+    log.info(f"Verifying evolution: {evolution_id}")
     from judgment.judgment_db import get_conn
     from self_model.self_model import SelfModel
     
@@ -147,9 +152,11 @@ def verify_evolution(evolution_id: str) -> Tuple[bool, str]:
         """, (evolution_id,)).fetchone()
         
         if not row:
+            log.error(f"Evolution not found: {evolution_id}")
             return False, f"Evolution {evolution_id} not found"
         
         if row["status"] != "pending":
+            log.info(f"Evolution already verified: {row['status']}")
             return True, f"Evolution already verified: {row['status']}"
         
         pre_accuracy = row["pre_accuracy"]

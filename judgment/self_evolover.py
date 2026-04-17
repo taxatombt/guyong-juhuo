@@ -18,10 +18,14 @@ self_evolover.py — Juhuo Self-Evolver 自动闭环引擎
 import json
 import sqlite3
 import time
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 from threading import Timer, Lock
+
+# Logger
+log = logging.getLogger("juhuo.self_evolver")
 
 # 配置（生产参数）
 BIAS_THRESHOLD = 0.7
@@ -53,6 +57,7 @@ def get_conn():
 # 1. 同步到self_model
 def sync_to_self_model(chain_id: str) -> Optional[Dict]:
     """Hook捕获的判断数据写入self_model"""
+    log.info(f"Syncing to self_model: {chain_id}")
     try:
         from self_model.self_model import update_from_feedback, load_model
         with get_conn() as conn:
@@ -92,13 +97,13 @@ def sync_to_self_model(chain_id: str) -> Optional[Dict]:
             updated = update_from_feedback(event)
             return {"success": True, "bias_updated": updated is not None}
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        log.error(f"sync_to_self_model failed: {e}")
         return {"success": False, "error": str(e)}
 
 # 2. 检查触发条件
 def check_trigger() -> Dict:
     """检查是否触发进化"""
+    log.debug("Checking evolution trigger conditions")
     with get_conn() as conn:
         # 连续错误检查 - 优先使用 verdict_outcomes（实际有数据的表）
         recent = conn.execute("""
@@ -268,9 +273,9 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
         
         with open(evol_file, "w", encoding="utf-8") as f:
             json.dump({"current": new_weights, "history": history}, f, ensure_ascii=False, indent=2)
-        print(f"[Self-Evolver] 已写入 evolutions/evolved_weights.json")
+        log.info("Written to evolutions/evolved_weights.json")
     except Exception as e:
-        print(f"[Self-Evolver] evolutions/evolved_weights.json 更新失败: {e}")
+        log.error(f"Evolved weights update failed: {e}")
         success = False
     
     return success
@@ -278,6 +283,7 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
 # 6. 主闭环
 def run_evolution_cycle() -> Dict:
     """执行完整的Self-Evolver闭环"""
+    log.info("Starting Self-Evolver cycle")
     result = {
         "timestamp": datetime.now().isoformat(),
         "status": "ok",
@@ -288,10 +294,12 @@ def run_evolution_cycle() -> Dict:
     result["trigger"] = trigger
     
     if not trigger.get("triggered"):
+        log.info(f"Evolution not triggered: {trigger.get('reason')}")
         result["status"] = "no_trigger"
         return result
     
     result["triggered"] = True
+    log.warning(f"Evolution triggered: {trigger.get('reason')}")
     
     cases = get_cases()
     # 过滤掉没有 dimensions 的案例
@@ -299,6 +307,7 @@ def run_evolution_cycle() -> Dict:
     if len(valid_cases) < MIN_SAMPLES:
         result["status"] = "insufficient_samples"
         result["reason"] = f"有效案例{len(valid_cases)}个，需要{MIN_SAMPLES}个"
+        log.warning(f"Insufficient samples: {len(valid_cases)}/{MIN_SAMPLES}")
         return result
     cases = valid_cases
     
