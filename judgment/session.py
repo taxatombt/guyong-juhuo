@@ -1,242 +1,155 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-session.py — Juhuo Session 持久化
+session.py — Juhuo Judgment Session
 
-借鉴 Codex Session 格式：完整的对话历史持久化
-
-Session 结构：
-- session.json: 元数据
-- session.jsonl: 消息历史
+借鉴 OpenClaw Agent Loop：
+1. Session 生命周期管理
+2. 流式事件（lifecycle/assistant/tool）
+3. Queue + Concurrency 控制
+4. 与 Hook 系统集成
 """
 
 from __future__ import annotations
-import json
-from pathlib import Path
-from typing import Dict, List, Optional
-from dataclasses import dataclass, asdict, field
+from typing import Dict, List, Optional, Any, Callable
+from dataclasses import dataclass, field
 from datetime import datetime
-from uuid import uuid4
+from enum import Enum
+import json, uuid
 
 from judgment.logging_config import get_logger
+from judgment.openclaw_hooks import HookEvent, HookContext, get_hook_registry
 log = get_logger("juhuo.session")
 
 
-# 配置
-SESSION_DIR = Path(__file__).parent.parent / "data" / "sessions"
-CURRENT_SESSION_FILE = SESSION_DIR / "current.json"
+class SessionStatus(Enum):
+    INIT = "init"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    ERROR = "error"
 
 
 @dataclass
-class SessionMetadata:
-    """Session 元数据"""
-    id: str
-    created_at: str
-    updated_at: str
-    title: str = ""
-    message_count: int = 0
-    total_tokens: int = 0
-    tags: List[str] = field(default_factory=list)
-    archived: bool = False
+class StreamEvent:
+    type: str
+    content: Any
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
-class Message:
-    """消息"""
-    id: str
-    role: str  # user / assistant / system
-    content: str
+class JudgmentTurn:
+    turn_id: str
     timestamp: str
-    metadata: Dict = field(default_factory=dict)
+    input: str
+    output: Dict[str, Any]
+    tool_calls: List[Dict] = field(default_factory=list)
+    error: str = ""
 
 
-class Session:
-    """
-    Juhuo Session
+class JudgmentSession:
+    """Judgment Session（OpenClaw 启发）"""
     
-    管理单个会话的生命周期
-    """
+    def __init__(self, session_id: Optional[str] = None, user_id: Optional[str] = None):
+        self.session_id = session_id or str(uuid.uuid4())[:8]
+        self.user_id = user_id
+        self.status = SessionStatus.INIT
+        self.created_at = datetime.now()
+        self.updated_at = self.created_at
+        self.turns: List[JudgmentTurn] = []
+        self.current_turn: Optional[JudgmentTurn] = None
+        self.stream_handlers: Dict[str, List[Callable]] = {"lifecycle": [], "assistant": [], "tool": []}
+        self._locks: Dict[str, int] = {}
+        self.hooks = get_hook_registry()
+        log.info(f"Session: {self.session_id}")
     
-    def __init__(self, session_id: str = None):
-        self.id = session_id or str(uuid4())
-        self.metadata = SessionMetadata(
-            id=self.id,
-            created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat()
-        )
-        self.messages: List[Message] = []
-        
-        # 加载已有 session
-        if CURRENT_SESSION_FILE.exists():
-            self._load()
+    def start(self) -> None:
+        self.status = SessionStatus.RUNNING
+        self._emit("lifecycle", {"event": "start"})
+        self.hooks.fire(HookEvent.SESSION_START, session_id=self.session_id)
     
-    def add_message(self, role: str, content: str, metadata: Dict = None) -> Message:
-        """添加消息"""
-        msg = Message(
-            id=str(uuid4()),
-            role=role,
-            content=content,
-            timestamp=datetime.now().isoformat(),
-            metadata=metadata or {}
-        )
-        self.messages.append(msg)
-        self.metadata.message_count = len(self.messages)
-        self.metadata.updated_at = datetime.now().isoformat()
-        
-        # 自动保存
-        self.save()
-        
-        return msg
+    def end(self, reason: str = "completed") -> None:
+        self.status = SessionStatus.COMPLETED if reason == "completed" else SessionStatus.ERROR
+        self._emit("lifecycle", {"event": reason})
+        self.hooks.fire(HookEvent.SESSION_END, session_id=self.session_id)
     
-    def add_user_message(self, content: str) -> Message:
-        """添加用户消息"""
-        return self.add_message("user", content)
+    def new_turn(self, input_text: str) -> JudgmentTurn:
+        self.current_turn = JudgmentTurn(str(uuid.uuid4())[:8], datetime.now().isoformat(), input_text, {})
+        return self.current_turn
     
-    def add_assistant_message(self, content: str, metadata: Dict = None) -> Message:
-        """添加助手消息"""
-        return self.add_message("assistant", content, metadata)
+    def end_turn(self, output: Dict, error: str = "") -> None:
+        if self.current_turn:
+            self.current_turn.output = output
+            self.current_turn.error = error
+            self.turns.append(self.current_turn)
+            self.current_turn = None
     
-    def get_messages(self, limit: int = None) -> List[Dict]:
-        """获取消息列表"""
-        msgs = self.messages[-limit:] if limit else self.messages
-        return [asdict(m) for m in msgs]
+    def add_tool_call(self, tool: str, args: Dict, result: Any) -> None:
+        if self.current_turn:
+            self.current_turn.tool_calls.append({"tool": tool, "args": args, "result": result})
     
-    def save(self) -> None:
-        """保存 Session"""
-        SESSION_DIR.mkdir(parents=True, exist_ok=True)
-        
-        # 保存元数据
-        meta_file = SESSION_DIR / f"{self.id}.json"
-        with open(meta_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "metadata": asdict(self.metadata),
-                "messages": [asdict(m) for m in self.messages]
-            }, f, ensure_ascii=False, indent=2)
-        
-        # 更新当前 session 指针
-        with open(CURRENT_SESSION_FILE, "w", encoding="utf-8") as f:
-            json.dump({"current_session_id": self.id}, f)
-        
-        log.debug(f"Saved session {self.id}")
+    def on_stream(self, etype: str, handler: Callable) -> None:
+        if etype in self.stream_handlers:
+            self.stream_handlers[etype].append(handler)
     
-    def _load(self) -> None:
-        """加载 Session"""
-        try:
-            meta_file = SESSION_DIR / f"{self.id}.json"
-            if meta_file.exists():
-                with open(meta_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self.metadata = SessionMetadata(**data["metadata"])
-                    self.messages = [Message(**m) for m in data["messages"]]
-        except Exception as e:
-            log.error(f"Failed to load session: {e}")
+    def _emit(self, etype: str, data: Any) -> None:
+        for h in self.stream_handlers.get(etype, []):
+            try: h(StreamEvent(etype, data))
+            except: pass
     
-    def archive(self) -> None:
-        """归档 Session"""
-        self.metadata.archived = True
-        self.save()
+    def acquire(self, resource: str) -> bool:
+        if self._locks.get(resource, 0) >= 3:
+            return False
+        self._locks[resource] = self._locks.get(resource, 0) + 1
+        return True
     
-    def export_jsonl(self) -> str:
-        """导出为 JSONL 格式"""
-        lines = []
-        for msg in self.messages:
-            lines.append(json.dumps(asdict(msg), ensure_ascii=False))
-        return "\n".join(lines)
+    def release(self, resource: str) -> None:
+        if resource in self._locks:
+            self._locks[resource] = max(0, self._locks[resource] - 1)
     
-    def get_summary(self) -> str:
-        """获取 Session 摘要"""
-        first_msg = self.messages[0].content if self.messages else ""
-        return first_msg[:50] + "..." if len(first_msg) > 50 else first_msg
+    def to_dict(self) -> Dict:
+        return {"session_id": self.session_id, "status": self.status.value, "turns": len(self.turns)}
+    
+    def save(self, path: str) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"meta": self.to_dict(), "turns": [vars(t) for t in self.turns]}, f, ensure_ascii=False, indent=2)
+    
+    @classmethod
+    def load(cls, path: str) -> "JudgmentSession":
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        s = cls(data["meta"]["session_id"])
+        s.status = SessionStatus(data["meta"]["status"])
+        s.turns = [JudgmentTurn(**t) for t in data.get("turns", [])]
+        return s
 
 
 class SessionManager:
-    """
-    Session 管理器
-    
-    管理所有 Session
-    """
-    
     def __init__(self):
-        self.current_session: Optional[Session] = None
-        self._load_current()
+        self.sessions: Dict[str, JudgmentSession] = {}
+        self._active: Optional[str] = None
     
-    def _load_current(self) -> None:
-        """加载当前 Session"""
-        if CURRENT_SESSION_FILE.exists():
-            with open(CURRENT_SESSION_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                session_id = data.get("current_session_id")
-                if session_id:
-                    self.current_session = Session(session_id)
-        
-        if self.current_session is None:
-            self.current_session = Session()
+    def create(self, user_id: str = None) -> JudgmentSession:
+        s = JudgmentSession(user_id=user_id)
+        self.sessions[s.session_id] = s
+        self._active = s.session_id
+        return s
     
-    def get_current(self) -> Session:
-        """获取当前 Session"""
-        if self.current_session is None:
-            self.current_session = Session()
-        return self.current_session
+    def get(self, sid: str) -> Optional[JudgmentSession]:
+        return self.sessions.get(sid)
     
-    def new_session(self) -> Session:
-        """创建新 Session"""
-        # 归档当前
-        if self.current_session and self.current_session.messages:
-            self.current_session.archive()
-        
-        # 创建新的
-        self.current_session = Session()
-        return self.current_session
+    def active(self) -> Optional[JudgmentSession]:
+        return self.sessions.get(self._active) if self._active else None
     
-    def list_sessions(self, limit: int = 10) -> List[SessionMetadata]:
-        """列出最近的 Sessions"""
-        sessions = []
-        if not SESSION_DIR.exists():
-            return sessions
-        
-        for f in sorted(SESSION_DIR.glob("*.json"), reverse=True)[:limit]:
-            if f.name == "current.json":
-                continue
-            try:
-                with open(f, "r", encoding="utf-8") as fp:
-                    data = json.load(fp)
-                    sessions.append(SessionMetadata(**data["metadata"]))
-            except:
-                continue
-        
-        return sessions
-    
-    def get_session(self, session_id: str) -> Optional[Session]:
-        """获取指定 Session"""
-        session = Session(session_id)
-        return session if session.messages else None
+    def list(self) -> List[Dict]:
+        return [s.to_dict() for s in self.sessions.values()]
 
 
 # 全局管理器
 _manager: Optional[SessionManager] = None
 
-
-def get_manager() -> SessionManager:
-    """获取全局 Session 管理器"""
+def get_session_manager() -> SessionManager:
     global _manager
     if _manager is None:
         _manager = SessionManager()
     return _manager
-
-
-def get_current_session() -> Session:
-    """获取当前 Session"""
-    return get_manager().get_current()
-
-
-if __name__ == "__main__":
-    # 测试
-    mgr = get_manager()
-    session = mgr.get_current()
-    
-    session.add_user_message("测试问题")
-    session.add_assistant_message("这是回答")
-    
-    print(f"Session: {session.id}")
-    print(f"Messages: {len(session.messages)}")
-    print(f"Summary: {session.get_summary()}")
