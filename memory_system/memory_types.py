@@ -53,8 +53,8 @@ class BaseMemory:
     id: str
     content: str              # 记忆内容（自然语言）
     scope: str                # private | team
-    created_at: str
-    updated_at: str
+    created_at: str = ""     # 默认空字符串
+    updated_at: str = ""
     used_count: int = 0      # 被召回次数
     
     def to_dict(self) -> Dict:

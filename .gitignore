@@ -25,7 +25,8 @@ wheels/
 
 # Git
 .git
-.github
+# .github is tracked for CI/CD workflows
+# .github/workflows/ci.yml
 
 # Legacy (外部啃读代码，不打包)
 _legacy/
