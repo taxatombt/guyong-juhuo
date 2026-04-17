@@ -285,7 +285,7 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
         log.error(f"Evolved weights update failed: {e}")
         success = False
 
-    # 3. 【闭环Step3】启动进化验证追踪
+    # 3. 【闭环Step3】启动进化验证追踪（双重注册：SQLite + 内存）
     if success:
         try:
             from evolver.evolution_validator import start_evolution_tracking
@@ -298,6 +298,14 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
                 pre_accuracy = (row["correct"] / row["total"]) if row["total"] > 0 else 0.5
             evolution_id = f"evo_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             start_evolution_tracking(evolution_id, pre_accuracy)
+
+            # 同时注册到 EvolverScheduler（内存追踪，作为辅助）
+            try:
+                sched = get_scheduler()
+                sched.register_evolution(evolution_id, new_weights)
+            except Exception:
+                pass  # EvolverScheduler 是可选的，不阻断
+
             log.info(f"[Self-Evolver] 启动进化验证追踪: {evolution_id}, pre_accuracy={pre_accuracy:.2%}")
         except Exception as e:
             log.warning(f"[Self-Evolver] 启动进化验证失败（不阻断主流程）: {e}")
@@ -466,14 +474,30 @@ class EvolverScheduler:
     def record_outcome(self, correct: int) -> None:
         """
         记录每次判断结果，用于验证进化效果
-        在 judgment_engine 每次判断后调用
+
+        直接委托给 evolution_validator 的 SQLite 追踪。
+        这是唯一的事实来源，避免内存+SQLite 双系统的数据不一致。
         """
-        for evo_id, data in self._pending_validations.items():
-            if data["post_judgments"] < VALIDATION_WINDOW:
-                data["post_judgments"] += 1
-                data["post_correct"] += correct
-    
+        try:
+            from evolver.evolution_validator import add_verdict_to_evolution_tracking
+            add_verdict_to_evolution_tracking(1 if correct else 0)
+        except Exception as e:
+            log.debug(f"[scheduler] delegate to evolution_validator failed: {e}")
+
     def validate_evolution(self, evolution_id: str) -> Dict:
+        """
+        验证进化效果
+
+        直接委托给 evolution_validator.verify_evolution()，由它执行完整的
+        验证 + rollback 逻辑。
+        """
+        try:
+            from evolver.evolution_validator import verify_evolution
+            success, msg = verify_evolution(evolution_id)
+            return {"status": msg, "success": success}
+        except Exception as e:
+            log.error(f"[scheduler] verify_evolution delegation failed: {e}")
+            return {"status": "error", "reason": str(e)}
         """
         验证进化效果
         - 有效（提升>5%）→ 强化

@@ -212,33 +212,58 @@ def verify_evolution(evolution_id: str) -> Tuple[bool, str]:
 
 def _rollback_self_model(evolution_id: str) -> bool:
     """
-    回滚 self_model 到上一版本
-    
-    备份当前版本，然后恢复到上一个备份。
+    回滚 self_model 权重到上一版本
+
+    流程：
+    1. 备份当前 self_model.json
+    2. 从 evolutions/evolved_weights.json history 恢复到上一组权重
+    3. 直接写回 self_model.json（只更新 weights 字段）
+
+    如果没有历史记录则备份当前版本并标记失败。
     """
-    from self_model.self_model import load_model, save_model, _model_to_dict, _dict_to_model
-    
+    from self_model.self_model import load_model, save_model
+    import shutil
+
     SELF_MODEL_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # 获取当前 self_model
-    model = load_model()
-    
-    # 创建备份（以 evolution_id 命名）
+    MODEL_FILE = Path(__file__).parent.parent / "self_model.json"
+    EVOLVED_WEIGHTS_FILE = Path(__file__).parent.parent / "data" / "evolutions" / "evolved_weights.json"
+
+    # 1. 备份当前模型
     backup_path = SELF_MODEL_BACKUP_DIR / f"{evolution_id}.json"
-    with open(backup_path, "w", encoding="utf-8") as f:
-        json.dump(_model_to_dict(model), f, ensure_ascii=False, indent=2)
-    
-    # 查找最近的备份（排除当前备份）
-    backups = sorted([b for b in SELF_MODEL_BACKUP_DIR.glob("*.json") if b != backup_path])
-    if len(backups) >= 1:
-        # 恢复到上一个版本
-        previous_backup = backups[-1]
-        with open(previous_backup, "r", encoding="utf-8") as f:
-            prev_data = json.load(f)
-        prev_model = _dict_to_model(prev_data)
-        save_model(prev_model)
-        return True
-    
+    try:
+        shutil.copy2(MODEL_FILE, backup_path)
+    except Exception:
+        backup_path.write_text(MODEL_FILE.read_text(encoding="utf-8"))
+
+    # 2. 尝试从 evolved_weights.json history 恢复
+    try:
+        if EVOLVED_WEIGHTS_FILE.exists():
+            with open(EVOLVED_WEIGHTS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            history = data.get("history", [])
+            if len(history) >= 2:
+                # history[-2] 是"上一版本"（history[-1] 是刚才刚应用的当前版本）
+                previous_weights = history[-2].get("weights", {})
+                model = load_model()
+                model.weights = previous_weights
+                save_model(model)
+                log.info(f"[rollback] Restored to previous weights from history: {list(previous_weights.keys())}")
+                return True
+    except Exception as e:
+        log.warning(f"[rollback] Failed to restore from history: {e}")
+
+    # 3. fallback：恢复最近一次备份
+    try:
+        backups = sorted([b for b in SELF_MODEL_BACKUP_DIR.glob("*.json") if b != backup_path])
+        if backups:
+            latest_backup = backups[-1]
+            shutil.copy2(latest_backup, MODEL_FILE)
+            log.info(f"[rollback] Restored from backup: {latest_backup.name}")
+            return True
+    except Exception as e:
+        log.error(f"[rollback] Backup restore failed: {e}")
+
+    log.error(f"[rollback] No recovery method succeeded for {evolution_id}")
     return False
 
 
