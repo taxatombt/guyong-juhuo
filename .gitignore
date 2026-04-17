@@ -28,6 +28,10 @@ wheels/
 # .github is tracked for CI/CD workflows
 # .github/workflows/ci.yml
 
+# Preview screenshots
+*_preview.png
+github_preview*.png
+
 # Legacy (外部啃读代码，不打包)
 _legacy/
 installer/
@@ -66,3 +70,4 @@ precheck.bat
 
 # Database (用户数据，不打包)
 *.db
+data/judgment_data/*.db

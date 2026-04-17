@@ -24,7 +24,7 @@
 https://github.com/taxatombt/guyong-juhuo/releases
 ```
 
-下载 `juhuo-1.3.0-setup.exe`
+下载 `guyong-juhuo-1.0.0-setup.exe` 或最新版本
 
 ### 1.2 安装
 
@@ -200,4 +200,4 @@ launcher.bat --init
 
 ---
 
-_最后更新：2026-04-16 v1.3_
+_最后更新：2026-04-17 v1.5_
