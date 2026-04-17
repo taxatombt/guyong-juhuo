@@ -58,10 +58,18 @@ juhuo/
 ├── curiosity/         # 好奇心引擎（锁定兴趣域+双随机游走）
 ├── emotion_system/    # 情感系统（情绪信号检测）
 ├── mcp/               # MCP 客户端（MCP服务器集成）
-├── skills/            # Skill 系统
+├── skills/            # Skill 系统（含 Skill Self-Evolver）
 ├── tools/             # 52个工具接口
 ├── evolver/           # Self-Evolver 验证闭环
+├── judgment/          # 判断核心 + 多模块
+│   ├── compactor.py   # 历史压缩
+│   ├── multi_agent.py # 多Agent编排
+│   ├── exec_policy.py # 权限控制
+│   ├── session.py     # 会话持久化
+│   ├── auto_evolver.py # 全模块自我进化
+│   └── logging_config.py # 日志系统
 ├── web/               # 网页控制台
+├── tui.py             # 终端界面
 ├── test/              # 测试套件
 ├── cli.py             # 命令行入口
 └── launcher.bat       # 启动器
@@ -78,6 +86,16 @@ judgment_engine 在做 verdict 时能看到情绪状态
         ↓
 情绪信号 → 影响维度权重（如焦虑→降低自信度）
 ```
+
+### 自我进化闭环
+
+| 模块 | 进化目标 | 触发条件 |
+|------|---------|---------|
+| Judgment | 调整判断权重 | 准确率下降 |
+| Skill | 优化触发条件 | 成功率 < 30% |
+| Compaction | 调整压缩阈值 | 保留率 < 70% |
+| Multi-Agent | 优化Agent协作 | 成功率 < 80% |
+| Exec Policy | 调整危险模式 | 误报率 > 30% |
 
 ---
 
