@@ -6,7 +6,7 @@ llm_adapter base — 大模型适配器基类
 集成 QwenPaw LLM 限流 + Retry 系统
 """
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, List, Dict
 import json

@@ -75,6 +75,15 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes=""):
         c.commit()
         _trigger_fitness(chain_id,task_text,correct,changes)
         _trigger_curiosity(chain_id,task_text,correct,changes)
+        
+        # 【闭环Step3】Self-Evolver 验证闭环 — 记录每次判决结果
+        try:
+            from judgment.self_evolover import EvolverScheduler
+            _sch = EvolverScheduler()
+            _sch.record_outcome(1 if correct else 0)
+            _log.debug(f"[self_evolver] recorded outcome: correct={correct}")
+        except Exception as e:
+            _log.debug(f"[self_evolver] record_outcome skip: {e}")
         # 【闭环Step1】judgment → causal_memory
         _trigger_causal_memory(chain_id,task_text,dims_data.get("dims",[]),dims_data.get("weights",{}),correct,notes,1.0 if correct else 0.0)
         

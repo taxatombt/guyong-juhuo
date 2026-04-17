@@ -20,6 +20,7 @@ router.py — 十维判断框架核心路由
 
 import re
 import asyncio
+from datetime import datetime
 try:
     from paths import PATHS
 except ImportError:
@@ -28,6 +29,9 @@ except ImportError:
 from judgment.dimensions import DIMENSIONS
 from causal_memory import recall_causal_history, inject_to_judgment_input, find_similar_events, init
 from judgment.closed_loop import start_verdict_listener
+
+# Verdict 自动积累
+from evolver.verdict_collector import save_verdict as _save_auto_verdict, VerdictRecord
 
 # 初始化
 init()
@@ -437,6 +441,23 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             reasoning={},
         )
         _ret["meta"]["chain_id"] = _chain_id
+        
+        # ── Verdict 自动积累：每次judgment自动记录 ──────────────────
+        # source="auto" 表示系统自动记录，待用户反馈 verdict
+        _auto_record = VerdictRecord(
+            chain_id=_chain_id,
+            task_text=original_task[:300],
+            timestamp=datetime.now().isoformat(),
+            verdict="pending",  # 待用户反馈
+            source="auto",
+            metadata={
+                "complexity": complexity,
+                "dimensions": _dims_chosen,
+                "weights": _weights,
+                "emotion": emotion_detection.emotion_label if emotion_detection.emotion_label else None,
+            }
+        )
+        _save_auto_verdict(_auto_record)
         
         # Stop Hook: 捕获judgment行为
         capture_judgment(
