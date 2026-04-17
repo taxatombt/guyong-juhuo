@@ -26,6 +26,7 @@ from judgment.self_model.belief import get_belief_status
 from judgment.verdict_collector import get_verdict_stats, mark_verdict_correct, mark_verdict_wrong
 from causal_memory.causal_chain import get_recent_chains, get_chain_detail
 from config.env_loader import EnvVarLoader, create_env_template, JUHuo_USER_DIR, JUHuo_USER_ENV
+from judgment.benchmark import Benchmark, run_benchmark
 
 log = get_logger("juhuo.cli")
 
@@ -192,6 +193,10 @@ def main():
     config_parser = subparsers.add_parser("config", help="配置管理")
     config_parser.add_argument("action", choices=["show", "init", "edit"], help="操作")
     
+    # benchmark
+    bench_parser = subparsers.add_parser("benchmark", help="运行 Benchmark")
+    bench_parser.add_argument("-n", "--num", type=int, default=8, help="案例数量")
+    
     args = parser.parse_args()
     
     if args.cmd == "judge":
@@ -207,6 +212,10 @@ def main():
         cmd_verdict(args)
     elif args.cmd == "config":
         cmd_config(args)
+    
+    elif args.cmd == "benchmark":
+        report = run_benchmark()
+        print(f"\n✅ Benchmark 完成")
     else:
         # 无参数时进入交互模式
         cmd_shell()
