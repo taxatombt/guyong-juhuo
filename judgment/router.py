@@ -571,22 +571,15 @@ def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
     # 构造维度总结prompt
     dim_summary_parts = []
     for dim_key, answer_text in answers.items():
-        # answer_text 格式为 "Q1: xxx? Answer: xxx。"
-        # 提取 Answer 部分
         if "Answer:" in answer_text:
             qa = answer_text.split("Answer:")[1].strip()
         else:
             qa = answer_text.strip()
-        qa = qa[:200]  # 截断避免太长
-        dim_summary_parts.append(f"【{dim_key}】{qa}")
+        qa = re.sub(r'Count[:：].*$', "", qa, flags=re.MULTILINE)[:200]
+        dim_summary_parts.append(f"\u3010{dim_key}\u3011{qa}")
 
-    dim_summary = "\n".join(dim_summary_parts)
-    # 简化为直接问：给一个明确的一句话建议
-    prompt = f"""作为一个决策顾问，针对「{task_text}」这个问题，根据以下分析给出一个明确建议（不超过30个字）：
-
-{dim_summary}
-
-直接给出建议（只需输出建议文本，不需要其他内容）："""
+    dim_summary = "\\n".join(dim_summary_parts)
+    prompt = ("\u4efb\u52a1\uff1a" + task_text + "\n\u5206\u6790\uff1a" + dim_summary + "\n\u7ed3\u8bba\uff08\u4e0d\u8d85\u8fc725\u4e2a\u5b57\uff09\uff1a")
 
     try:
         adapter = get_adapter()
@@ -594,34 +587,46 @@ def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
             raise ValueError("adapter not configured")
         response = adapter.complete(CompletionRequest(
             prompt=prompt,
-            max_tokens=500,
+            max_tokens=1500,
             temperature=0.3,
         ))
         if response.success and response.content:
             raw = response.content
 
-            # 提取 thinking block 内容
-            thinking_parts = re.findall(r"</think>(.*?)<\|im_end\|", raw, re.DOTALL)
-            if not thinking_parts:
-                thinking_parts = re.findall(r"<think>(.*?)</think>", raw, re.DOTALL)
+            # 1. 清除 thinking block
+            after = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
 
-            # 尝试从 thinking block 或正文找 "建议" 关键词
-            for block in thinking_parts + [raw]:
-                for line in block.split("\n"):
-                    line = line.strip()
-                    # 匹配 "建议[：:].*" 或 "[建议]"
-                    m = re.search(r"建议[：:]\s*(.+?)(?:\n|$)", line)
-                    if m:
-                        verdict_line = m.group(1).strip()[:100]
-                        return (verdict_line, 0.55)
+            # 2. 找第一个中文句子（正文可能开头有残渣，用 search）
+            m = re.search(r'([\u4e00-\u9fff]{2,60}[\u3002\uff01\uff1f])', after)
+            if m:
+                verdict = m.group(1).strip()
+                confidence = min(0.88, 0.35 + len(answers) * 0.08)
+                return (verdict, confidence)
+
+            # 3. Fallback：尝试从 thinking block 末尾提取
+            thinking_blocks = re.findall(r"<think>(.*?)</think>", raw, re.DOTALL)
+            for tb in reversed(thinking_blocks):
+                tb_clean = re.sub(r'Count[:：].*$', "", tb, flags=re.DOTALL)
+                tb_clean = re.sub(r'字数[:：].*$', "", tb_clean, flags=re.DOTALL)
+                tb_clean = re.sub(r'[A-Za-z\u4e00-\u9fff]\s*\(\d+\)', "", tb_clean)
+                parts = re.split(r'([\u3002\uff1f\uff01])', tb_clean)
+                sentences = []
+                for i in range(0, len(parts) - 1, 2):
+                    sentences.append(parts[i].strip() + parts[i + 1])
+                if len(parts) % 2 == 1 and parts[-1].strip():
+                    sentences.append(parts[-1].strip())
+                for sent in reversed(sentences):
+                    chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
+                    if chinese >= 4 and chinese / max(len(sent), 1) > 0.5:
+                        confidence = min(0.88, 0.35 + len(answers) * 0.08)
+                        return (sent[:50], confidence)
     except Exception:
         pass
 
-    # Fallback：基于回答数量估算 confidence
+    # 4. 最后 Fallback
     total_expected = len(answers) + 3
     confidence = min(0.9, len(answers) / total_expected + 0.2)
-    return (f"基于{len(answers)}个维度的分析给出了判断", confidence)
-
+    return (f"\u57fa\u4e8e{len(answers)}\u4e2a\u7ef4\u5ea6\u7684\u5206\u6790\u7ed9\u51fa\u4e86\u5224\u65ad", confidence)
 
 def _judge_complexity(text):
     """自动判断任务复杂度"""
