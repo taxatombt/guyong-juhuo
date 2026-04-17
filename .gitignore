@@ -33,6 +33,10 @@ wheels/
 github_preview*.png
 
 # Legacy (外部啃读代码，不打包)
+# Trash (归档废弃文件)
+__trash__/
+
+# Legacy (外部啃读代码，已归档)
 _legacy/
 installer/
 

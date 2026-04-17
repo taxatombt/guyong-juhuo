@@ -175,24 +175,20 @@ python cli.py benchmark      # Benchmark 测试
 
 ## TODO（下次版本）
 
-> 现在最缺的不是新功能，是把 Self-Evolver 从「能跑」变成「能验证」。
+> 方向收拢：因果记忆选型已完成，Self-Evolver 目标降级为「维度权重自动调整」。
 
-- [ ] **Verdict 数据积累** — 目标 50+ 条，覆盖多场景（进行中：22 benchmark + judgment_db种子）
-- [ ] **Self-Evolver 验证闭环** — verify_evolution() + 自动验证 + 回滚（v1.6 已闭环）
-- [ ] **生产配置参数** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h（v1.6 judgment/config.py）
-- [ ] **GDPVal Benchmark** — 用标准案例集评估判断质量（v1.6 22案例 + A/B/C/D 评分）
-- [ ] **HRR 向量检索** — 评估因果记忆检索能力是否需要升级（v1.6 评估完成，500条触发）
-- [x] Verdict 自动积累（v1.5）
-- [x] evolution_validator 追踪（v1.5）
-- [x] InsightTracker 完整实现 + 集成 router.py + closed_loop.py（v1.5）
-- [x] ContextFence 围栏包装 inject_to_judgment_input（v1.5）
-- [x] _legacy 清理（__trash__/ 集中归档废弃文件）
-- [x] apply_evolved_weights → start_evolution_tracking 验证闭环（v1.6）
-- [x] EvolverScheduler 后台自动启动（router.py）（v1.6）
+- [ ] **Verdict 数据积累** — 目标 50+ 条真实反馈，覆盖多场景（进行中：36条种子 + benchmark）
+- [ ] **维度权重闭环** — verdict → belief 权重自动调整（Self-Evolver Phase 2 降级目标）
+- [ ] **生产数据积累** — InsightTracker 读数达到可读报告（需要真实 verdicts 驱动）
+- [ ] **HRR 监控** — difflib 延迟超 100ms 或事件超 500 条时触发升级
+- [x] 因果记忆选型（JSONL主力，SQLite归档 __trash__/）（v1.7）
+- [x] Self-Evolver rollback 修复 + 验证闭环（v1.6）
 - [x] judgment/config.py 集中生产配置（v1.6）
-- [x] GDPVal Benchmark 22案例 + 语义匹配 + A/B/C/D 评分（v1.6）
-- [x] verdict_collector: import_from_judgment_db() + run_full_collection()（v1.6）
-- [x] HRR 向量评估报告 + 升级触发条件文档（v1.6）
+- [x] GDPVal Benchmark 22案例 + A/B/C/D 评分（v1.6）
+- [x] verdict_collector: import_from_judgment_db()（v1.6）
+- [x] InsightTracker 完整实现（v1.5）
+- [x] ContextFence 围栏（v1.5）
+- [x] _legacy 清理（__trash__/）（v1.6）
 
 ---
 
@@ -205,7 +201,7 @@ python cli.py benchmark      # Benchmark 测试
 - **Router**：EvolverScheduler 在初始化时自动启动（后台每1小时检查）
 - **Benchmark**：22案例（原8），语义同义词匹配，维度覆盖率，GDPVal A/B/C/D 评分
 - **verdict_collector**：import_from_judgment_db() 从 juhuo 自有 snapshots 种子导入；run_full_collection() CLI
-- **HRR**：评估报告，向量搜索升级触发条件（500条/100ms延迟）
+- **HRR 监控**：评估报告（difflib够用），升级触发条件已文档化，**暂不自研**
 
 ### v1.5.2 (2026-04-17)
 
