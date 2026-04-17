@@ -3,12 +3,30 @@
 """
 llm_adapter base — 大模型适配器基类
 
-定义统一接口，不同大模型实现这个接口即可接入聚活
+集成 QwenPaw LLM 限流 + Retry 系统
 """
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Optional, List, Dict
+import json
+
+from judgment.logging_config import get_logger
+log = get_logger("juhuo.llm_base")
+
+# 可选导入限流器（如果安装了）
+try:
+    from llm_adapter.rate_limiter import (
+        get_rate_limiter, get_concurrency_limiter,
+        RetryConfig, with_retry, RetryError,
+        LLM_MAX_CONCURRENT, LLM_MAX_QPM,
+        LLM_MAX_RETRIES, LLM_BACKOFF_BASE, LLM_BACKOFF_CAP,
+    )
+    HAS_RATE_LIMITER = True
+except ImportError:
+    HAS_RATE_LIMITER = False
+    log.warning("Rate limiter not available")
+
 
 @dataclass
 class CompletionRequest:
@@ -34,105 +52,110 @@ class LLMResponse:
 
 @dataclass
 class KnowledgeUnit:
-    """从文本提取的知识单元，用于OpenSpace进化"""
+    """知识单元"""
     name: str
     content: str
     category: str  # CORE_IDENTITY / SELF_MODEL / CAUSAL_MEMORY / JUDGMENT_RULE / GENERAL_SKILL
     confidence: float
-    source: str  # 来源URL/文件/对话
-    parent_skill_id: Optional[str] = None
+    source: str
 
 
 class LLMAdapter(ABC):
-    """大模型适配器抽象基类"""
+    """大模型适配器基类"""
+    
+    def __init__(self):
+        self._rate_limiter = None
+        self._concurrency = None
+        if HAS_RATE_LIMITER:
+            self._rate_limiter = get_rate_limiter()
+            self._concurrency = get_concurrency_limiter()
     
     @abstractmethod
-    def complete(self, request: CompletionRequest) -> LLMResponse:
-        """文本补全"""
+    def _complete_impl(self, request: CompletionRequest) -> LLMResponse:
+        """实际实现，由子类提供"""
         pass
     
+    def complete(self, request: CompletionRequest) -> LLMResponse:
+        """
+        带限流和重试的 complete
+        
+        自动处理：
+        - QPM 限流
+        - 并发控制
+        - 429 / 超时重试
+        """
+        if not HAS_RATE_LIMITER:
+            return self._complete_impl(request)
+        
+        # 限流获取
+        import asyncio
+        loop = asyncio.get_event_loop()
+        
+        try:
+            # 检查限流
+            if not loop.run_until_complete(self._rate_limiter.acquire()):
+                log.warning("Rate limit timeout")
+                return LLMResponse(False, "", error="Rate limit timeout")
+            
+            # 并发控制
+            if not loop.run_until_complete(self._concurrency.acquire()):
+                log.warning("Concurrency limit reached")
+                return LLMResponse(False, "", error="Concurrency limit reached")
+            
+            try:
+                # 带重试的调用
+                retry_cfg = RetryConfig(
+                    max_retries=LLM_MAX_RETRIES,
+                    backoff_base=LLM_BACKOFF_BASE,
+                    backoff_cap=LLM_BACKOFF_CAP,
+                )
+                return loop.run_until_complete(
+                    with_retry(self._complete_impl, request, config=retry_cfg)
+                )
+            finally:
+                self._concurrency.release()
+        
+        except RetryError as e:
+            log.error(f"Retry exhausted: {e}")
+            return LLMResponse(False, "", error=str(e))
+        except Exception as e:
+            log.error(f"LLM call failed: {e}")
+            return LLMResponse(False, "", error=str(e))
+    
     def extract_knowledge(self, text: str, source: str) -> List[KnowledgeUnit]:
-        """
-        从长文本提取可进化知识单元
-        默认实现用prompt提取，子类可以覆盖
-        """
-        prompt = f"""
-从以下文本中提取可复用的知识单元，每个知识单元包含：
-- name：知识名称（简洁）
-- content：知识内容（完整）
-- category：分类（可选值：CORE_IDENTITY / SELF_MODEL / CAUSAL_MEMORY / JUDGMENT_RULE / GENERAL_SKILL）
-- confidence：你对这个知识的置信度 0-1
+        """从文本提取知识单元"""
+        prompt = f"""从以下文本提取知识单元（JSON数组）：
+- name: 名称
+- content: 内容  
+- category: CORE_IDENTITY/SELF_MODEL/JUDGMENT_RULE/GENERAL_SKILL
+- confidence: 0-1
 
-文本来源：{source}
-
-文本内容：
-{text[:8000]}
-
-输出格式：JSON数组，每个元素是一个知识单元
-        """.strip()
+文本：{text[:8000]}
+来源：{source}"""
         
-        response = self.complete(CompletionRequest(
-            prompt=prompt,
-            temperature=0.3,
-            max_tokens=2000,
-        ))
-        
+        response = self.complete(CompletionRequest(prompt=prompt, temperature=0.3, max_tokens=2000))
         if not response.success:
             return []
         
-        # 尝试解析JSON
-        import json
         try:
-            # 查找JSON数组部分
-            content = response.content
-            start = content.find('[')
-            end = content.rfind(']')
-            if start >= 0 and end >= 0:
-                content = content[start:end+1]
-            data = json.loads(content)
-            result = []
-            for item in data:
-                result.append(KnowledgeUnit(
-                    name=item.get('name', 'unnamed'),
-                    content=item.get('content', ''),
-                    category=item.get('category', 'GENERAL_SKILL'),
-                    confidence=float(item.get('confidence', 0.8)),
+            start = response.content.find('[')
+            end = response.content.rfind(']')
+            if start >= 0:
+                data = json.loads(response.content[start:end+1])
+                return [KnowledgeUnit(
+                    name=i.get('name', 'unnamed'),
+                    content=i.get('content', ''),
+                    category=i.get('category', 'GENERAL_SKILL'),
+                    confidence=float(i.get('confidence', 0.8)),
                     source=source,
-                    parent_skill_id=item.get('parent_skill_id'),
-                ))
-            return result
+                ) for i in data]
         except:
-            # 解析失败，返回整个文本作为一个知识单元
-            return [KnowledgeUnit(
-                name="extracted_text",
-                content=response.content,
-                category="GENERAL_SKILL",
-                confidence=0.5,
-                source=source,
-            )]
+            pass
+        
+        return [KnowledgeUnit("extracted", response.content, "GENERAL_SKILL", 0.5, source)]
     
-    def suggest_evolution(self, current_content: str, execution_records: str) -> Optional[str]:
-        """
-        基于执行记录建议进化改进
-        返回改进后的内容，如果无法建议返回None
-        """
-        prompt = f"""
-当前技能内容：
-{current_content}
-
-近期执行记录和结果：
-{execution_records}
-
-请根据执行结果，改进这个技能内容，让它更准确。
-只输出改进后的完整内容，不要其他解释。
-        """.strip()
-        
-        response = self.complete(CompletionRequest(
-            prompt=prompt,
-            temperature=0.5,
-            max_tokens=2000,
-        ))
-        
-        if response.success and response.content.strip():
-            return response.content.strip()
-        return None
+    def suggest_evolution(self, current: str, records: str) -> Optional[str]:
+        """基于执行记录建议进化"""
+        prompt = f"""当前技能：\n{current}\n\n执行记录：\n{records}\n\n改进建议（只输出改进后的内容）："""
+        response = self.complete(CompletionRequest(prompt=prompt, temperature=0.5, max_tokens=2000))
+        return response.content.strip() if response.success else None
