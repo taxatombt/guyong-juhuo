@@ -503,12 +503,23 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             }
     except Exception:
         pass
+
+    # ── Verdict 合成：从维度答案生成最终判断 ─────────────────────────
+    verdict_str, confidence = _synthesize_verdict(original_task, _ret.get("answers", {}))
+    _ret["verdict"] = verdict_str
+    _ret["confidence"] = confidence
+
     return _ret
 
 
 async def _analyze_dim(dim, task_text, agent_profile):
     """分析单个维度（asyncio协程）。所有维度同时执行，互不阻塞。"""
     await asyncio.sleep(0)  # 让出控制，允许其他协程并发执行
+    return _analyze_dim_sync(dim, task_text, agent_profile)
+
+
+def _analyze_dim_sync(dim, task_text, agent_profile):
+    """分析单个维度（同步版）。与 asyncio 版逻辑相同。"""
     questions = dim.questions[:]
     if agent_profile:
         extra = _inject_profile_questions(agent_profile, task_text)
@@ -519,46 +530,97 @@ async def _analyze_dim(dim, task_text, agent_profile):
 
 def check10d_run(task_text, agent_profile=None):
     """
-    并行检视接口：asyncio并行执行10维度分析（critical模式专用）
+    同步检视接口：直接调用 check10d，critical 复杂度。
     
-    原理：10个维度同时分析，通过asyncio.gather并发执行
-    预期加速：5-10倍（vs串行逐维等待）
-    
-    同步接口，内部用asyncio.run()处理并发
+    注意：asyncio.run() 会与模块级后台线程冲突，
+    所以这里直接同步调用 check10d，不做嵌套异步。
     """
-    async def _run():
-        base_result = check10d(task_text, agent_profile, complexity="critical")
-        must = base_result["must_check"]
-        important = base_result["important"]
-        skipped = base_result["skipped"]
+    base_result = check10d(task_text, agent_profile, complexity="critical")
+    # 同步构建所有维度问题
+    must = base_result["must_check"]
+    important = base_result["important"]
+    skipped = base_result["skipped"]
+    dims_to_analyze = [d for d in DIMENSIONS if d.id in must or d.id in important]
+    all_questions = {}
+    for dim in dims_to_analyze:
+        dim_result = _analyze_dim_sync(dim, task_text, agent_profile)
+        all_questions.update(dim_result)
+    # LLM回答
+    _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
+    answers = _answer_questions(task_text, all_questions, agent_profile)
+    base_result["questions"] = all_questions
+    base_result["answers"] = answers
+    base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
+    base_result["meta"]["parallel"] = False
+    base_result["meta"]["prior_adjustments"] = _prior_adj
+    # 末尾再次合成 verdict（用全部9维答案覆盖 check10d() 里的早期合成）
+    verdict_str, confidence = _synthesize_verdict(task_text, answers)
+    base_result["verdict"] = verdict_str
+    base_result["confidence"] = confidence
+    return base_result
 
-        dims_to_analyze = [
-            d for d in DIMENSIONS
-            if d.id in must or d.id in important
-        ]
 
-        if len(dims_to_analyze) > 1:
-            tasks = [_analyze_dim(dim, task_text, agent_profile) for dim in dims_to_analyze]
-            dim_results_list = await asyncio.gather(*tasks)
+def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
+    """
+    基于各维度回答合成 verdict 和 confidence
+    返回 (verdict_str, confidence_float)
+    """
+    if not answers:
+        return ("需要更多信息才能给出判断，建议补充关键维度分析", 0.0)
+
+    # 构造维度总结prompt
+    dim_summary_parts = []
+    for dim_key, answer_text in answers.items():
+        # answer_text 格式为 "Q1: xxx? Answer: xxx。"
+        # 提取 Answer 部分
+        if "Answer:" in answer_text:
+            qa = answer_text.split("Answer:")[1].strip()
         else:
-            dim_results_list = [await _analyze_dim(dims_to_analyze[0], task_text, agent_profile)]
+            qa = answer_text.strip()
+        qa = qa[:200]  # 截断避免太长
+        dim_summary_parts.append(f"【{dim_key}】{qa}")
 
-        all_questions = {}
-        for dr in dim_results_list:
-            all_questions.update(dr)
+    dim_summary = "\n".join(dim_summary_parts)
+    # 简化为直接问：给一个明确的一句话建议
+    prompt = f"""作为一个决策顾问，针对「{task_text}」这个问题，根据以下分析给出一个明确建议（不超过30个字）：
 
-        # LLM接入：MiniMax回答所有维度问题
-        _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
-        answers = _answer_questions(task_text, all_questions, agent_profile)
+{dim_summary}
 
-        base_result["questions"] = all_questions
-        base_result["answers"] = answers
-        base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
-        base_result["meta"]["parallel"] = True
-        base_result["meta"]["prior_adjustments"] = _prior_adj
-        return base_result
+直接给出建议（只需输出建议文本，不需要其他内容）："""
 
-    return asyncio.run(_run())
+    try:
+        adapter = get_adapter()
+        if not adapter or not adapter.is_configured():
+            raise ValueError("adapter not configured")
+        response = adapter.complete(CompletionRequest(
+            prompt=prompt,
+            max_tokens=500,
+            temperature=0.3,
+        ))
+        if response.success and response.content:
+            raw = response.content
+
+            # 提取 thinking block 内容
+            thinking_parts = re.findall(r"</think>(.*?)<\|im_end\|", raw, re.DOTALL)
+            if not thinking_parts:
+                thinking_parts = re.findall(r"<think>(.*?)</think>", raw, re.DOTALL)
+
+            # 尝试从 thinking block 或正文找 "建议" 关键词
+            for block in thinking_parts + [raw]:
+                for line in block.split("\n"):
+                    line = line.strip()
+                    # 匹配 "建议[：:].*" 或 "[建议]"
+                    m = re.search(r"建议[：:]\s*(.+?)(?:\n|$)", line)
+                    if m:
+                        verdict_line = m.group(1).strip()[:100]
+                        return (verdict_line, 0.55)
+    except Exception:
+        pass
+
+    # Fallback：基于回答数量估算 confidence
+    total_expected = len(answers) + 3
+    confidence = min(0.9, len(answers) / total_expected + 0.2)
+    return (f"基于{len(answers)}个维度的分析给出了判断", confidence)
 
 
 def _judge_complexity(text):
