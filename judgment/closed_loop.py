@@ -91,6 +91,17 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes=""):
             add_verdict_to_evolution_tracking(1 if correct else 0)
         except Exception as e:
             _log.debug(f"[evolution_validator] skip: {e}")
+        
+        # 【闭环Step3.2】InsightTracker: 记录 verdict 结果
+        try:
+            from judgment.insight_tracker import insight_tracker
+            insight_tracker().record_verdict(
+                chain_id=chain_id or "",
+                correct=correct,
+                dimensions=dims_data.get("dims", [])
+            )
+        except Exception:
+            pass
         # 【闭环Step1】judgment → causal_memory
         _trigger_causal_memory(chain_id,task_text,dims_data.get("dims",[]),dims_data.get("weights",{}),correct,notes,1.0 if correct else 0.0)
         

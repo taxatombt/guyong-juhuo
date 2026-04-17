@@ -181,9 +181,13 @@ python cli.py benchmark         # Benchmark
 - [ ] **Self-Evolver verification loop** — verify_evolution() + auto-verify + rollback
 - [ ] **Production config** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h
 - [ ] **GDPVal Benchmark** — Evaluate judgment quality with standard case set
+- [ ] **HRR vector retrieval** — Evaluate if causal memory needs vector search upgrade
 - [x] apply_evolved_weights (v1.5)
 - [x] Verdict auto-accumulation (v1.5)
 - [x] evolution_validator tracking (v1.5)
+- [x] InsightTracker full implementation + router.py + closed_loop.py (v1.5)
+- [x] ContextFence wrapping for inject_to_judgment_input (v1.5)
+- [x] _legacy cleanup (archived to __trash__/)
 
 ---
 

@@ -633,6 +633,7 @@ def inject_to_judgment_input(task: str) -> str:
     同时包含 causal_memory 历史积累和 closed_loop 最新判断链。
     
     P3改进：使用四道压缩叠加
+    安全：使用 ContextFence 围栏包装，防止记忆被误当用户输入
     """
     recall_result = recall_causal_history(task, max_events=3)
     
@@ -656,7 +657,17 @@ def inject_to_judgment_input(task: str) -> str:
             cl_lines.append(compressed.content)
         parts.append("\n".join(cl_lines))
     
-    return "\n\n".join(parts) if parts else ""
+    content = "\n\n".join(parts) if parts else ""
+    
+    # ── 安全：ContextFence 围栏包装 ──────────────────────────────
+    if content:
+        try:
+            from judgment.context_fence import ContextFence
+            fence = ContextFence()
+            return fence.wrap(content, context_type="causal_memory")
+        except Exception:
+            pass  # fallback: 返回原文
+    return content
 
 
 def check_and_trigger_self_model_update(

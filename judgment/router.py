@@ -161,6 +161,17 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
             temperature=0.7,
         ))
 
+        # ── InsightTracker: 记录 token 消耗 ─────────────────────────
+        try:
+            from judgment.insight_tracker import insight_tracker
+            _t = insight_tracker()
+            _t.record_input(response.usage_input if hasattr(response, 'usage_input') and response.usage_input else len(prompt) // 4)
+            _t.record_output(response.usage_output if hasattr(response, 'usage_output') and response.usage_output else len(response.content) // 4)
+            if hasattr(response, 'cost') and response.cost:
+                _t.record_cost(response.cost)
+        except Exception:
+            pass
+
         if not response.success:
             print(f"[LLM] 调用失败: {response.error}")
             return {}

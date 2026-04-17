@@ -181,9 +181,13 @@ python cli.py benchmark      # Benchmark 测试
 - [ ] **Self-Evolver 验证闭环** — verify_evolution() + 自动验证 + 回滚
 - [ ] **生产配置参数** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h
 - [ ] **GDPVal Benchmark** — 用标准案例集评估判断质量
+- [ ] **HRR 向量检索** — 评估因果记忆检索能力是否需要升级
 - [x] apply_evolved_weights 落地（v1.5）
 - [x] Verdict 自动积累（v1.5）
 - [x] evolution_validator 追踪（v1.5）
+- [x] InsightTracker 完整实现 + 集成 router.py + closed_loop.py（v1.5）
+- [x] ContextFence 围栏包装 inject_to_judgment_input（v1.5）
+- [x] _legacy 清理（__trash__/ 集中归档废弃文件）
 
 ---
 
