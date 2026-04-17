@@ -1,7 +1,7 @@
 # guyong-juhuo · Judgement System
 
 <p align="center">
-  <img src="logo.svg" width="320" alt="juhuo logo">
+  <img src="juhuo-web-console.png" width="480" alt="juhuo console">
 </p>
 
 **An evolving personal AI agent that mimics a specific individual, then surpasses human-level judgment.**
@@ -44,7 +44,7 @@ The core distinction: most AI agents optimize for "what is correct." guyong-juhu
 | **Mimic Mode** | Pass in `agent_profile` — the system forces alignment to that individual's judgment style |
 | **Transcend Mode** | 10 generic dimensions; no profile — system judges on pure reasoning and closes the loop until it outperforms humans |
 
-**The iron law:** *Mimic a specific individual. Transcend humanity as a whole.*
+**The iron law:** _Mimic a specific individual. Transcend humanity as a whole._
 
 ---
 
@@ -55,17 +55,17 @@ git clone https://github.com/taxatombt/guyong-juhuo.git
 cd guyong-juhuo
 pip install -r requirements.txt
 
-# Judge a dilemma from CLI
-python cli.py "Should I take this job offer or keep looking?"
+# Judge from CLI
+python cli.py "Should I quit my job to start a business?"
 
-# Run the web console
-python hub.py web
+# Web Console
+python cli.py web
 
-# Check dimension belief status
-python hub.py verdict --show
+# Check status
+python cli.py status
 
-# First-time setup wizard
-python hub.py config wizard
+# Self-test
+python cli.py test
 ```
 
 ---
@@ -73,7 +73,7 @@ python hub.py config wizard
 ## Judgment Output Example
 
 ```
-=== Judgement: "Should I take this job offer or keep looking?" ===
+=== Judgement: "Should I quit my job to start a business?" ===
 
   cognitive       ████████████████░░  82%  "Need more salary data"
   game_theory     █████████████░░░░░  75%  "Counter-offer risk"
@@ -86,7 +86,7 @@ python hub.py config wizard
   temporal        ██████████████░░░  72%  "3-month window optimal"
   metacognitive   ███████████████░░░  79%  "Overconfident in current analysis"
 
-  → RECOMMEND: Keep looking (confidence: HIGH, 81%)
+  → RECOMMEND: Consider carefully (confidence: HIGH, 81%)
   → chain_id: j_1776149590792
 ```
 
@@ -118,23 +118,14 @@ The closed loop: judgment is made → chain is recorded → user sends post-hoc 
 - **MiniMax / OpenAI / Ollama** (LLM backends)
 - **Flask** (web console)
 - **SQLite** (judgment chain + belief rolling buffer)
-- **PyInstaller** (single-file `.exe` distribution)
-- **Inno Setup** (installer)
 
 ---
 
 ## Installation
 
-### Installer (recommended for Windows)
-Download `dist/guyong-juhuo-1.0.0-setup.exe` (~46 MB) → run → next, next, done.
-
-### Portable executable
-Download `dist/guyong-juhuo.exe` (~40 MB) → double-click → runs without installation.
-
-### From source
 ```bash
 pip install -r requirements.txt
-python hub.py web
+python cli.py web
 # Open http://localhost:18768
 ```
 
@@ -144,27 +135,30 @@ python hub.py web
 
 ```
 ~/.juhuo/.env       — API keys (highest priority, never committed to git)
-~/.juhuo/config.yaml — user settings
 ```
 
-Or run the interactive wizard: `python hub.py config wizard`
+First-time setup:
+```bash
+python cli.py config init  # Create template
+python cli.py config edit  # Edit config
+```
 
 ---
 
 ## CLI Reference
 
 ```bash
-python hub.py                    # Start web console (default, port 18768)
-python hub.py web                # Web console (explicit)
-python hub.py web --port 8080    # Custom port
-python hub.py config show         # Show current config
-python hub.py config wizard       # First-time setup wizard
-python hub.py config set key val # Set a config value
-python hub.py verdict --show      # View dimension belief status
-python hub.py verdict -c <id> -w  # Mark a judgment as wrong
-python hub.py verdict -c <id> -k  # Mark a judgment as correct
-python hub.py upgrade --dry-run   # Check for updates
-python hub.py upgrade --force     # Force upgrade to latest
+python cli.py "question"       # Single judgment
+python cli.py shell           # Interactive mode
+python cli.py web             # Web Console
+python cli.py status          # Status view
+python cli.py verdict list    # History
+python cli.py verdict correct <id>   # Mark correct
+python cli.py verdict wrong <id>     # Mark wrong
+python cli.py config show      # Show config
+python cli.py config init      # Init config
+python cli.py test             # Self-test
+python cli.py benchmark         # Benchmark
 ```
 
 ---
@@ -176,3 +170,31 @@ python hub.py upgrade --force     # Force upgrade to latest
 - **Full version snapshots** — any past state of the system is recoverable
 - **Judgment chain rolling buffer** — SQLite, 100 entries max, bounded file size
 - **Bounded belief updates** — max 10% change per verdict, saturation at 0.05 / 0.95
+
+---
+
+## Changelog
+
+### v1.5.2 (2026-04-17)
+
+Added:
+- **Claude Code inspired**: Verification Agent + Tool Governance (14-step) + Four-way Compaction
+- **OpenClaw inspired**: Skills on-demand loading + Hook system (17 events) + Session management
+- **QwenPaw inspired**: LLM rate limiting (QPM/concurrent) + Retry + Backoff + EnvVarLoader
+- **Web Console**: Flask UI + REST API
+- **Benchmark**: 8-case test suite, dimension accuracy evaluation
+- **Self-Test**: 6-item startup check
+- **MCP Server**: judgment_10d / judgment_verdict / judgment_status
+- **i18n**: Multi-language (zh_CN / en_US)
+- **Docker**: Dockerfile + docker-compose.yml
+
+### v1.5.0 (2026-04-14)
+
+Initial release, 10-dimension judgment framework + causal memory + self-model
+
+---
+
+<p align="center">
+  <a href="https://github.com/taxatombt/guyong-juhuo">GitHub</a> ·
+  <a href="https://github.com/taxatombt/guyong-juhuo/releases">Releases</a>
+</p>
