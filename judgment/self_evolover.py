@@ -27,13 +27,20 @@ from threading import Timer, Lock
 # Logger
 log = logging.getLogger("juhuo.self_evolver")
 
-# 配置（生产参数）
-BIAS_THRESHOLD = 0.7
-BIAS_CONSECUTIVE = 3      # 连续3次错误触发
-ACCURACY_THRESHOLD = 0.4
-MIN_SAMPLES = 5           # 至少5个样本
-COOLDOWN_HOURS = 24       # 冷却24小时
-VALIDATION_WINDOW = 10    # 验证窗口：进化后追踪10次判断
+# 配置（生产参数，优先从集中配置读取）
+try:
+    from judgment.config import (
+        BIAS_THRESHOLD, BIAS_CONSECUTIVE, ACCURACY_THRESHOLD,
+        MIN_SAMPLES, COOLDOWN_HOURS, VALIDATION_WINDOW
+    )
+except ImportError:
+    # 硬编码兜底（保持向后兼容）
+    BIAS_THRESHOLD = 0.7
+    BIAS_CONSECUTIVE = 3
+    ACCURACY_THRESHOLD = 0.4
+    MIN_SAMPLES = 5
+    COOLDOWN_HOURS = 24
+    VALIDATION_WINDOW = 10
 
 # 数据库
 DB_PATH = Path(__file__).parent.parent / "data" / "judgment_data" / "juhuo_judgment.db"
@@ -277,7 +284,24 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
     except Exception as e:
         log.error(f"Evolved weights update failed: {e}")
         success = False
-    
+
+    # 3. 【闭环Step3】启动进化验证追踪
+    if success:
+        try:
+            from evolver.evolution_validator import start_evolution_tracking
+            # 获取应用前的准确率作为基准
+            from judgment.judgment_db import get_conn
+            with get_conn() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) as total, SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) as correct FROM verdict_outcomes"
+                ).fetchone()
+                pre_accuracy = (row["correct"] / row["total"]) if row["total"] > 0 else 0.5
+            evolution_id = f"evo_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            start_evolution_tracking(evolution_id, pre_accuracy)
+            log.info(f"[Self-Evolver] 启动进化验证追踪: {evolution_id}, pre_accuracy={pre_accuracy:.2%}")
+        except Exception as e:
+            log.warning(f"[Self-Evolver] 启动进化验证失败（不阻断主流程）: {e}")
+
     return success
 
 # 6. 主闭环

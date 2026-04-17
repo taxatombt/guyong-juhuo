@@ -177,21 +177,35 @@ python cli.py benchmark         # Benchmark
 
 > The biggest gap right now is not new features — it's making Self-Evolver go from "runs" to "verified".
 
-- [ ] **Verdict data accumulation** — Target 50+ cases, multi-scenario coverage
-- [ ] **Self-Evolver verification loop** — verify_evolution() + auto-verify + rollback
-- [ ] **Production config** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h
-- [ ] **GDPVal Benchmark** — Evaluate judgment quality with standard case set
-- [ ] **HRR vector retrieval** — Evaluate if causal memory needs vector search upgrade
-- [x] apply_evolved_weights (v1.5)
+- [ ] **Verdict data accumulation** — Target 50+ cases, multi-scenario coverage *(in progress: 22 benchmark + judgment_db seeds)*
+- [ ] **Self-Evolver verification loop** — verify_evolution() + auto-verify + rollback *(v1.6: closed)*
+- [ ] **Production config** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h *(v1.6: judgment/config.py)*
+- [ ] **GDPVal Benchmark** — Evaluate judgment quality with standard case set *(v1.6: 22 cases, A/B/C/D grade)*
+- [ ] **HRR vector retrieval** — Evaluate if causal memory needs vector search upgrade *(v1.6: report done, trigger at 500 events)*
 - [x] Verdict auto-accumulation (v1.5)
 - [x] evolution_validator tracking (v1.5)
 - [x] InsightTracker full implementation + router.py + closed_loop.py (v1.5)
 - [x] ContextFence wrapping for inject_to_judgment_input (v1.5)
 - [x] _legacy cleanup (archived to __trash__/)
+- [x] Self-Evolver verification loop closed (apply_evolved→start_evolution_tracking) (v1.6)
+- [x] EvolverScheduler background init (router.py) (v1.6)
+- [x] judgment/config.py centralized production config (v1.6)
+- [x] GDPVal Benchmark 22 cases + semantic matching + A/B/C/D grade (v1.6)
+- [x] verdict_collector: import_from_judgment_db() + run_full_collection() (v1.6)
+- [x] HRR vector evaluation report + upgrade trigger conditions (v1.6)
 
 ---
 
 ## Changelog
+
+### v1.6 (2026-04-17) — Self-Evolver Verification Loop Closed
+
+- **Config**: judgment/config.py — centralized production parameters (BIAS=3, MIN=5, COOLDOWN=24h)
+- **Evolver**: apply_evolved_weights() now calls start_evolution_tracking() — full verification loop
+- **Router**: EvolverScheduler now auto-starts on init (background 1h interval)
+- **Benchmark**: 22 cases (was 8), semantic synonym matching, dimension_coverage, GDPVal A/B/C/D grade
+- **verdict_collector**: import_from_judgment_db() seeds from juhuo's own snapshots; run_full_collection() CLI
+- **HRR**: Evaluation report with vector search upgrade trigger conditions (500 events / 100ms)
 
 ### v1.5.2 (2026-04-17)
 

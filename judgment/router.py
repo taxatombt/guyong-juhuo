@@ -29,6 +29,7 @@ except ImportError:
 from judgment.dimensions import DIMENSIONS
 from causal_memory import recall_causal_history, inject_to_judgment_input, find_similar_events, init
 from judgment.closed_loop import start_verdict_listener
+from judgment.self_evolover import start_evolver_scheduler
 
 # Verdict 自动积累
 from evolver.verdict_collector import save_verdict as _save_auto_verdict, VerdictRecord
@@ -38,6 +39,9 @@ init()
 
 # 启动 verdict 自动监听线程（后台闭环核心）
 start_verdict_listener()
+
+# 启动 Self-Evolver 自动调度器（后台定时触发进化验证）
+start_evolver_scheduler()
 
 # 兼容旧接口命名
 class _CausalMemoryCompat:

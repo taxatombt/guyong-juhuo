@@ -34,11 +34,17 @@ from judgment.judgment_db import get_conn
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 配置
+# 配置（优先从集中配置读取）
 # ═══════════════════════════════════════════════════════════════════════════
 
-VERIFICATION_WINDOW = 10           # 验证窗口：追踪接下来多少次判决
-ACCURACY_IMPROVEMENT_THRESHOLD = 0.05  # 准确率提升阈值（5%）
+try:
+    from judgment.config import VALIDATION_WINDOW, ACCURACY_IMPROVEMENT_THRESHOLD
+    VERIFICATION_WINDOW = VALIDATION_WINDOW
+    ACCURACY_IMPROVEMENT_THRESHOLD = ACCURACY_IMPROVEMENT_THRESHOLD
+except ImportError:
+    VERIFICATION_WINDOW = 10
+    ACCURACY_IMPROVEMENT_THRESHOLD = 0.05
+
 SELF_MODEL_BACKUP_DIR = Path(__file__).parent.parent / "data" / "self_model_backups"
 
 

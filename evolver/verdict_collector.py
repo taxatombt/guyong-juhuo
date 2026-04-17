@@ -28,7 +28,12 @@ from dataclasses import dataclass, asdict
 # 配置
 # ═══════════════════════════════════════════════════════════════════════════
 
-MIN_VERDICTS_FOR_EVOLUTION = 50  # 进化所需的最低 verdict 数量
+# 配置（引用集中配置，不重复定义）
+try:
+    from judgment.config import MIN_VERDICTS_FOR_EVOLUTION as MIN_VERDICTS
+except ImportError:
+    MIN_VERDICTS = 50  # 兼容旧环境
+MIN_VERDICTS_FOR_EVOLUTION = MIN_VERDICTS  # 保持向后兼容
 BATCH_SIZE = 10  # 每次导入的批量大小
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -212,6 +217,158 @@ def import_from_chats(chats_file: Path, limit: int = 100) -> int:
     return imported
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 新增：从 juhuo 自有 judgment_db 生成种子 verdict（最可靠来源）
+# ═══════════════════════════════════════════════════════════════════════════
+
+def import_from_judgment_db(limit: int = 30) -> int:
+    """
+    从 juhuo 的 judgment_db.sqlite 抽取 judgment_snapshots 作为种子 verdict。
+
+    这些是 juhuo 自身产生的判断记录，每条都是完整的：
+    task_text + complexity + answers + confidence + emotion_label
+    可以直接作为 verdict 案例的来源。
+
+    Returns:
+        导入数量
+    """
+    imported = 0
+    try:
+        from judgment.judgment_db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute("""
+                SELECT chain_id, task_text, complexity, answers, confidence,
+                       emotion_label, outcome_auto, corrected
+                FROM judgment_snapshots
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+
+        for row in rows:
+            task = row["task_text"] or ""
+            if not task:
+                continue
+
+            # 已有明确 verdict 的（corrected=1），直接用
+            if row["corrected"]:
+                outcome = "correct" if row["outcome_auto"] and row["outcome_auto"] > 0.5 else "wrong"
+            else:
+                outcome = "partial"  # 未反馈的，标记为 partial
+
+            chain_id = f"seed_{row['chain_id']}"
+            record = VerdictRecord(
+                chain_id=chain_id,
+                task_text=task[:500],
+                timestamp=datetime.now().isoformat(),
+                verdict=outcome,
+                source="judgment_db_seed",
+                metadata={
+                    "complexity": row["complexity"],
+                    "emotion": row["emotion_label"],
+                    "corrected": row["corrected"],
+                }
+            )
+            if save_verdict(record):
+                imported += 1
+
+    except Exception as e:
+        print(f"[VerdictCollector] import_from_judgment_db error: {e}")
+    return imported
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 新增：收集状态报告
+# ═══════════════════════════════════════════════════════════════════════════
+
+SCENARIO_CATEGORIES = ["career", "finance", "relationship", "education", "health", "family", "investment", "migration", "life"]
+
+
+def get_collection_status() -> Dict:
+    """
+    返回当前 verdict 收集状态报告
+    
+    Returns:
+        {
+            "total": 42,
+            "ready_for_evolution": False,
+            "missing_to_target": 8,
+            "by_verdict": {"correct": 20, "wrong": 10, "partial": 12},
+            "by_category": {"career": 5, "finance": 8, ...},
+            "gaps": ["migration", "education"]  # 样本不足的类别
+        }
+    """
+    verdicts = load_verdicts()
+    total = len(verdicts)
+
+    by_verdict: Dict[str, int] = {"correct": 0, "wrong": 0, "partial": 0, "pending": 0}
+    by_category: Dict[str, int] = {c: 0 for c in SCENARIO_CATEGORIES}
+    gaps: list = []
+
+    for v in verdicts:
+        verdict = v.get("verdict", "pending")
+        if verdict in by_verdict:
+            by_verdict[verdict] += 1
+        else:
+            by_verdict["pending"] += 1
+
+        # 从 task_text 检测场景类别
+        task = v.get("task_text", "").lower()
+        for cat in SCENARIO_CATEGORIES:
+            if cat in task:
+                by_category[cat] += 1
+
+    # 识别样本不足的类别（< 3 条）
+    for cat, count in by_category.items():
+        if count < 3:
+            gaps.append(cat)
+
+    return {
+        "total": total,
+        "ready_for_evolution": is_ready_for_evolution(),
+        "missing_to_target": max(0, MIN_VERDICTS_FOR_EVOLUTION - total),
+        "target": MIN_VERDICTS_FOR_EVOLUTION,
+        "by_verdict": by_verdict,
+        "by_category": by_category,
+        "gaps": gaps,
+    }
+
+
+def run_full_collection() -> Dict:
+    """
+    执行完整收集流程（CLI 入口）：
+    1. 从 juhuo judgment_db 生成种子
+    2. 从 CoPaw sessions 收集
+    3. 输出状态报告
+    """
+    print("[VerdictCollector] 开始完整收集流程...")
+
+    # 1. 从 juhuo 自有数据生成种子
+    seed_count = import_from_judgment_db(limit=30)
+    print(f"  [judgment_db 种子] 导入 {seed_count} 条")
+
+    # 2. 从 CoPaw sessions 收集
+    auto_stats = auto_collect()
+    print(f"  [CoPaw sessions] 导入 {auto_stats.get('imported', 0)} 条")
+
+    # 3. 输出状态
+    status = get_collection_status()
+    print(f"\n[状态] 总计: {status['total']}/{status['target']} verdict")
+    print(f"  by verdict: {status['by_verdict']}")
+    print(f"  by category: {status['by_category']}")
+    if status['gaps']:
+        print(f"  ⚠️ 样本不足类别: {status['gaps']}（需补充到 3+ 条）")
+    else:
+        print(f"  ✅ 全部分类覆盖充足")
+
+    print(f"\n进化就绪: {'✅ 是' if status['ready_for_evolution'] else '❌ 否（还需 ' + str(status['missing_to_target']) + ' 条）'}")
+    return status
+
+
+if __name__ == "__main__":
+    run_full_collection()
+
+
+
 def import_from_jsonl(jsonl_file: Path, limit: int = 100) -> int:
     """从 JSONL 文件导入 verdict"""
     if not jsonl_file.exists():
@@ -251,6 +408,158 @@ def import_from_jsonl(jsonl_file: Path, limit: int = 100) -> int:
         print(f"[VerdictCollector] Import error: {e}")
     
     return imported
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 新增：从 juhuo 自有 judgment_db 生成种子 verdict（最可靠来源）
+# ═══════════════════════════════════════════════════════════════════════════
+
+def import_from_judgment_db(limit: int = 30) -> int:
+    """
+    从 juhuo 的 judgment_db.sqlite 抽取 judgment_snapshots 作为种子 verdict。
+
+    这些是 juhuo 自身产生的判断记录，每条都是完整的：
+    task_text + complexity + answers + confidence + emotion_label
+    可以直接作为 verdict 案例的来源。
+
+    Returns:
+        导入数量
+    """
+    imported = 0
+    try:
+        from judgment.judgment_db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute("""
+                SELECT chain_id, task_text, complexity, answers, confidence,
+                       emotion_label, outcome_auto, corrected
+                FROM judgment_snapshots
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+
+        for row in rows:
+            task = row["task_text"] or ""
+            if not task:
+                continue
+
+            # 已有明确 verdict 的（corrected=1），直接用
+            if row["corrected"]:
+                outcome = "correct" if row["outcome_auto"] and row["outcome_auto"] > 0.5 else "wrong"
+            else:
+                outcome = "partial"  # 未反馈的，标记为 partial
+
+            chain_id = f"seed_{row['chain_id']}"
+            record = VerdictRecord(
+                chain_id=chain_id,
+                task_text=task[:500],
+                timestamp=datetime.now().isoformat(),
+                verdict=outcome,
+                source="judgment_db_seed",
+                metadata={
+                    "complexity": row["complexity"],
+                    "emotion": row["emotion_label"],
+                    "corrected": row["corrected"],
+                }
+            )
+            if save_verdict(record):
+                imported += 1
+
+    except Exception as e:
+        print(f"[VerdictCollector] import_from_judgment_db error: {e}")
+    return imported
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 新增：收集状态报告
+# ═══════════════════════════════════════════════════════════════════════════
+
+SCENARIO_CATEGORIES = ["career", "finance", "relationship", "education", "health", "family", "investment", "migration", "life"]
+
+
+def get_collection_status() -> Dict:
+    """
+    返回当前 verdict 收集状态报告
+    
+    Returns:
+        {
+            "total": 42,
+            "ready_for_evolution": False,
+            "missing_to_target": 8,
+            "by_verdict": {"correct": 20, "wrong": 10, "partial": 12},
+            "by_category": {"career": 5, "finance": 8, ...},
+            "gaps": ["migration", "education"]  # 样本不足的类别
+        }
+    """
+    verdicts = load_verdicts()
+    total = len(verdicts)
+
+    by_verdict: Dict[str, int] = {"correct": 0, "wrong": 0, "partial": 0, "pending": 0}
+    by_category: Dict[str, int] = {c: 0 for c in SCENARIO_CATEGORIES}
+    gaps: list = []
+
+    for v in verdicts:
+        verdict = v.get("verdict", "pending")
+        if verdict in by_verdict:
+            by_verdict[verdict] += 1
+        else:
+            by_verdict["pending"] += 1
+
+        # 从 task_text 检测场景类别
+        task = v.get("task_text", "").lower()
+        for cat in SCENARIO_CATEGORIES:
+            if cat in task:
+                by_category[cat] += 1
+
+    # 识别样本不足的类别（< 3 条）
+    for cat, count in by_category.items():
+        if count < 3:
+            gaps.append(cat)
+
+    return {
+        "total": total,
+        "ready_for_evolution": is_ready_for_evolution(),
+        "missing_to_target": max(0, MIN_VERDICTS_FOR_EVOLUTION - total),
+        "target": MIN_VERDICTS_FOR_EVOLUTION,
+        "by_verdict": by_verdict,
+        "by_category": by_category,
+        "gaps": gaps,
+    }
+
+
+def run_full_collection() -> Dict:
+    """
+    执行完整收集流程（CLI 入口）：
+    1. 从 juhuo judgment_db 生成种子
+    2. 从 CoPaw sessions 收集
+    3. 输出状态报告
+    """
+    print("[VerdictCollector] 开始完整收集流程...")
+
+    # 1. 从 juhuo 自有数据生成种子
+    seed_count = import_from_judgment_db(limit=30)
+    print(f"  [judgment_db 种子] 导入 {seed_count} 条")
+
+    # 2. 从 CoPaw sessions 收集
+    auto_stats = auto_collect()
+    print(f"  [CoPaw sessions] 导入 {auto_stats.get('imported', 0)} 条")
+
+    # 3. 输出状态
+    status = get_collection_status()
+    print(f"\n[状态] 总计: {status['total']}/{status['target']} verdict")
+    print(f"  by verdict: {status['by_verdict']}")
+    print(f"  by category: {status['by_category']}")
+    if status['gaps']:
+        print(f"  ⚠️ 样本不足类别: {status['gaps']}（需补充到 3+ 条）")
+    else:
+        print(f"  ✅ 全部分类覆盖充足")
+
+    print(f"\n进化就绪: {'✅ 是' if status['ready_for_evolution'] else '❌ 否（还需 ' + str(status['missing_to_target']) + ' 条）'}")
+    return status
+
+
+if __name__ == "__main__":
+    run_full_collection()
+
 
 
 def auto_collect(days: int = 7) -> Dict:
