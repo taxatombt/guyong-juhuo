@@ -66,7 +66,7 @@ def sync_to_self_model(chain_id: str) -> Optional[Dict]:
     """Hook捕获的判断数据写入self_model"""
     log.info(f"Syncing to self_model: {chain_id}")
     try:
-        from self_model.self_model import update_from_feedback, load_model
+        from self_model.self_model import update_from_feedback, load_model, save_model
         with get_conn() as conn:
             # 尝试从judgment_records获取
             row = conn.execute(
@@ -145,11 +145,26 @@ def check_trigger() -> Dict:
         last = conn.execute(
             "SELECT created_at FROM evolution_log ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
+        cooldown_active = False
         if last:
             dt = datetime.fromisoformat(last["created_at"])
             if datetime.now() - dt < timedelta(hours=COOLDOWN_HOURS):
-                return {"triggered": False, "reason": f"冷却中({COOLDOWN_HOURS}h内)"}
-        
+                cooldown_active = True
+
+        # 定期优化触发：有足够样本 + 冷却已过 → 主动校准权重
+        # 解决：seed数据不足以触发"连续错误"时，定期优化保证 evolver 有事可做
+        total = conn.execute("SELECT COUNT(*) as cnt FROM verdict_outcomes").fetchone()
+        total_count = total["cnt"] if total else 0
+        if not cooldown_active and total_count >= MIN_SAMPLES * 2:
+            return {
+                "triggered": True,
+                "reason": f"定期优化({total_count}条样本, 冷却已过)",
+                "type": "periodic_refinement"
+            }
+
+        if cooldown_active:
+            return {"triggered": False, "reason": f"冷却中({COOLDOWN_HOURS}h内)"}
+
         return {"triggered": False, "reason": "未达到触发条件"}
 
 # 3. 获取历史案例
@@ -344,7 +359,6 @@ def run_evolution_cycle() -> Dict:
     cases = valid_cases
     
     try:
-        from self_model.self_model import load_model
         old_model = load_model()
         old_rules = {
             "weights": getattr(old_model, "weights", {}),
@@ -632,10 +646,12 @@ class EvolverScheduler:
             
             # 3. 下一次检查
             self._timer = Timer(interval_hours * 3600, _tick)
+            self._timer.daemon = True
             self._timer.start()
         
-        # 首次启动：60秒后执行
+        # 首次启动：60秒后执行（daemon=True 确保主进程可退出）
         self._timer = Timer(60, _tick)
+        self._timer.daemon = True
         self._timer.start()
         print(f"[Self-Evolver] 调度器已启动，间隔 {interval_hours} 小时")
     

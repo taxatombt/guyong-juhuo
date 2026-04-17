@@ -101,6 +101,12 @@ class StopHook:
             "notes": notes,
             "timestamp": datetime.now().isoformat(),
         })
+        # ── 闭环：触发 receive_verdict 更新信念 ──────────────────────
+        try:
+            from judgment.closed_loop import receive_verdict
+            receive_verdict(chain_id=chain_id, correct=correct, notes=notes)
+        except Exception:
+            pass  # 不因闭环失败影响主流程
 
     def capture_tool_call(self, tool_name: str, args: Dict, result: Any):
         self.tool_calls.append({

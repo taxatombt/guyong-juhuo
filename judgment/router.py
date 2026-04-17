@@ -1,3 +1,4 @@
+import time
 """
 router.py — 十维判断框架核心路由
 
@@ -557,6 +558,29 @@ def check10d_run(task_text, agent_profile=None):
     verdict_str, confidence = _synthesize_verdict(task_text, answers)
     base_result["verdict"] = verdict_str
     base_result["confidence"] = confidence
+
+    # ── 闭环：落盘完整 snapshot ──────────────────────────────────────
+    try:
+        _dims_chosen = list(answers.keys())
+        _weights = {d: 1.0 for d in _dims_chosen}
+        _chain_id = base_result.get("meta", {}).get("chain_id") or f"run_{int(time.time()*1000)}"
+        snapshot_judgment(
+            chain_id=_chain_id,
+            task_text=task_text[:300],
+            dimensions=_dims_chosen,
+            weights=_weights,
+            result={
+                "answers": answers,
+                "confidence": confidence,
+                "dim_confidence": {},
+                "emotion": {},
+                "curiosity": {},
+            },
+            complexity="critical",
+        )
+    except Exception:
+        pass
+
     return base_result
 
 
