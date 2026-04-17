@@ -1,5 +1,9 @@
 # guyong-juhuo · Judgement System
 
+<p align="center">
+  <img src="logo.svg" width="320" alt="juhuo logo">
+</p>
+
 **An evolving personal AI agent that mimics a specific individual, then surpasses human-level judgment.**
 
 > Not a tool. A digital alter-ego that grows over time.
