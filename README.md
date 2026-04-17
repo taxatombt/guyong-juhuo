@@ -173,6 +173,20 @@ python cli.py benchmark      # Benchmark 测试
 
 ---
 
+## TODO（下次版本）
+
+> 现在最缺的不是新功能，是把 Self-Evolver 从「能跑」变成「能验证」。
+
+- [ ] **Verdict 数据积累** — 目标 50+ 条，覆盖多场景
+- [ ] **Self-Evolver 验证闭环** — verify_evolution() + 自动验证 + 回滚
+- [ ] **生产配置参数** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h
+- [ ] **GDPVal Benchmark** — 用标准案例集评估判断质量
+- [x] apply_evolved_weights 落地（v1.5）
+- [x] Verdict 自动积累（v1.5）
+- [x] evolution_validator 追踪（v1.5）
+
+---
+
 ## 版本更新
 
 ### v1.5.2 (2026-04-17)

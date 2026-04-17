@@ -18,11 +18,12 @@ evolution_validator.py — Self-Evolver 验证闭环
     准确率下降 → 回滚 + status='reverted'
 """
 
+from __future__ import annotations
+
 import logging
 
 log = logging.getLogger("juhuo.evolution_validator")
 
-from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -285,6 +286,43 @@ def force_verify_all() -> Dict[str, Tuple[bool, str]]:
 # 自动集成
 # ═══════════════════════════════════════════════════════════════════════════
 
+def add_verdict_to_evolution_tracking(correct: int) -> None:
+    """
+    verdict 反馈 → 触发进化验证追踪
+    
+    每次 verdict 反馈时调用，自动更新所有 pending 进化的追踪数据。
+    当某条进化的追踪数据达到 VERIFICATION_WINDOW 时，触发验证。
+    
+    Args:
+        correct: 1=正确, 0=错误
+    """
+    try:
+        from judgment.judgment_db import get_conn
+        with get_conn() as c:
+            # 更新所有 pending 进化
+            c.execute("""
+                UPDATE evolution_validation
+                SET post_judgments = post_judgments + 1,
+                    post_correct = post_correct + ?
+                WHERE status = 'pending'
+            """, (correct,))
+            c.commit()
+            
+            # 检查是否有达到窗口的进化
+            rows = c.execute("""
+                SELECT evolution_id, post_judgments
+                FROM evolution_validation
+                WHERE status = 'pending' AND post_judgments >= ?
+            """, (VERIFICATION_WINDOW,)).fetchall()
+            
+            for row in rows:
+                verify_evolution(row["evolution_id"])
+                
+        log.debug(f"[tracker] verdict={correct}, updated {len(rows)} evolutions pending verify")
+    except Exception as e:
+        log.debug(f"[tracker] skip: {e}")
+
+
 def on_verdict_recorded(chain_id: str, correct: bool, evolution_ids: list) -> None:
     """
     verdict 记录后的钩子
@@ -293,4 +331,12 @@ def on_verdict_recorded(chain_id: str, correct: bool, evolution_ids: list) -> No
     
     Args:
         chain_id: 判断ID
-       
+        correct: 是否正确
+        evolution_ids: 相关的进化ID列表
+    """
+    if not evolution_ids:
+        return
+    for evo_id in evolution_ids:
+        status = get_evolution_status(evo_id)
+        if status and status["post_judgments"] >= VERIFICATION_WINDOW:
+            verify_evolution(evo_id)

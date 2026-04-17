@@ -84,6 +84,13 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes=""):
             _log.debug(f"[self_evolver] recorded outcome: correct={correct}")
         except Exception as e:
             _log.debug(f"[self_evolver] record_outcome skip: {e}")
+        
+        # 【闭环Step3.1】evolution_validator 验证追踪
+        try:
+            from evolver.evolution_validator import add_verdict_to_evolution_tracking
+            add_verdict_to_evolution_tracking(1 if correct else 0)
+        except Exception as e:
+            _log.debug(f"[evolution_validator] skip: {e}")
         # 【闭环Step1】judgment → causal_memory
         _trigger_causal_memory(chain_id,task_text,dims_data.get("dims",[]),dims_data.get("weights",{}),correct,notes,1.0 if correct else 0.0)
         

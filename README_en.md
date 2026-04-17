@@ -173,6 +173,20 @@ python cli.py benchmark         # Benchmark
 
 ---
 
+## TODO (Next Version)
+
+> The biggest gap right now is not new features — it's making Self-Evolver go from "runs" to "verified".
+
+- [ ] **Verdict data accumulation** — Target 50+ cases, multi-scenario coverage
+- [ ] **Self-Evolver verification loop** — verify_evolution() + auto-verify + rollback
+- [ ] **Production config** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h
+- [ ] **GDPVal Benchmark** — Evaluate judgment quality with standard case set
+- [x] apply_evolved_weights (v1.5)
+- [x] Verdict auto-accumulation (v1.5)
+- [x] evolution_validator tracking (v1.5)
+
+---
+
 ## Changelog
 
 ### v1.5.2 (2026-04-17)
