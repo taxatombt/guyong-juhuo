@@ -575,6 +575,7 @@ def check10d_run(task_text, agent_profile=None):
                 "dim_confidence": {},
                 "emotion": {},
                 "curiosity": {},
+                "verdict": base_result.get("verdict", ""),
             },
             complexity="critical",
         )
