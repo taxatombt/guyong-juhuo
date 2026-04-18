@@ -51,11 +51,6 @@ from .compressor import fast_compress, slow_compress, compress_for_context
 # 用法：from causal_memory.causal_memory import update_from_feedback as _lazy_update
 _update_from_feedback = None  # 延迟初始化
 
-# 文件路径
-CAUSAL_EVENTS_FILE = Path(__file__).parent / "causal_events.jsonl"
-CAUSAL_LINKS_FILE = Path(__file__).parent / "causal_links.jsonl"
-EVENT_GRAPH_FILE = Path(__file__).parent / "event_graph.json"
-
 # 相似度阈值
 SIMILARITY_THRESHOLD = 0.65
 # 最大时间差（三个月内视为相关）
@@ -65,15 +60,15 @@ DECAY_HALF_LIFE = 365
 # 个人因果权重加成 → 亲身经历加成50%
 PERSONAL_CAUSAL_BONUS = 0.5
 
+# JSONL 备份路径（供导出/调试，不作主力存储）
+_CAUSAL_DIR = Path(__file__).parent
+CAUSAL_EVENTS_FILE = str(_CAUSAL_DIR / "causal_events.jsonl")
+CAUSAL_LINKS_FILE  = str(_CAUSAL_DIR / "causal_links.jsonl")
+
 
 def init():
-    """初始化文件"""
-    if not CAUSAL_EVENTS_FILE.exists():
-        CAUSAL_EVENTS_FILE.write_text("", encoding="utf-8")
-    if not CAUSAL_LINKS_FILE.exists():
-        CAUSAL_LINKS_FILE.write_text("", encoding="utf-8")
-    if not EVENT_GRAPH_FILE.exists():
-        EVENT_GRAPH_FILE.write_text("{}", encoding="utf-8")
+    """初始化 SQLite 表（幂等）"""
+    _init_db()
 
 
 def _next_event_id() -> int:
@@ -98,29 +93,141 @@ def _task_similarity(a: str, b: str) -> float:
 
 
 def load_all_events() -> List[dict]:
-    """从 SQLite 加载所有事件（替代 JSONL）"""
-    from .causal_memory_sqlite import load_all_events as _sqlite_load
-    return _sqlite_load()
+    """从 SQLite 加载所有事件"""
+    import sqlite3
+    db_path = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+    if not db_path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM events ORDER BY event_id DESC LIMIT 1000").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def _db_path():
+    return Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+
+
+def _init_db():
+    """初始化 SQLite 表（幂等）+ 增量迁移旧 schema）"""
+    import sqlite3
+    p = _db_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(p))
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS causal_links (
+            link_id INTEGER PRIMARY KEY,
+            from_event_id INTEGER,
+            to_event_id INTEGER,
+            relation TEXT,
+            confidence REAL,
+            timestamp TEXT,
+            inferred INTEGER,
+            evolution_type TEXT,
+            parent_link_id INTEGER,
+            quality_json TEXT
+        )""")
+        # 迁移旧 schema（缺少字段的表）
+        for col, dtype in [("parent_link_id", "INTEGER"), ("quality_json", "TEXT")]:
+            try:
+                conn.execute(f"ALTER TABLE causal_links ADD COLUMN {col} {dtype}")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_links_from ON causal_links(from_event_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_links_to ON causal_links(to_event_id)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _links_from_rows(rows: List) -> List[CausalLink]:
+    """将 SQLite rows 转换为 CausalLink 对象"""
+    links = []
+    for r in rows:
+        quality_data = json.loads(r["quality_json"]) if r["quality_json"] else {}
+        quality = CausalLinkQuality(
+            applied_count=quality_data.get("applied_count", 0),
+            success_count=quality_data.get("success_count", 0),
+            failed_count=quality_data.get("failed_count", 0),
+            last_checked=quality_data.get("last_checked"),
+            needs_revalidation=quality_data.get("needs_revalidation", False),
+            dependent_link_ids=quality_data.get("dependent_link_ids", []),
+        )
+        links.append(CausalLink(
+            link_id=r["link_id"],
+            from_event_id=r["from_event_id"],
+            to_event_id=r["to_event_id"],
+            relation=r["relation"],
+            confidence=r["confidence"],
+            timestamp=r["timestamp"],
+            inferred=bool(r["inferred"]),
+            evolution_type=r["evolution_type"],
+            parent_link_id=r["parent_link_id"],
+            quality=quality,
+        ))
+    return links
 
 
 def load_all_links() -> List[CausalLink]:
-    """加载所有链接"""
-    init()
-    links = []
-    with open(CAUSAL_LINKS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                data = json.loads(line)
-                links.append(CausalLink.from_dict(data))
-    return links
+    """从 SQLite 加载所有因果链接"""
+    _init_db()
+    import sqlite3
+    conn = sqlite3.connect(str(_db_path()))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("SELECT * FROM causal_links ORDER BY link_id").fetchall()
+        return _links_from_rows(rows)
+    finally:
+        conn.close()
+
+
+def _save_link(link: CausalLink):
+    """保存单条链接到 SQLite"""
+    import sqlite3
+    _init_db()
+    conn = sqlite3.connect(str(_db_path()))
+    try:
+        quality_json = json.dumps({
+            "applied_count": link.quality.applied_count,
+            "success_count": link.quality.success_count,
+            "failed_count": link.quality.failed_count,
+            "last_checked": link.quality.last_checked,
+            "needs_revalidation": link.quality.needs_revalidation,
+            "dependent_link_ids": link.quality.dependent_link_ids,
+        })
+        conn.execute("""INSERT OR REPLACE INTO causal_links
+            (link_id,from_event_id,to_event_id,relation,confidence,timestamp,inferred,evolution_type,parent_link_id,quality_json)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (link.link_id, link.from_event_id, link.to_event_id, link.relation,
+             link.confidence, link.timestamp, int(link.inferred), link.evolution_type,
+             link.parent_link_id, quality_json))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _rewrite_links(links: List[CausalLink]):
+    """全量重写 causal_links 表"""
+    import sqlite3
+    _init_db()
+    conn = sqlite3.connect(str(_db_path()))
+    try:
+        conn.execute("DELETE FROM causal_links")
+        for link in links:
+            _save_link(link)
+    finally:
+        conn.close()
 
 
 def record_event(
     event_type: str,
-    description: str,
-    what_happened: str,
-    why_i_think_so: str,
+    description: str = None,
+    what_happened: str = None,
+    why_i_think_so: str = None,
     outcome: str = None,
     judgment_summary: dict = None,
     tags: List[str] = None,
@@ -129,21 +236,100 @@ def record_event(
     """
     【闭环Step1 专用】judgment verdict 写入 causal_memory（SQLite后端）
 
-    写入 SQLite {data}/causal_memory/events.db，替代原 JSONL 方案。
-    字段满足 check_and_trigger_self_model_update 的查询条件。
+    写入 {data}/causal_memory/events.db，字段满足 check_and_trigger_self_model_update 的查询条件。
     """
-    # 委托给 SQLite 后端
-    from .causal_memory_sqlite import record_event as _sqlite_record
-    return _sqlite_record(
-        event_type=event_type,
-        description=description,
-        what_happened=what_happened,
-        why_i_think_so=why_i_think_so,
-        outcome=outcome,
-        judgment_summary=judgment_summary,
-        tags=tags,
-        chain_id=chain_id,
-    )
+    import sqlite3
+    db_path = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 确保表存在
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS events (
+            event_id INTEGER PRIMARY KEY,
+            timestamp TEXT,
+            category TEXT,
+            description TEXT,
+            task TEXT,
+            why_i_think_so TEXT,
+            outcome TEXT,
+            dimensions TEXT,
+            judgment_summary TEXT,
+            tags TEXT,
+            chain_id TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_events_task ON events(task)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_events_outcome ON events(outcome)")
+        conn.commit()
+    finally:
+        conn.close()
+
+    # 插入事件
+    conn = sqlite3.connect(str(db_path))
+    try:
+        max_id = conn.execute("SELECT MAX(event_id) FROM events").fetchone()[0] or 0
+        event_id = max_id + 1
+        dims = judgment_summary.get("dims", []) if judgment_summary else []
+        conn.execute("""INSERT INTO events
+            (event_id,timestamp,category,description,task,why_i_think_so,outcome,dimensions,judgment_summary,tags,chain_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (event_id, datetime.now().isoformat(), event_type, description or "", what_happened or "",
+             why_i_think_so or "", outcome, json.dumps(dims, ensure_ascii=False),
+             json.dumps(judgment_summary or {}, ensure_ascii=False),
+             json.dumps(tags or [], ensure_ascii=False), chain_id))
+        conn.commit()
+        return event_id
+    finally:
+        conn.close()
+
+
+def _record_event_to_sqlite(event: dict):
+    """log_causal_event 的 SQLite 后端（find_similar_events 可立即搜到）"""
+    import sqlite3
+    db_path = _db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS events (
+            event_id INTEGER PRIMARY KEY,
+            timestamp TEXT,
+            category TEXT,
+            description TEXT,
+            task TEXT,
+            why_i_think_so TEXT,
+            outcome TEXT,
+            dimensions TEXT,
+            judgment_summary TEXT,
+            tags TEXT,
+            chain_id TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_events_task ON events(task)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_events_outcome ON events(outcome)")
+        conn.commit()
+    finally:
+        conn.close()
+    # 写入（upsert by event_id）
+    dims = {
+        "complexity": event.get("complexity"),
+        "dimensions_checked": event.get("dimensions_checked"),
+        "must_check": event.get("must_check", []),
+        "important": event.get("important", []),
+        "skipped": event.get("skipped", []),
+        "agent_profile": event.get("agent_profile"),
+        "decision": event.get("decision"),
+    }
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("""INSERT OR REPLACE INTO events
+            (event_id,timestamp,category,description,task,why_i_think_so,outcome,dimensions,judgment_summary,tags,chain_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (event["event_id"], event["timestamp"], "judgment",
+             event.get("feedback", ""), event["task"], "",
+             json.dumps(event.get("outcome"), ensure_ascii=False),
+             json.dumps(dims, ensure_ascii=False), "", "", None))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def log_causal_event(task: str, result: Dict, decision: str, feedback: Optional[str] = None, outcome: Optional[bool] = None) -> Dict:
@@ -168,8 +354,14 @@ def log_causal_event(task: str, result: Dict, decision: str, feedback: Optional[
         "outcome": outcome,
     }
 
-    with open(CAUSAL_EVENTS_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    # 主力写 SQLite（与 load_all_events / find_similar_events 共用同一存储）
+    _record_event_to_sqlite(event)
+    # JSONL 备份（不依赖，可选）
+    try:
+        with open(CAUSAL_EVENTS_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
     # 立即搜索相似历史事件，如果找到就建立潜在因果链接
     similar_events = find_similar_events(task, max_results=3)
@@ -184,8 +376,8 @@ def log_causal_event(task: str, result: Dict, decision: str, feedback: Optional[
             )
 
     # 更新自我模型
-    if update_from_feedback and feedback:
-        update_from_feedback(feedback)
+    if _update_from_feedback and feedback:
+        _update_from_feedback(feedback)
 
     return event
 
@@ -211,9 +403,7 @@ def add_causal_link(
         quality=CausalLinkQuality(),
     )
 
-    with open(CAUSAL_LINKS_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(link.to_dict(), ensure_ascii=False) + "\n")
-
+    _save_link(link)
     return link
 
 
@@ -258,10 +448,7 @@ def record_application_result(link_id: int, outcome: bool):
             break
 
     if updated:
-        # 重写整个文件（简单实现，文件不大可接受）
-        with open(CAUSAL_LINKS_FILE, "w", encoding="utf-8") as f:
-            for link in all_links:
-                f.write(json.dumps(link.to_dict(), ensure_ascii=False) + "\n")
+        _rewrite_links(all_links)
 
 
 def mark_cascade_revalidation(link_id: int):
@@ -283,10 +470,7 @@ def mark_cascade_revalidation(link_id: int):
     # 也标记当前链接
     link.quality.mark_needs_revalidation()
 
-    # 保存
-    with open(CAUSAL_LINKS_FILE, "w", encoding="utf-8") as f:
-        for link in all_links:
-            f.write(json.dumps(link.to_dict(), ensure_ascii=False) + "\n")
+    _rewrite_links(all_links)
 
 
 def fix_causal_link(
@@ -315,14 +499,7 @@ def fix_causal_link(
     link.evolution_type = EvolutionType.FIX.value
     link.quality.last_checked = datetime.now().isoformat()
 
-    # FIX 后触发级联更新标记
-    mark_cascade_revalidation(link_id)
-
-    # 保存
-    with open(CAUSAL_LINKS_FILE, "w", encoding="utf-8") as f:
-        for lnk in all_links:
-            f.write(json.dumps(lnk.to_dict(), ensure_ascii=False) + "\n")
-
+    _rewrite_links(all_links)
     return link
 
 
@@ -353,7 +530,7 @@ def derive_causal_link(
     if parent_link_id not in new_link.quality.dependent_link_ids:
         new_link.quality.dependent_link_ids.append(parent_link_id)
     new_link.evolution_type = EvolutionType.DERIVED.value
-    # 父知识分类和锁定继承已经在 create 里处理好了
+    _save_link(new_link)  # 保存继承后的质量统计
 
     return new_link
 
@@ -618,10 +795,15 @@ def update_link_quality_for_event(event_id: int, outcome: bool):
                 updated = True
     
     if updated:
-        with open(CAUSAL_LINKS_FILE, "w", encoding="utf-8") as f:
-            for link in all_links:
-                f.write(json.dumps(link.to_dict(), ensure_ascii=False) + "\n")
-    
+        for link in all_links:
+            _save_link(link)  # 主力写 SQLite
+        # JSONL 备份（不阻塞主流程）
+        try:
+            with open(CAUSAL_LINKS_FILE, "w", encoding="utf-8") as f:
+                for link in all_links:
+                    f.write(json.dumps(link.to_dict(), ensure_ascii=False) + "\n")
+        except Exception:
+            pass
     return updated
 
 
