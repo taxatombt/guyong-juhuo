@@ -602,7 +602,7 @@ def _calculate_effective_confidence(link: CausalLink) -> float:
     """
     conf = link.confidence
     # 时间衰减
-    conf = _apply_time_decay(conf, link.quality.last_used)
+    conf = _apply_time_decay(conf, link.quality.last_checked)
     # 个人因果加成（亲身经历不是推断出来的）
     if not link.inferred:
         conf *= (1 + PERSONAL_CAUSAL_BONUS)

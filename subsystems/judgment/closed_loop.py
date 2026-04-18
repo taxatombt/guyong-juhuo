@@ -5,9 +5,9 @@ import sqlite3,json,time,hashlib,os,threading,logging
 from threading import Lock
 from typing import Optional,Dict,List,Any
 
-_DB_PATH=os.path.join(os.path.dirname(__file__),"..","data","evolutions","juhuo.db")
+_DB_PATH=os.path.join(os.path.dirname(__file__),"..","..","data","evolutions","juhuo.db")
 _DATA_DIR=os.path.dirname(_DB_PATH)
-_OUTCOMES_FILECOMES_FILE=os.path.join(os.path.dirname(__file__),"..","data","outcomes.jsonl")
+_OUTCOMES_FILE=os.path.join(os.path.dirname(__file__),"..","..","data","outcomes.jsonl")
 MAX_CHAIN_RECORDS=100;BELIEF_DECAY=0.1;MAX_DELTA=0.15;SAT_HIGH=0.95;SAT_LOW=0.05
 DIMS=["cognitive","game_theory","economic","dialectical","emotional","intuitive","moral","social","temporal","metacognitive"]
 _state_lock=Lock();_listener_thread=None;_listener_stop=threading.Event()

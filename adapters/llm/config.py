@@ -7,6 +7,17 @@ llm_adapter config — 配置加载，优先读取用户网页保存的配置文
 import os
 import json
 from typing import Optional
+from pathlib import Path
+
+# 自动加载项目根目录 .env 文件
+_env_path = Path(__file__).parent.parent.parent / ".env"
+if _env_path.exists():
+    with open(_env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, val = line.partition("=")
+                os.environ.setdefault(key.strip(), val.strip())
 
 from .base import LLMAdapter
 from .minimax import MiniMaxAdapter
@@ -26,7 +37,7 @@ def load_config() -> dict:
         "provider": "minimax",
         "minimax_api_key": "",
         "minimax_group_id": "",
-        "minimax_model": "mini-max-latest",
+        "minimax_model": "MiniMax-M2.7",
         "openai_api_key": "",
         "openai_model": "gpt-4o",
         "openai_api_base": "https://api.openai.com/v1",
