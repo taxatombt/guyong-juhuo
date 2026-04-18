@@ -57,6 +57,9 @@ from self_model.self_model import get_self_warnings
 from curiosity.curiosity_engine import CuriosityEngine, trigger_from_low_confidence
 from emotion_system.emotion_system import EmotionSystem
 
+# Emotion × Judgment 集成：PAD状态调制维度权重
+from subsystems.judgment.emotion_adapter import get_emotion_modulation
+
 # 新增：自我复盘 + Fitness Baseline
 from .self_review import SelfReviewSystem
 from .closed_loop import record_judgment, snapshot_judgment, get_prior_adjustments
@@ -269,10 +272,11 @@ def route(text):
     return {"matched": False, "sample_text": text}
 
 
-def check10d(task_text, agent_profile=None, complexity="auto"):
+def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=None):
     """
     标准化接口：十维检视
     因果记忆：自动注入相关历史判断到任务上下文
+    情绪调制：PAD状态直接调制维度权重和信心度
 
     参数:
         task_text: 任务描述
@@ -283,6 +287,15 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             "style": "理性优先"          # 思考风格
         }
         complexity: "auto" | "simple" | "complex" | "critical"
+        emotion_state: 可选dict {
+            "P": float,   # 愉悦度 -1~+1
+            "A": float,   # 激活度 -1~+1
+            "D": float,   # 支配度 -1~+1
+        }
+        当提供 emotion_state 时，情绪状态将直接影响：
+        - 各维度问题权重（调制prompt）
+        - 信心度（confidence_adjustment）
+        - 元认知提示（prompt_hint 注入）
 
     返回:
         {
@@ -312,6 +325,19 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
     emotion_signal = inject_emotion_signal(original_task)
     if emotion_signal:
         task_text = original_task + "\n" + emotion_signal
+
+    # Emotion × Judgment 集成：PAD状态调制（核心集成点）
+    emotion_modulation = None
+    if emotion_state is not None:
+        emotion_modulation = get_emotion_modulation(emotion_state)
+        # 情绪提示词注入任务上下文
+        if emotion_modulation.prompt_hint:
+            task_text = task_text + "\n\n" + emotion_modulation.prompt_hint
+        # 将调制信息存储到结果（供 downstream 使用）
+    else:
+        # 无 PAD 输入时回退：使用 EmotionSystem 检测情绪
+        _es = EmotionSystem()
+        emotion_detection = _es.detect_emotion(original_task, {})
     
     # 因果记忆：召回相似历史，注入上下文
     causal_result = causal_memory.recall_causal_history(task_text)
@@ -378,8 +404,7 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             "dim_confidence": dim_confidence if 'dim_confidence' in locals() else {},
         }, current_task=original_task[:60])
 
-    # 拿到完整情绪检测结果
-    from emotion_system.emotion_system import EmotionSystem
+    # 拿到完整情绪检测结果（仅当没有PAD输入时回退）
     emotion_system = EmotionSystem()
     emotion_detection = emotion_system.detect_emotion(original_task, {})
 
@@ -437,6 +462,16 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
             "need_attention": emotion_detection.is_signal,
             "signal_type": emotion_detection.emotion_label,
             "signal_description": emotion_detection.description,
+            # Emotion × Judgment 集成：PAD调制信息
+            "pad_modulation": {
+                "emotion_label": emotion_modulation.emotion_label if emotion_modulation else None,
+                "intensity": emotion_modulation.intensity if emotion_modulation else 0.0,
+                "dim_mods": emotion_modulation.dim_mods if emotion_modulation else {},
+                "prompt_hint": emotion_modulation.prompt_hint if emotion_modulation else "",
+                "confidence_adjustment": emotion_modulation.confidence_adjustment if emotion_modulation else 0.0,
+                "recommended_dims": emotion_modulation.recommended_dims if emotion_modulation else [],
+                "suppressed_dims": emotion_modulation.suppressed_dims if emotion_modulation else [],
+            } if emotion_modulation else None,
         },
         "meta": {
             "total_dims": 10,
@@ -510,6 +545,16 @@ def check10d(task_text, agent_profile=None, complexity="auto"):
     _ret["verdict"] = verdict_str
     _ret["confidence"] = confidence
 
+    # Emotion × Judgment 集成：情绪调制信心度
+    if emotion_modulation is not None and emotion_modulation.confidence_adjustment != 0.0:
+        _old_conf = confidence
+        _ret["confidence"] = max(0.0, min(1.0, confidence + emotion_modulation.confidence_adjustment))
+        _ret["meta"]["emotion_confidence_adjustment"] = {
+            "from": _old_conf,
+            "adjustment": emotion_modulation.confidence_adjustment,
+            "to": _ret["confidence"],
+        }
+
     return _ret
 
 
@@ -529,14 +574,14 @@ def _analyze_dim_sync(dim, task_text, agent_profile):
     return {dim.id: questions}
 
 
-def check10d_run(task_text, agent_profile=None):
+def check10d_run(task_text, agent_profile=None, emotion_state=None):
     """
     同步检视接口：直接调用 check10d，critical 复杂度。
     
     注意：asyncio.run() 会与模块级后台线程冲突，
     所以这里直接同步调用 check10d，不做嵌套异步。
     """
-    base_result = check10d(task_text, agent_profile, complexity="critical")
+    base_result = check10d(task_text, agent_profile, complexity="critical", emotion_state=emotion_state)
     # 同步构建所有维度问题
     must = base_result["must_check"]
     important = base_result["important"]
