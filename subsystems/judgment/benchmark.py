@@ -27,7 +27,11 @@ from pathlib import Path
 from .logging_config import get_logger
 try:
     from .pipeline import check10d_full
-except ImportError:
+except ImportError as e:
+    import sys, os
+    print(f"[benchmark] check10d_full import failed: {e}", flush=True)
+    import traceback
+    traceback.print_exc()
     check10d_full = None  # graceful degradation
 
 log = get_logger("juhuo.benchmark")
