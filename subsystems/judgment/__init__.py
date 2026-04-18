@@ -50,6 +50,33 @@ from .benchmark import (
 )
 from .verifier import JudgmentVerifier, verify_judgment
 
+# Phase 3: judgment 内联工具迁移
+from .judgment_rules import (
+    RuleResult, BaseRule, CognitiveRule, GameTheoryRule, EconomicRule,
+    DialecticalRule, EmotionalRule, IntuitiveRule, MoralRule,
+    SocialRule, TemporalRule, MetacognitiveRule,
+    evaluate_all_rules, get_llm_required_dimensions, get_rule_scores, rule_based_precheck,
+)
+from .context_fence import (
+    FenceContext, ContextFence,
+    get_fence, wrap_context, build_judgment_context, scan_threats,
+)
+from .self_review import (
+    LessonRecord, PatternAlert, SelfReviewSystem,
+    detect_task_dimensions,
+)
+from .life_cycle_hooks import (
+    HookContext, DelegationResult, LifeCycleHooks,
+    init_hook_db, get_lifecycle_hooks, build_system_prompt,
+    prefetch_all, on_turn_start, on_session_end,
+    on_delegation, on_pre_action, on_post_action,
+)
+from .stop_hook import (
+    EventType, Instinct, Trajectory, StopHook,
+    get_stop_hook, capture_judgment, capture_verdict, capture_tool_call,
+    finalize_session, init_instinct_db, get_instincts, promote_instinct,
+)
+
 __all__ = [
     # Phase 1
     'DIMENSIONS', 'Dimension',
@@ -76,4 +103,19 @@ __all__ = [
     'import_from_judgment_db', 'run_full_collection', 'auto_collect',
     'Benchmark', 'BenchmarkCase', 'BenchmarkResult', 'BenchmarkReport', 'run_benchmark',
     'JudgmentVerifier', 'verify_judgment',
+    # Phase 3
+    'RuleResult', 'BaseRule', 'CognitiveRule', 'GameTheoryRule', 'EconomicRule',
+    'DialecticalRule', 'EmotionalRule', 'IntuitiveRule', 'MoralRule',
+    'SocialRule', 'TemporalRule', 'MetacognitiveRule',
+    'evaluate_all_rules', 'get_llm_required_dimensions', 'get_rule_scores', 'rule_based_precheck',
+    'FenceContext', 'ContextFence',
+    'get_fence', 'wrap_context', 'build_judgment_context', 'scan_threats',
+    'LessonRecord', 'PatternAlert', 'SelfReviewSystem', 'detect_task_dimensions',
+    'HookContext', 'DelegationResult', 'LifeCycleHooks',
+    'init_hook_db', 'get_lifecycle_hooks', 'build_system_prompt',
+    'prefetch_all', 'on_turn_start', 'on_session_end',
+    'on_delegation', 'on_pre_action', 'on_post_action',
+    'EventType', 'Instinct', 'Trajectory', 'StopHook',
+    'get_stop_hook', 'capture_judgment', 'capture_verdict', 'capture_tool_call',
+    'finalize_session', 'init_instinct_db', 'get_instincts', 'promote_instinct',
 ]
