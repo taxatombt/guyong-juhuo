@@ -25,7 +25,27 @@ def init():
     try:
         c.execute("CREATE TABLE IF NOT EXISTS causal_chain (id INTEGER PRIMARY KEY,chain_id TEXT,ts REAL,task_hash TEXT,task_text TEXT,dimensions TEXT,outcome REAL,corrected INTEGER DEFAULT 0,notes TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS dimension_beliefs (dim_id TEXT PRIMARY KEY,belief REAL DEFAULT 0.5,hit_count INTEGER DEFAULT 0,miss_count INTEGER DEFAULT 0,last_id TEXT)")
-        c.execute("CREATE TABLE IF NOT EXISTS judgment_snapshots (id INTEGER PRIMARY KEY,chain_id TEXT UNIQUE,ts REAL,task_hash TEXT,task_text TEXT,dimensions TEXT,weights TEXT,answers TEXT,confidence TEXT,complexity TEXT,emotion_label TEXT,causal_has_history INTEGER DEFAULT 0,outcome_auto REAL,corrected INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS judgment_snapshots (id INTEGER PRIMARY KEY,chain_id TEXT UNIQUE,ts REAL,task_hash TEXT,task_text TEXT,dimensions TEXT,weights TEXT,answers TEXT,confidence TEXT,complexity TEXT,emotion_label TEXT,causal_has_history INTEGER DEFAULT 0,outcome_auto REAL,corrected INTEGER DEFAULT 0,verdict TEXT)")
+        # Outcome Prediction 表 — 记录判断时的预期结果，供后续验证
+        c.execute("""CREATE TABLE IF NOT EXISTS outcome_predictions (
+            id INTEGER PRIMARY KEY,
+            chain_id TEXT UNIQUE,
+            predicted_action TEXT,
+            predicted_consequence TEXT,
+            expected_timeline TEXT,
+            prediction_ts REAL,
+            verified INTEGER DEFAULT 0,
+            actual_action TEXT,
+            actual_consequence TEXT,
+            outcome_score REAL,
+            verified_ts REAL,
+            verifier TEXT)""")
+        # 迁移：judgment_snapshots 新增字段（已有表不 ALTER TABLE，故手动加）
+        for col, dtype in [("verdict", "TEXT")]:
+            try:
+                c.execute(f"ALTER TABLE judgment_snapshots ADD COLUMN {col} {dtype}")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
         for d in DIMS:c.execute("INSERT OR IGNORE INTO dimension_beliefs (dim_id,belief) VALUES (?,0.5)",(d,))
         c.commit()
     finally:c.close()
@@ -37,22 +57,38 @@ def snapshot_judgment(chain_id,task_text,dimensions,weights,result,complexity):
     dim_conf=result.get("dim_confidence",{});confidence={d:dim_conf.get(d,0.5) for d in dimensions}
     emotion_label=(emotion.get("detected_emotions",[""])[0] or "") if isinstance(emotion,dict) else ""
     causal_hist=1 if curiosity.get("has_gap") else 0
+    verdict_text = result.get("verdict", "")  # 新增：记录verdict用于后续预测
     c=_g()
     try:
-        c.execute("INSERT OR REPLACE INTO judgment_snapshots (chain_id,ts,task_hash,task_text,dimensions,weights,answers,confidence,complexity,emotion_label,causal_has_history) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (chain_id,now,task_hash,task_text[:500] or "",json.dumps(dimensions,ensure_ascii=False),json.dumps(weights,ensure_ascii=False),json.dumps(answers,ensure_ascii=False),json.dumps(confidence,ensure_ascii=False),complexity,emotion_label,causal_hist))
+        c.execute("INSERT OR REPLACE INTO judgment_snapshots (chain_id,ts,task_hash,task_text,dimensions,weights,answers,confidence,complexity,emotion_label,causal_has_history,verdict) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (chain_id,now,task_hash,task_text[:500] or "",json.dumps(dimensions,ensure_ascii=False),json.dumps(weights,ensure_ascii=False),json.dumps(answers,ensure_ascii=False),json.dumps(confidence,ensure_ascii=False),complexity,emotion_label,causal_hist,verdict_text[:300] or ""))
         c.execute("INSERT INTO causal_chain (chain_id,ts,task_hash,task_text,dimensions,outcome) VALUES (?,?,?,?,?,NULL)",
             (chain_id,now,task_hash,task_text[:300] or "",json.dumps({"dims":dimensions,"weights":weights},ensure_ascii=False)))
         c.execute("DELETE FROM causal_chain WHERE id NOT IN (SELECT id FROM causal_chain ORDER BY ts DESC LIMIT ?)",(MAX,))
         c.commit()
+        # 【新】Outcome Prediction: 从verdict自动提取推荐行动
+        if verdict_text:
+            try:
+                auto_predict_from_verdict(chain_id, verdict_text)
+            except Exception as ex:
+                _log.debug(f"[outcome] predict skip: {ex}")
         _log.debug(f"[snapshot] {chain_id} dims={len(dimensions)}")
         return True
     except Exception as e:
         _log.warning(f"[snapshot] failed: {e}");return False
     finally:c.close()
 
-def receive_verdict(chain_id=None,task_text=None,correct=True,notes=""):
-    """接收事后验证，更新维度信念，触发三个闭环hook"""  
+def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
+                      actual_action="", actual_consequence="", outcome_score=None, verifier="user"):
+    """
+    接收事后验证，更新维度信念，触发三个闭环hook。
+    
+    新增 outcome 验证参数（outcome_score 非空时触发 verify_outcome）:
+    - actual_action: 实际采取了什么行动
+    - actual_consequence: 实际后果描述
+    - outcome_score: 0.0~1.0（None则用correct推断）
+    - verifier: "user" / "system" / "time"
+    """  
     c=_g()
     try:
         target=None
@@ -112,6 +148,20 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes=""):
         except Exception:
             pass
         
+        # 【新】Outcome Verification: 当提供 actual_outcome 时 → verify_outcome
+        if actual_action or actual_consequence or outcome_score is not None:
+            try:
+                verify_result = verify_outcome(
+                    chain_id=chain_id,
+                    actual_action=actual_action,
+                    actual_consequence=actual_consequence,
+                    outcome_score=outcome_score,
+                    verifier=verifier
+                )
+                _log.info(f"[outcome] verified: {chain_id} score={verify_result.get('score')}")
+            except Exception as ex:
+                _log.debug(f"[outcome] verify skip: {ex}")
+
         _log.info(f"[verdict] chain={chain_id} correct={correct} dims={list(changes.keys())}")
         return {"updated":True,"chain_id":chain_id,"changes":changes}
     finally:c.close()
@@ -275,5 +325,211 @@ def record_judgment(task_text, dimensions, weights, reasoning=None, outcome=None
     snapshot_judgment(chain_id, task_text, dimensions, weights, dummy_result, "auto")
     return chain_id
 
-# 兼容别名
-record_judgment = record_judgment  # 已经是新函数
+# ── Outcome Prediction + Verification 层 ──────────────────────────────
+# 核心思路：判断时记录"预期结果"，后续验证"实际结果"
+# correct=True/False → 偏好信号（弱）
+# predicted/actual outcome → 结果验证（强）
+
+def predict_outcome(chain_id, predicted_action, predicted_consequence="", expected_timeline=""):
+    """
+    在 snapshot_judgment 后调用，记录系统对判断结果的预期。
+    用途：后续 verify_outcome 对比 → 计算判断准确率
+    
+    Args:
+        chain_id: 判断快照ID
+        predicted_action: 推荐行动（从verdict提取，如"选A""留在原地"）
+        predicted_consequence: 预期后果描述（可空）
+        expected_timeline: 预期见效时间（可空，如"3个月内""1年后"）
+    """
+    c = _g()
+    try:
+        c.execute("""INSERT OR REPLACE INTO outcome_predictions
+            (chain_id, predicted_action, predicted_consequence, expected_timeline, prediction_ts, verified)
+            VALUES (?, ?, ?, ?, ?, 0)""",
+            (chain_id, predicted_action[:200], predicted_consequence[:500], expected_timeline[:100], _n()))
+        c.commit()
+        _log.debug(f"[outcome] predicted: {chain_id} → {predicted_action}")
+        return True
+    finally:
+        c.close()
+
+
+def verify_outcome(chain_id, actual_action, actual_consequence="", outcome_score=None, verifier="user"):
+    """
+    事后验证：用户/系统告知实际发生了什么。
+    
+    Args:
+        chain_id: 判断快照ID
+        actual_action: 实际采取了什么行动（与 predicted_action 对比）
+        actual_consequence: 实际后果描述
+        outcome_score: 0.0~1.0，结果符合预期的程度
+            - 1.0: 完全符合（预测命中）
+            - 0.5: 部分符合
+            - 0.0: 完全不符
+            - None: 自动从 action 匹配度计算
+        verifier: "user" / "system" / "time"
+    
+    Returns:
+        dict with: match (bool), score, correctness signal for evolver
+    """
+    c = _g()
+    try:
+        row = c.execute("SELECT predicted_action, predicted_consequence FROM outcome_predictions WHERE chain_id=?",
+                        (chain_id,)).fetchone()
+        if not row:
+            _log.warning(f"[outcome] verify: chain_id={chain_id} not found, auto-create prediction record")
+            c.execute("INSERT OR IGNORE INTO outcome_predictions (chain_id, verified) VALUES (?, 0)", (chain_id,))
+            c.commit()
+            predicted_action, predicted_consequence = "", ""
+        else:
+            predicted_action, predicted_consequence = row
+
+        # 自动计算 outcome_score（action 匹配度）
+        if outcome_score is None:
+            if not actual_action:
+                outcome_score = 0.5  # 无数据
+            elif predicted_action and actual_action == predicted_action:
+                outcome_score = 1.0  # 行动命中
+            elif predicted_action and (predicted_action in actual_action or actual_action in predicted_action):
+                outcome_score = 0.7  # 近似命中
+            elif predicted_action:
+                outcome_score = 0.3  # 未按预测行动
+            else:
+                outcome_score = 0.5  # 无预测，无法判断
+
+        c.execute("""UPDATE outcome_predictions SET
+            verified=1, actual_action=?, actual_consequence=?,
+            outcome_score=?, verified_ts=?, verifier=?
+            WHERE chain_id=?""",
+            (actual_action[:200], actual_consequence[:500], outcome_score, _n(), verifier, chain_id))
+        c.commit()
+
+        # correctness 信号（与旧 evolver 接口兼容）
+        correct_signal = 1 if outcome_score >= 0.5 else 0
+
+        # 【闭环】outcome_score 反馈到 evolver（强于 correct=True/False 二值信号）
+        try:
+            from judgment.self_evolover import EvolverScheduler
+            _sch = EvolverScheduler()
+            _sch.record_outcome(correct_signal)  # 1=正确, 0=错误
+            _log.debug(f"[evolver] outcome verified: correct={correct_signal}")
+        except Exception as e:
+            _log.debug(f"[evolver] record_outcome skip: {e}")
+
+        return {
+            "chain_id": chain_id,
+            "predicted_action": predicted_action,
+            "actual_action": actual_action,
+            "match": outcome_score >= 0.5,
+            "score": outcome_score,
+            "correct": correct_signal
+        }
+    finally:
+        c.close()
+
+
+def get_verification_stats() -> dict:
+    """
+    返回全局 outcome 验证统计 → 指导进化方向。
+    
+    Returns:
+        {
+            "total": N,
+            "verified": M,
+            "avg_score": 0.x,
+            "by_dimension": {...},
+            "weakest_dims": [...],
+            "unverified_count": K
+        }
+    """
+    c = _g()
+    try:
+        total = c.execute("SELECT COUNT(*) FROM outcome_predictions").fetchone()[0]
+        verified_rows = c.execute(
+            "SELECT chain_id, outcome_score, verified FROM outcome_predictions WHERE verified=1"
+        ).fetchall()
+        verified = len(verified_rows)
+        avg_score = sum(r[1] for r in verified_rows) / verified if verified else 0.0
+
+        # 关联维度：join causal_chain → dimensions
+        by_dim = {d: {"correct": 0, "total": 0} for d in DIMS}
+        for row in verified_rows:
+            cid, score, _ = row
+            dims_row = c.execute("SELECT dimensions FROM causal_chain WHERE chain_id=?", (cid,)).fetchone()
+            if dims_row:
+                for dim in json.loads(dims_row[0]).get("dims", []):
+                    if dim in by_dim:
+                        by_dim[dim]["total"] += 1
+                        by_dim[dim]["correct"] += 1 if score >= 0.5 else 0
+
+        by_dimension = {}
+        weakest = []
+        for d, stats in by_dim.items():
+            if stats["total"] > 0:
+                acc = stats["correct"] / stats["total"]
+                by_dimension[d] = {"accuracy": round(acc, 3), "n": stats["total"]}
+                weakest.append((d, acc))
+        weakest.sort(key=lambda x: x[1])
+
+        return {
+            "total": total,
+            "verified": verified,
+            "avg_score": round(avg_score, 3),
+            "unverified_count": total - verified,
+            "by_dimension": by_dimension,
+            "weakest_dims": weakest[:3],  # 最弱的3个维度
+            "strongest_dims": weakest[-3:][::-1] if weakest else []
+        }
+    finally:
+        c.close()
+
+
+def auto_predict_from_verdict(chain_id, verdict_text):
+    """
+    从 verdict 文本自动提取推荐行动 → 调用 predict_outcome。
+    由 snapshot_judgment 调用，或在 receive_verdict 末尾调用。
+    
+    提取策略：
+    1. 句号前的完整短句
+    2. 引号内内容
+    3. "建议/推荐/选/做/不要"后面的动作描述
+    """
+    import re
+    if not verdict_text:
+        return None
+    v = verdict_text.strip()
+
+    # 策略1: 引号内容（支持中/英双引号）
+    extracted = None
+    for lq, rq in [('\u201c', '\u201d'), ('"', '"'), ("'", "'")]:
+        pattern = re.escape(lq) + r'(.+?)' + re.escape(rq)
+        m = re.search(pattern, v)
+        if m:
+            extracted = m.group(1).strip()
+            break
+    if extracted:
+        return predict_outcome(chain_id, extracted)
+
+    # 策略2: "建议/推荐"后面
+    for kw in ("建议", "推荐", "选", "做", "不要", "可", "应"):
+        idx = v.find(kw)
+        if idx >= 0:
+            # 取kw后到句号/逗号之间的内容
+            fragment = v[idx:].lstrip(kw)
+            end = min(len(fragment), fragment.find("，") if "，" in fragment else len(fragment))
+            end = min(end, fragment.find("。") if "。" in fragment else end)
+            action = fragment[:end].strip()
+            if action:
+                return predict_outcome(chain_id, action)
+
+    # 策略3: 直接取句号前的短句（不超过20字）
+    for sep in ("。", "！", "？"):
+        if sep in v:
+            first_sentence = v.split(sep)[0].strip()
+            if 2 <= len(first_sentence) <= 30:
+                return predict_outcome(chain_id, first_sentence)
+
+    # 兜底: 截取前20字
+    if len(v) >= 2:
+        return predict_outcome(chain_id, v[:20])
+    return None

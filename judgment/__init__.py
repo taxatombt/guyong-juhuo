@@ -17,6 +17,15 @@ judgment — 十维判断系统核心模块
 """
 
 from .router import check10d, route, format_report, format_structured
+from .closed_loop import (
+    snapshot_judgment,
+    receive_verdict,
+    predict_outcome,
+    verify_outcome,
+    get_verification_stats,
+    get_dimension_beliefs,
+    get_recent_chains,
+)
 from .dimensions import DIMENSIONS, Dimension
 from .confidence import (
     DimensionConfidence,
