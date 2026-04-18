@@ -25,6 +25,7 @@ class OpenAIAdapter(LLMAdapter):
         model_name: str = "gpt-4o",
         api_base: str = DEFAULT_API_BASE,
     ):
+        super().__init__()  # 必须调用父类
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
         self.model_name = model_name
         self.api_base = api_base
@@ -37,7 +38,7 @@ class OpenAIAdapter(LLMAdapter):
         """检查是否配置正确"""
         return bool(self.api_key)
     
-    def complete(self, request: CompletionRequest) -> LLMResponse:
+    def _complete_impl(self, request: CompletionRequest) -> LLMResponse:
         """调用 OpenAI 补全"""
         if not self.is_configured():
             return LLMResponse(

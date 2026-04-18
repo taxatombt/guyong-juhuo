@@ -20,8 +20,8 @@ from typing import Callable, Any, Optional, TypeVar
 from dataclasses import dataclass, field
 from functools import wraps
 
-from judgment.logging_config import get_logger
-log = get_logger("juhuo.rate_limiter")
+# 直接用标准 logging，避免循环导入 judgment 包
+log = logging.getLogger("juhuo.rate_limiter")
 
 
 # ── 配置常量 ─────────────────────────────────────────────────────────────────

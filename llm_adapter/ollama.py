@@ -26,6 +26,7 @@ class OllamaAdapter(LLMAdapter):
         model_name: str = "llama3:8b",
         api_base: str = DEFAULT_API_BASE,
     ):
+        super().__init__()  # 必须调用父类
         self.model_name = model_name
         self.api_base = api_base.rstrip('/')
     
@@ -37,7 +38,7 @@ class OllamaAdapter(LLMAdapter):
         except:
             return False
     
-    def complete(self, request: CompletionRequest) -> LLMResponse:
+    def _complete_impl(self, request: CompletionRequest) -> LLMResponse:
         """调用 Ollama 补全"""
         if not self.is_configured():
             return LLMResponse(
