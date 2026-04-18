@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 
-from judgment.judgment_db import get_conn
+from .judgment_db import get_conn
 
 
 class EventType(Enum):
@@ -103,7 +103,7 @@ class StopHook:
         })
         # ── 闭环：触发 receive_verdict 更新信念 ──────────────────────
         try:
-            from judgment.closed_loop import receive_verdict
+            from .closed_loop import receive_verdict
             receive_verdict(chain_id=chain_id, correct=correct, notes=notes)
         except Exception:
             pass  # 不因闭环失败影响主流程

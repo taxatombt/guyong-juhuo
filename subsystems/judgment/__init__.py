@@ -77,6 +77,40 @@ from .stop_hook import (
     finalize_session, init_instinct_db, get_instincts, promote_instinct,
 )
 
+# Phase 4: pre_tool_hook
+from .pre_tool_hook import (
+    HookAction, PreToolUseRequest, PreToolUseOutcome, PreToolHook,
+    PostToolUseResult, PostToolHook,
+)
+
+# Phase 4: closed_loop
+from .closed_loop import (
+    init, snapshot_judgment, receive_verdict,
+    get_prior_adjustments, get_recent_chains, get_dimension_beliefs,
+    start_verdict_listener, stop_verdict_listener, is_listener_active,
+    record_judgment, predict_outcome, verify_outcome,
+    get_verification_stats, auto_predict_from_verdict,
+)
+from .self_evolover import (
+    sync_to_self_model, check_trigger,
+    get_cases, compute_new_weights, compare, apply_evolved_weights,
+    run_evolution_cycle,
+    get_scheduler, start_evolver_scheduler, EvolverScheduler,
+)
+
+# config and logging
+from .config import (
+    DATA_DIR, EVOLUTIONS_DIR, JUDGMENT_DATA_DIR, CONFIG_FILE,
+    EvolverConfig, BenchmarkConfig, LLMConfig, JudgmentConfig,
+    load_config, save_config, get_evolver, get_benchmark, get_llm,
+    BIAS_THRESHOLD, BIAS_CONSECUTIVE, ACCURACY_THRESHOLD,
+    MIN_SAMPLES, COOLDOWN_HOURS, VALIDATION_WINDOW,
+    ACCURACY_IMPROVEMENT_THRESHOLD, MIN_VERDICTS_FOR_EVOLUTION,
+)
+from .logging_config import (
+    setup_logging, get_logger, info, warning, error, debug,
+)
+
 __all__ = [
     # Phase 1
     'DIMENSIONS', 'Dimension',
@@ -118,4 +152,18 @@ __all__ = [
     'EventType', 'Instinct', 'Trajectory', 'StopHook',
     'get_stop_hook', 'capture_judgment', 'capture_verdict', 'capture_tool_call',
     'finalize_session', 'init_instinct_db', 'get_instincts', 'promote_instinct',
+    # Phase 4
+    'HookAction', 'PreToolUseRequest', 'PreToolUseOutcome', 'PreToolHook',
+    'PostToolUseResult', 'PostToolHook',
+    # closed_loop
+    'init', 'snapshot_judgment', 'receive_verdict',
+    'get_prior_adjustments', 'get_recent_chains', 'get_dimension_beliefs',
+    'start_verdict_listener', 'stop_verdict_listener', 'is_listener_active',
+    'record_judgment', 'predict_outcome', 'verify_outcome',
+    'get_verification_stats', 'auto_predict_from_verdict',
+    # self_evolover
+    'sync_to_self_model', 'check_trigger',
+    'get_cases', 'compute_new_weights', 'compare', 'apply_evolved_weights',
+    'run_evolution_cycle',
+    'get_scheduler', 'start_evolver_scheduler', 'EvolverScheduler',
 ]

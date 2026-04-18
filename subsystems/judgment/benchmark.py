@@ -24,9 +24,9 @@ import json
 import re
 from pathlib import Path
 
-from judgment.logging_config import get_logger
+from .logging_config import get_logger
 try:
-    from judgment.pipeline import check10d_full
+    from .pipeline import check10d_full
 except ImportError:
     check10d_full = None  # graceful degradation
 

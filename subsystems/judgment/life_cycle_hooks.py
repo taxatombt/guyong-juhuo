@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from threading import Thread
 import queue
 
-from judgment.judgment_db import get_conn
-from judgment.pre_tool_hook import PreToolUseOutcome
+from .judgment_db import get_conn
+from .pre_tool_hook import PreToolUseOutcome
 
 
 @dataclass
@@ -105,7 +105,7 @@ class LifeCycleHooks:
             pass
         
         try:
-            from judgment.fitness_evolution import get_fitness_stats
+            from .fitness_evolution import get_fitness_stats
             stats = get_fitness_stats()
             if stats.get("overall_accuracy", 0) > 0:
                 parts.append(f"\n[判断准确率] {stats['overall_accuracy']:.1%}")
@@ -134,7 +134,7 @@ class LifeCycleHooks:
         
         # Fitness召回
         try:
-            from judgment.fitness_evolution import get_fitness
+            from .fitness_evolution import get_fitness
             fitness = get_fitness()
             context["fitness"] = fitness.get_stats()
             context["low_confidence_dims"] = fitness.get_low_confidence_dims()
@@ -143,7 +143,7 @@ class LifeCycleHooks:
         
         # Instinct召回
         try:
-            from judgment.stop_hook import get_instincts
+            from .stop_hook import get_instincts
             instincts = get_instincts(min_confidence=0.6, limit=5)
             context["instinct"] = instincts
         except:
@@ -151,7 +151,7 @@ class LifeCycleHooks:
         
         # 构建围栏上下文
         try:
-            from judgment.context_fence import build_judgment_context
+            from .context_fence import build_judgment_context
             fenced_context = build_judgment_context(
                 causal_memory=context.get("causal_memory"),
                 instinct=context.get("instinct"),
@@ -248,7 +248,7 @@ class LifeCycleHooks:
         try:
             # 安全扫描
             if module == "judgment":
-                from judgment.context_fence import get_fence
+                from .context_fence import get_fence
                 fence = get_fence()
                 for key, value in data.items():
                     if isinstance(value, str):
@@ -420,7 +420,7 @@ class LifeCycleHooks:
         
         # Stop Hook生成instinct
         try:
-            from judgment.stop_hook import finalize_session
+            from .stop_hook import finalize_session
             instincts = finalize_session()
             result["instincts_generated"] = len(instincts)
         except:
@@ -457,7 +457,7 @@ class LifeCycleHooks:
         - 频率限制
         """
         try:
-            from judgment.pre_tool_hook import get_pre_hook, PreToolUseRequest
+            from .pre_tool_hook import get_pre_hook, PreToolUseRequest
             hook = get_pre_hook()
             request = PreToolUseRequest(
                 tool_name=tool_name,
@@ -468,7 +468,7 @@ class LifeCycleHooks:
             return hook.check(request)
         except Exception as e:
             print(f"[Hook错误] on_pre_action: {e}")
-            from judgment.pre_tool_hook import PreToolUseOutcome, HookAction
+            from .pre_tool_hook import PreToolUseOutcome, HookAction
             return PreToolUseOutcome(action=HookAction.ALLOW, should_block=False)
 
     # ── 钩子11: on_post_action ───────────────────────────────────────
@@ -477,7 +477,7 @@ class LifeCycleHooks:
         Codex启发: 动作执行后记录
         """
         try:
-            from judgment.pre_tool_hook import get_post_hook, PostToolUseResult
+            from .pre_tool_hook import get_post_hook, PostToolUseResult
             hook = get_post_hook()
             result = PostToolUseResult(
                 tool_name=tool_name,
@@ -556,7 +556,7 @@ def on_delegation(agent_id: str, task: str, fn: Callable, timeout: float = 300.0
     return get_lifecycle_hooks().on_delegation(agent_id, task, fn, timeout)
 
 # ── Codex钩子 ──────────────────────────────────────────────────────
-from judgment.pre_tool_hook import PreToolUseOutcome
+from .pre_tool_hook import PreToolUseOutcome
 
 def on_pre_action(tool_name: str, args: Dict, command: str = "") -> PreToolUseOutcome:
     """Codex启发: 动作执行前安全检查"""

@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 from contextlib import contextmanager
 
-from judgment.judgment_db import get_conn, save_verdict, update_dimension_stats
+from .judgment_db import get_conn, save_verdict, update_dimension_stats
 
 
 @dataclass
@@ -59,7 +59,7 @@ class FitnessEvolution:
 
         # Self-Evolver: 同步到self_model
         try:
-            from judgment.self_evolover import sync_to_self_model, run_evolution_cycle
+            from .self_evolover import sync_to_self_model, run_evolution_cycle
             sync_to_self_model(chain_id)  # Hook数据写入self_model
             # 运行进化闭环（检查是否需要重训规则）
             evo_result = run_evolution_cycle()

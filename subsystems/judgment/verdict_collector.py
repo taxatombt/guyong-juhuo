@@ -30,7 +30,7 @@ from dataclasses import dataclass, asdict
 
 # 配置（引用集中配置，不重复定义）
 try:
-    from judgment.config import MIN_VERDICTS_FOR_EVOLUTION as MIN_VERDICTS
+    from .config import MIN_VERDICTS_FOR_EVOLUTION as MIN_VERDICTS
 except ImportError:
     MIN_VERDICTS = 50  # 兼容旧环境
 MIN_VERDICTS_FOR_EVOLUTION = MIN_VERDICTS  # 保持向后兼容
@@ -234,7 +234,7 @@ def import_from_judgment_db(limit: int = 30) -> int:
     """
     imported = 0
     try:
-        from judgment.judgment_db import get_conn
+        from .judgment_db import get_conn
         with get_conn() as conn:
             rows = conn.execute("""
                 SELECT chain_id, task_text, complexity, answers, confidence,
@@ -427,7 +427,7 @@ def import_from_judgment_db(limit: int = 30) -> int:
     """
     imported = 0
     try:
-        from judgment.judgment_db import get_conn
+        from .judgment_db import get_conn
         with get_conn() as conn:
             rows = conn.execute("""
                 SELECT chain_id, task_text, complexity, answers, confidence,
