@@ -1,82 +1,248 @@
-# judgment/ — 懒加载入口 (re-export 已迁移内容)
-# Migration: 2026-04-18 Phase 1-5
-# 
-# 问题: subsystems/judgment/*.py 里的 "from judgment.x" 会触发本文件执行，
-#       而本文件顶层导入 subsystems.judgment 时，subsystems.judgment 还在初始化中。
-# 修复: 用 __getattr__ 懒加载 subsystems.judgment 的导出，模块加载时不做任何导入。
-#       注意: .router 和 .pipeline 是本目录的 shim，可以安全地顶层导入。
-import sys as _sys
+# judgment/ — Shim 入口（re-export subsystems/judgment/ 内容）
+# Migration: 2026-04-18 Phase 5
+# 自动生成 from _gen_init.py
+# 核心: subsystems/judgment/ 是 namespace package (无 __init__.py)。
+# judgment/__init__.py 包体只定义 __getattr__，不做任何 import。
+from sys import modules as _sys_modules
 
-# 本地 shim 文件（可安全顶层导入）
-from .router import check10d, route, format_report, format_structured
-from .pipeline import check10d_full
+_CACHE = {}
+_LOCAL = {
+    "check10d", "check10d_run", "format_report", "format_structured",
+    "check10d_full", "PipelineConfig", "format_full_report",
+}
 
-# subsystems.judgment 的导出用 __getattr__ 懒加载（避免顶层循环导入）
-_SUBSYSTEMS_EXPORTS = [
-    "DIMENSIONS", "Dimension",
-    "ExitCode", "JudgmentMessage", "JudgmentResult",
-    "MatchLevel", "MatchResult", "Matcher", "MatcherRule",
-    "DimensionConfidence", "calculate_dimension_confidence",
-    "calculate_average_confidence", "get_low_confidence_dimensions",
-    "WeightConfig", "get_dynamic_weights", "get_task_complexity", "detect_task_types",
-    "JudgmentPath",
-    "metacognitive_review", "metacognitive_self_check", "get_bias_checklist",
-    "Benchmark", "run_benchmark",
-    "JudgmentVerifier", "verify_judgment",
-    "JP", "FitnessBaseline",
-    "FitnessEvolution", "get_fitness", "record_judgment_outcome",
-    "get_boosted_weights", "get_fitness_stats",
-    "ET", "Event", "InsightTracker", "insight_tracker",
-    "VerdictRecord", "ensure_dir", "save_verdict", "load_verdicts", "count_verdicts",
-    "is_ready_for_evolution", "get_collection_status", "import_from_judgment_db",
-    "run_full_collection", "auto_collect",
-    "get_conn", "init_db", "save_judgment", "update_dimension_stats",
-    "get_judgment", "get_recent_judgments", "get_dimension_stats",
-    "get_overall_accuracy", "get_verdict_history", "get_stats", "migrate_from_json",
-    "RuleResult", "BaseRule", "CognitiveRule", "GameTheoryRule", "EconomicRule",
-    "DialecticalRule", "EmotionalRule", "IntuitiveRule", "MoralRule",
-    "SocialRule", "TemporalRule", "MetacognitiveRule",
-    "evaluate_all_rules", "get_llm_required_dimensions", "get_rule_scores",
-    "rule_based_precheck",
-    "FenceContext", "ContextFence", "get_fence", "wrap_context",
-    "build_judgment_context", "scan_threats",
-    "LessonRecord", "PatternAlert", "SelfReviewSystem", "detect_task_dimensions",
-    "HookContext", "DelegationResult", "LifeCycleHooks",
-    "init_hook_db", "get_lifecycle_hooks", "build_system_prompt",
-    "prefetch_all", "on_turn_start", "on_session_end",
-    "on_delegation", "on_pre_action", "on_post_action",
-    "EventType", "Instinct", "Trajectory", "StopHook",
-    "get_stop_hook", "capture_judgment", "capture_verdict", "capture_tool_call",
-    "finalize_session", "init_instinct_db", "get_instincts", "promote_instinct",
-    "init", "snapshot_judgment", "receive_verdict",
-    "get_prior_adjustments", "get_recent_chains", "get_dimension_beliefs",
-    "start_verdict_listener", "stop_verdict_listener", "is_listener_active",
-    "record_judgment", "predict_outcome", "verify_outcome",
-    "get_verification_stats", "auto_predict_from_verdict",
-    "sync_to_self_model", "check_trigger", "get_cases", "compute_new_weights",
-    "compare", "apply_evolved_weights", "run_evolution_cycle",
-    "get_scheduler", "start_evolver_scheduler", "EvolverScheduler",
-    "DATA_DIR", "EVOLUTIONS_DIR", "JUDGMENT_DATA_DIR", "CONFIG_FILE",
-    "EvolverConfig", "BenchmarkConfig", "LLMConfig", "JudgmentConfig",
-    "load_config", "save_config", "get_evolver", "get_benchmark", "get_llm",
-    "BIAS_THRESHOLD", "BIAS_CONSECUTIVE", "ACCURACY_THRESHOLD",
-    "MIN_SAMPLES", "COOLDOWN_HOURS", "VALIDATION_WINDOW",
-    "ACCURACY_IMPROVEMENT_THRESHOLD", "MIN_VERDICTS_FOR_EVOLUTION",
-    "setup_logging",
-]
+_LOCAL_MAP = {
+    "check10d": ("router", "check10d"),
+    "check10d_run": ("router", "check10d_run"),
+    "format_report": ("router", "format_report"),
+    "format_structured": ("router", "format_structured"),
+    "check10d_full": ("pipeline", "check10d_full"),
+    "PipelineConfig": ("pipeline", "PipelineConfig"),
+    "format_full_report": ("pipeline", "format_full_report"),
+}
 
-_subsystems_mod = None
-
-def _get_subsystems():
-    global _subsystems_mod
-    if _subsystems_mod is None:
-        from subsystems import judgment as _subsystems_mod
-    return _subsystems_mod
+_MAP = {
+    "BaseRule": ("judgment_rules", "BaseRule"),
+    "Benchmark": ("benchmark", "Benchmark"),
+    "BenchmarkCase": ("benchmark", "BenchmarkCase"),
+    "BenchmarkConfig": ("config", "BenchmarkConfig"),
+    "BenchmarkReport": ("benchmark", "BenchmarkReport"),
+    "BenchmarkResult": ("benchmark", "BenchmarkResult"),
+    "CognitiveRule": ("judgment_rules", "CognitiveRule"),
+    "ContextFence": ("context_fence", "ContextFence"),
+    "Decision": ("protocol", "Decision"),
+    "DelegationResult": ("life_cycle_hooks", "DelegationResult"),
+    "DialecticalRule": ("judgment_rules", "DialecticalRule"),
+    "Dimension": ("dimensions", "Dimension"),
+    "DimensionAccuracy": ("fitness_evolution", "DimensionAccuracy"),
+    "DimensionConfidence": ("confidence", "DimensionConfidence"),
+    "ET": ("insight_tracker", "ET"),
+    "EconomicRule": ("judgment_rules", "EconomicRule"),
+    "EmotionModulation": ("emotion_adapter", "EmotionModulation"),
+    "EmotionalRule": ("judgment_rules", "EmotionalRule"),
+    "Event": ("insight_tracker", "Event"),
+    "EventType": ("stop_hook", "EventType"),
+    "EvolverConfig": ("config", "EvolverConfig"),
+    "EvolverScheduler": ("self_evolover", "EvolverScheduler"),
+    "ExitCode": ("protocol", "ExitCode"),
+    "FenceContext": ("context_fence", "FenceContext"),
+    "FitnessBaseline": ("fitness_baseline", "FitnessBaseline"),
+    "FitnessEvolution": ("fitness_evolution", "FitnessEvolution"),
+    "GameTheoryRule": ("judgment_rules", "GameTheoryRule"),
+    "HookAction": ("pre_tool_hook", "HookAction"),
+    "HookContext": ("life_cycle_hooks", "HookContext"),
+    "InsightTracker": ("insight_tracker", "InsightTracker"),
+    "Instinct": ("stop_hook", "Instinct"),
+    "IntuitiveRule": ("judgment_rules", "IntuitiveRule"),
+    "JP": ("fitness_baseline", "JP"),
+    "JudgmentConfig": ("config", "JudgmentConfig"),
+    "JudgmentMessage": ("protocol", "JudgmentMessage"),
+    "JudgmentPath": ("judgment_path", "JudgmentPath"),
+    "JudgmentResult": ("protocol", "JudgmentResult"),
+    "JudgmentVerifier": ("verifier", "JudgmentVerifier"),
+    "LLMConfig": ("config", "LLMConfig"),
+    "LessonRecord": ("self_review", "LessonRecord"),
+    "LifeCycleHooks": ("life_cycle_hooks", "LifeCycleHooks"),
+    "MatchLevel": ("matcher", "MatchLevel"),
+    "MatchResult": ("matcher", "MatchResult"),
+    "Matcher": ("matcher", "Matcher"),
+    "MatcherRule": ("matcher", "MatcherRule"),
+    "MetacognitiveRule": ("judgment_rules", "MetacognitiveRule"),
+    "MoralRule": ("judgment_rules", "MoralRule"),
+    "PatternAlert": ("self_review", "PatternAlert"),
+    "PostToolHook": ("pre_tool_hook", "PostToolHook"),
+    "PostToolUseResult": ("pre_tool_hook", "PostToolUseResult"),
+    "PreToolHook": ("pre_tool_hook", "PreToolHook"),
+    "PreToolUseOutcome": ("pre_tool_hook", "PreToolUseOutcome"),
+    "PreToolUseRequest": ("pre_tool_hook", "PreToolUseRequest"),
+    "RuleResult": ("judgment_rules", "RuleResult"),
+    "SelfReviewSystem": ("self_review", "SelfReviewSystem"),
+    "SocialRule": ("judgment_rules", "SocialRule"),
+    "StopHook": ("stop_hook", "StopHook"),
+    "TemporalRule": ("judgment_rules", "TemporalRule"),
+    "Trajectory": ("stop_hook", "Trajectory"),
+    "VerdictRecord": ("verdict_collector", "VerdictRecord"),
+    "WeightConfig": ("dynamic_weights", "WeightConfig"),
+    "_compat": ("config", "_compat"),
+    "_get_db_conn": ("closed_loop", "_get_db_conn"),
+    "_hash_task": ("closed_loop", "_hash_task"),
+    "_init_paths": ("insight_tracker", "_init_paths"),
+    "_load_evo_data": ("dynamic_weights", "_load_evo_data"),
+    "_now_ts": ("closed_loop", "_now_ts"),
+    "_save_evo_data": ("dynamic_weights", "_save_evo_data"),
+    "_trigger_causal_memory": ("closed_loop", "_trigger_causal_memory"),
+    "_trigger_curiosity": ("closed_loop", "_trigger_curiosity"),
+    "_trigger_fitness": ("closed_loop", "_trigger_fitness"),
+    "_variance": ("metacognitive", "_variance"),
+    "_verdict_signal_listener": ("closed_loop", "_verdict_signal_listener"),
+    "apply_evolved_weights": ("self_evolover", "apply_evolved_weights"),
+    "assess_all_confidences": ("confidence", "assess_all_confidences"),
+    "auto_collect": ("verdict_collector", "auto_collect"),
+    "auto_predict_from_verdict": ("closed_loop", "auto_predict_from_verdict"),
+    "build_judgment_context": ("context_fence", "build_judgment_context"),
+    "build_layered_verdict": ("confidence", "build_layered_verdict"),
+    "build_system_prompt": ("life_cycle_hooks", "build_system_prompt"),
+    "calculate_average_confidence": ("confidence", "calculate_average_confidence"),
+    "calculate_dimension_confidence": ("confidence", "calculate_dimension_confidence"),
+    "capture_judgment": ("stop_hook", "capture_judgment"),
+    "capture_tool_call": ("stop_hook", "capture_tool_call"),
+    "capture_verdict": ("stop_hook", "capture_verdict"),
+    "check10d_full": ("pipeline", "check10d_full"),
+    "check_safe": ("matcher", "check_safe"),
+    "check_trigger": ("self_evolover", "check_trigger"),
+    "compare": ("self_evolover", "compare"),
+    "compute_new_weights": ("self_evolover", "compute_new_weights"),
+    "count_verdicts": ("verdict_collector", "count_verdicts"),
+    "counterfactual_hindsight": ("confidence", "counterfactual_hindsight"),
+    "debug": ("logging_config", "debug"),
+    "detect_task_dimensions": ("self_review", "detect_task_dimensions"),
+    "detect_task_types": ("dynamic_weights", "detect_task_types"),
+    "ensure_dir": ("verdict_collector", "ensure_dir"),
+    "error": ("logging_config", "error"),
+    "evaluate_all_rules": ("judgment_rules", "evaluate_all_rules"),
+    "finalize_session": ("stop_hook", "finalize_session"),
+    "format_hindsight": ("confidence", "format_hindsight"),
+    "format_layered_verdict": ("confidence", "format_layered_verdict"),
+    "format_meta_report": ("metacognitive", "format_meta_report"),
+    "format_weight_report": ("dynamic_weights", "format_weight_report"),
+    "get_benchmark": ("config", "get_benchmark"),
+    "get_bias_checklist": ("metacognitive", "get_bias_checklist"),
+    "get_boosted_weights": ("fitness_evolution", "get_boosted_weights"),
+    "get_cases": ("self_evolover", "get_cases"),
+    "get_collection_status": ("verdict_collector", "get_collection_status"),
+    "get_conn": ("self_evolover", "get_conn"),
+    "get_dimension_beliefs": ("closed_loop", "get_dimension_beliefs"),
+    "get_dimension_stats": ("judgment_db", "get_dimension_stats"),
+    "get_dynamic_weights": ("dynamic_weights", "get_dynamic_weights"),
+    "get_emotion_modulation": ("emotion_adapter", "get_emotion_modulation"),
+    "get_evolution_summary": ("dynamic_weights", "get_evolution_summary"),
+    "get_evolved_weights": ("dynamic_weights", "get_evolved_weights"),
+    "get_evolver": ("config", "get_evolver"),
+    "get_fence": ("context_fence", "get_fence"),
+    "get_fitness": ("fitness_evolution", "get_fitness"),
+    "get_fitness_stats": ("fitness_evolution", "get_fitness_stats"),
+    "get_instincts": ("stop_hook", "get_instincts"),
+    "get_judgment": ("judgment_db", "get_judgment"),
+    "get_lifecycle_hooks": ("life_cycle_hooks", "get_lifecycle_hooks"),
+    "get_llm": ("config", "get_llm"),
+    "get_llm_required_dimensions": ("judgment_rules", "get_llm_required_dimensions"),
+    "get_logger": ("logging_config", "get_logger"),
+    "get_low_confidence_dimensions": ("confidence", "get_low_confidence_dimensions"),
+    "get_matcher": ("matcher", "get_matcher"),
+    "get_overall_accuracy": ("judgment_db", "get_overall_accuracy"),
+    "get_post_hook": ("pre_tool_hook", "get_post_hook"),
+    "get_pre_hook": ("pre_tool_hook", "get_pre_hook"),
+    "get_prior_adjustments": ("closed_loop", "get_prior_adjustments"),
+    "get_recent_chains": ("closed_loop", "get_recent_chains"),
+    "get_recent_judgments": ("judgment_db", "get_recent_judgments"),
+    "get_rule_scores": ("judgment_rules", "get_rule_scores"),
+    "get_scheduler": ("self_evolover", "get_scheduler"),
+    "get_stats": ("judgment_db", "get_stats"),
+    "get_stop_hook": ("stop_hook", "get_stop_hook"),
+    "get_task_complexity": ("dynamic_weights", "get_task_complexity"),
+    "get_verdict_history": ("judgment_db", "get_verdict_history"),
+    "get_verification_stats": ("closed_loop", "get_verification_stats"),
+    "get_weighted_dimensions": ("dynamic_weights", "get_weighted_dimensions"),
+    "import_from_chats": ("verdict_collector", "import_from_chats"),
+    "import_from_jsonl": ("verdict_collector", "import_from_jsonl"),
+    "import_from_judgment_db": ("verdict_collector", "import_from_judgment_db"),
+    "info": ("logging_config", "info"),
+    "init": ("closed_loop", "init"),
+    "init_db": ("judgment_db", "init_db"),
+    "init_hook_db": ("life_cycle_hooks", "init_hook_db"),
+    "init_instinct_db": ("stop_hook", "init_instinct_db"),
+    "init_tool_hook_db": ("pre_tool_hook", "init_tool_hook_db"),
+    "insight_tracker": ("insight_tracker", "insight_tracker"),
+    "is_listener_active": ("closed_loop", "is_listener_active"),
+    "is_ready_for_evolution": ("verdict_collector", "is_ready_for_evolution"),
+    "load_config": ("config", "load_config"),
+    "load_verdicts": ("verdict_collector", "load_verdicts"),
+    "main": ("self_evolover", "main"),
+    "make_result": ("protocol", "make_result"),
+    "match_rules": ("matcher", "match_rules"),
+    "metacognitive_review": ("metacognitive", "metacognitive_review"),
+    "metacognitive_self_check": ("metacognitive", "metacognitive_self_check"),
+    "migrate_from_json": ("judgment_db", "migrate_from_json"),
+    "on_delegation": ("life_cycle_hooks", "on_delegation"),
+    "on_post_action": ("life_cycle_hooks", "on_post_action"),
+    "on_pre_action": ("life_cycle_hooks", "on_pre_action"),
+    "on_session_end": ("life_cycle_hooks", "on_session_end"),
+    "on_turn_start": ("life_cycle_hooks", "on_turn_start"),
+    "pad_to_emotion_label": ("emotion_adapter", "pad_to_emotion_label"),
+    "post_action_record": ("pre_tool_hook", "post_action_record"),
+    "pre_action_check": ("pre_tool_hook", "pre_action_check"),
+    "predict_outcome": ("closed_loop", "predict_outcome"),
+    "prefetch_all": ("life_cycle_hooks", "prefetch_all"),
+    "promote_instinct": ("stop_hook", "promote_instinct"),
+    "receive_verdict": ("closed_loop", "receive_verdict"),
+    "record_judgment": ("closed_loop", "record_judgment"),
+    "record_judgment_outcome": ("fitness_evolution", "record_judgment_outcome"),
+    "rule_based_precheck": ("judgment_rules", "rule_based_precheck"),
+    "run_benchmark": ("benchmark", "run_benchmark"),
+    "run_evolution_cycle": ("self_evolover", "run_evolution_cycle"),
+    "run_full_collection": ("verdict_collector", "run_full_collection"),
+    "save_config": ("config", "save_config"),
+    "save_judgment": ("judgment_db", "save_judgment"),
+    "save_verdict": ("verdict_collector", "save_verdict"),
+    "scan_threats": ("context_fence", "scan_threats"),
+    "setup_logging": ("logging_config", "setup_logging"),
+    "snapshot_judgment": ("closed_loop", "snapshot_judgment"),
+    "start_evolver_scheduler": ("self_evolover", "start_evolver_scheduler"),
+    "start_verdict_listener": ("closed_loop", "start_verdict_listener"),
+    "stop_verdict_listener": ("closed_loop", "stop_verdict_listener"),
+    "sync_to_self_model": ("self_evolover", "sync_to_self_model"),
+    "update_dimension_stats": ("judgment_db", "update_dimension_stats"),
+    "update_weights_from_outcome": ("dynamic_weights", "update_weights_from_outcome"),
+    "validate_message": ("protocol", "validate_message"),
+    "validate_result": ("protocol", "validate_result"),
+    "verify_judgment": ("verifier", "verify_judgment"),
+    "verify_outcome": ("closed_loop", "verify_outcome"),
+    "warning": ("logging_config", "warning"),
+    "wrap_context": ("context_fence", "wrap_context"),
+}
 
 def __getattr__(name):
-    if name in _SUBSYSTEMS_EXPORTS:
-        return getattr(_get_subsystems(), name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if name in _CACHE:
+        return _CACHE[name]
+    if name in _LOCAL:
+        mod_name = f"judgment.{_LOCAL_MAP[name][0]}"
+        import importlib
+        mod = importlib.import_module(mod_name)
+        obj = getattr(mod, name)
+        _CACHE[name] = obj
+        globals()[name] = obj
+        return obj
+    if name not in _MAP:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    submodule, import_name = _MAP[name]
+    import importlib
+    mod = importlib.import_module(f"subsystems.judgment.{submodule}")
+    obj = getattr(mod, import_name)
+    _CACHE[name] = obj
+    globals()[name] = obj
+    return obj
 
 def __dir__():
-    return list(globals().keys()) + _SUBSYSTEMS_EXPORTS
+    return list(globals().keys()) + list(_MAP.keys()) + list(_LOCAL)
+
+_KNOWN_NAMES = frozenset(list(_MAP.keys()) + list(_LOCAL))
