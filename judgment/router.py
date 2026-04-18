@@ -585,6 +585,69 @@ def check10d_run(task_text, agent_profile=None):
     return base_result
 
 
+def check10d_and_execute(task_text: str, channel: str = "auto",
+                          agent_profile=None) -> dict:
+    """
+    完整闭环：判断 → 执行 → 验证 → 进化
+    
+    三步合一：
+    1. check10d_run() — 做判断
+    2. ActionExecutor.execute() — 执行（benchmark/hermes/claude_code）
+    3. verify_outcome() — 验证结果 → evolver
+    
+    Args:
+        task_text: 判断任务
+        channel: "auto" | "benchmark" | "hermes" | "claude_code"
+        agent_profile: 可选人物画像
+    
+    Returns:
+        {
+            "judgment": check10d_run结果,
+            "execution": ActionExecutor结果,
+            "verdict": 判断结论,
+            "outcome_score": 执行验证分 (0.0~1.0),
+            "channel": 执行通道,
+            "chain_id": 判断快照ID,
+        }
+    
+    Example:
+        result = check10d_and_execute("要不要辞职创业？", channel="benchmark")
+        print(f"判断: {result['verdict']}")
+        print(f"执行: {result['execution']['channel']}")
+        print(f"得分: {result['outcome_score']}")
+    """
+    # Step 1: 做判断
+    judgment_result = check10d_run(task_text, agent_profile)
+    verdict = judgment_result.get("verdict", "")
+    chain_id = judgment_result.get("meta", {}).get("chain_id", "")
+    
+    # Step 2: 执行
+    try:
+        from action_system.action_executor import ActionExecutor
+        executor = ActionExecutor()
+        execution_result = executor.execute(
+            task=task_text,
+            verdict=verdict,
+            channel=channel,
+        )
+    except Exception as e:
+        execution_result = {"error": str(e), "outcome_score": 0.0, "channel": "none"}
+    
+    # Step 3: 验证结果已由 ActionExecutor._verify_and_feedback() 自动写入
+    # 可直接通过 get_verification_stats() 查看
+    
+    return {
+        "judgment": judgment_result,
+        "execution": execution_result,
+        "verdict": verdict,
+        "outcome_score": execution_result.get("outcome_score", 0.0),
+        "channel": execution_result.get("channel", "unknown"),
+        "chain_id": chain_id,
+        "expected": execution_result.get("expected", ""),
+        "match": execution_result.get("match", False),
+    }
+
+
 def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
     """
     基于各维度回答合成 verdict 和 confidence
