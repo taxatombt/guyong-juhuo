@@ -705,12 +705,19 @@ def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
             action_cnt = sum(1 for kw in action_kw if kw in sent)
             action_score = min(action_cnt / 2.0, 1.0) * 0.4
             vague_kw = {"不确定", "很难说", "更多信息", "无法判断",
-                         "具体情况具体分析", "基于", "给出判断", "需要更多信息"}
+                         "具体情况具体分析", "基于", "给出判断", "需要更多信息",
+                         "再给出判断", "再综合考虑", "综合给出", "多维分析给出"}
             vague_penalty = sum(0.3 for kw in vague_kw if kw in sent)
             return max(0.0, len_score + action_score - vague_penalty)
 
         def extract_sentences(text: str) -> list:
             """句子提取：句号 + 省略号分隔（处理无句号段落）"""
+            # 先清理残留的 thinking 标签
+            text = re.sub(r'^好了?\s*', '', text)
+            text = re.sub(r'好了?\s*$', '', text)
+            text = re.sub(r'^<think>\s*', '', text)
+            text = re.sub(r'<think>\s*$', '', text)
+            text = re.sub(r'@\d{10,}', '', text)  # 去掉 @时间戳
             SEP = '<<<SEP>>>'
             text2 = text.replace('...', SEP)
             parts = re.split(r"([。！？])", text2)
