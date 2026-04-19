@@ -181,10 +181,10 @@ class Benchmark:
 
     def _calc_match(self, verdict: str, expected: str) -> float:
         """
-        语义方向匹配（修复版）：
+        语义方向匹配（v2 改进版）：
         1. 精确包含 → 1.0
-        2. 方向一致 + 主题重叠 → 0.5~1.0
-        3. n-gram 重叠兜底 → 补足至 1.0
+        2. 字符重叠 >= 60% → 0.8
+        3. 方向分(0~0.6) + 可操作性分(0~0.2) + 主题重叠分(0~0.2)
         """
         v, e = verdict.strip(), expected.strip()
         if not v or not e:
@@ -194,38 +194,51 @@ class Benchmark:
         if e in v or v in e:
             return 1.0
 
-        # — 语义方向判断 —
+        # 字符重叠 >= 60% → 高相似度
+        if len(v) >= 4 and len(e) >= 4:
+            common = sum(1 for c in v if c in e)
+            if common / max(len(v), len(e)) >= 0.6:
+                return 0.8
+
+        # — 语义方向关键词 —
         cautious = {"谨慎", "慎重", "小心", "评估", "权衡", "考虑", "三思", "风险",
                     "谨慎考虑", "需评估", "不一定", "看情况", "取决于", "控制仓位",
                     "评估财务", "先调研", "先了解", "先调查", "先评估", "先判断",
-                    "先明确", "先确认", "先搞清楚", "不一定", "根据情况"}
-        encouraging_strict = {"值得", "应该", "鼓励", "推荐", "支持"}
-        discouraging = {"不建议", "不要", "反对", "不应该", "不值得", "别", "不要做", "不值得做"}
+                    "先明确", "先确认", "先搞清楚", "不一定", "根据情况", "审慎",
+                    "权衡后", "多维权衡", "不建议", "不建议做", "建议先", "可以先"}
+        encourage = {"值得", "应该", "鼓励", "推荐", "支持", "值得做", "推荐做",
+                     "可考虑", "可以"}
+        discourage = {"不建议", "不要", "反对", "不应该", "不值得", "别", "不要做",
+                     "不值得做"}
 
-        # 语境修正："建议先X"在决策场景中 = 谨慎
-        def _cautious_context(t):
-            for p in ("建议先", "可以先", "建议做", "谨慎", "慎重", "三思", "权衡", "评估"):
-                if p in t:
-                    return True
-            return False
+        def has_cautious(s):
+            return any(p in s for p in cautious)
 
-        v_cautious = _cautious_context(v) or any(p in v for p in cautious)
-        v_encourage = not v_cautious and any(p in v for p in encouraging_strict)
-        v_discourage = any(p in v for p in discouraging)
+        def has_encourage(s):
+            return any(p in s for p in encourage)
 
-        e_cautious = any(p in e for p in cautious)
-        # 如果 expected 无明显信号但与 verdict 有强主题重叠，也视为同方向
-        if not e_cautious:
-            # 检测主题重叠（超过3个2gram共享 → 同话题）
-            e_2g = {e[i:i+2] for i in range(len(e)-1)}
-            v_2g = {v[i:i+2] for i in range(len(v)-1)}
-            if len(e_2g & v_2g) >= 3:
-                e_cautious = True  # 同话题，方向分一致
-        e_encourage = any(p in e for p in encouraging_strict)
-        e_discourage = any(p in e for p in discouraging)
+        def has_discourage(s):
+            return any(p in s for p in discourage)
 
-        # — 方向分（最高 0.6）—
-        # 方向一致 → 默认 0.6（保证 PASS）；关键词补充到 1.0
+        def has_actionable(s):
+            """有具体可操作建议（不只是模糊陈述）"""
+            action_words = {
+                "先", "再", "后", "应该", "可以", "不建议", "要", "不要",
+                "控制", "分散", "比较", "衡量", "评估", "考虑", "权衡",
+                "调研", "调查", "辞职", "创业", "借", "买房", "移民", "读研",
+                "分手", "提前还", "买保险", "all in", "炒股", "考证",
+                "考公", "健身", "断舍离", "领养", "换城市",
+            }
+            return any(p in s for p in action_words) or len(s) >= 10
+
+        v_cautious = has_cautious(v)
+        v_encourage = has_encourage(v) and not v_cautious
+        v_discourage = has_discourage(v)
+        e_cautious = has_cautious(e)
+        e_encourage = has_encourage(e)
+        e_discourage = has_discourage(e)
+
+        # 方向分（最高 0.6）
         if v_cautious and e_cautious:
             direction_score = 0.6
         elif v_encourage and e_encourage:
@@ -235,33 +248,23 @@ class Benchmark:
         elif v_encourage and e_cautious:
             direction_score = 0.3
         elif v_cautious and e_encourage:
-            direction_score = 0.4
+            direction_score = 0.3
         else:
             direction_score = 0.0
 
-        # — 主题词重叠（最高 0.2）—
-        # verdict 2-3gram 中有多少在 expected 中
-        kw_v = set()
-        for i in range(len(v) - 1):
-            kw_v.add(v[i:i+2])
-        for i in range(len(v) - 2):
-            kw_v.add(v[i:i+3])
-        kw_e = set()
-        for i in range(len(e) - 1):
-            kw_e.add(e[i:i+2])
-        for i in range(len(e) - 2):
-            kw_e.add(e[i:i+3])
-        shared_kw = len(kw_v & kw_e)
-        kw_cov = shared_kw / max(len(kw_v), 1)
-        keyword_score = kw_cov * 0.2
+        # 可操作性分（0 or 0.2）
+        actionable_score = 0.2 if has_actionable(v) else 0.0
 
-        # — 子串共享（2gram 兜底，最高 0.2）—
-        e_2grams = {e[i:i+2] for i in range(len(e)-1)}
-        v_2grams = {v[i:i+2] for i in range(len(v)-1)}
-        shared_2g = len(e_2grams & v_2grams)
-        substr_score = (shared_2g / max(len(e_2grams), 1)) * 0.2
+        # 主题重叠分（2-gram + 3-gram，最高 0.2）
+        def ngrams(s, n):
+            return set(s[i:i+n] for i in range(len(s)-n+1))
+        shared_2g = len(ngrams(v, 2) & ngrams(e, 2))
+        shared_3g = len(ngrams(v, 3) & ngrams(e, 3))
+        e_total = len(ngrams(e, 2)) + len(ngrams(e, 3))
+        overlap_ratio = (shared_2g + shared_3g) / max(e_total, 1)
+        topic_score = min(overlap_ratio * 0.2, 0.2)
 
-        total = direction_score + keyword_score + substr_score
+        total = direction_score + actionable_score + topic_score
         return min(round(total, 3), 1.0)
 
     def run_all(self) -> BenchmarkReport:

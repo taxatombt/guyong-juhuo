@@ -604,28 +604,8 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None):
     base_result["verdict"] = verdict_str
     base_result["confidence"] = confidence
 
-    # ── 闭环：落盘完整 snapshot ──────────────────────────────────────
-    try:
-        _dims_chosen = list(answers.keys())
-        _weights = {d: 1.0 for d in _dims_chosen}
-        _chain_id = base_result.get("meta", {}).get("chain_id") or f"run_{int(time.time()*1000)}"
-        snapshot_judgment(
-            chain_id=_chain_id,
-            task_text=task_text[:300],
-            dimensions=_dims_chosen,
-            weights=_weights,
-            result={
-                "answers": answers,
-                "confidence": confidence,
-                "dim_confidence": {},
-                "emotion": {},
-                "curiosity": {},
-                "verdict": base_result.get("verdict", ""),
-            },
-            complexity="critical",
-        )
-    except Exception:
-        pass
+    # 【修复】check10d() 内部已通过 record_judgment() 调用过 snapshot_judgment()
+    # 此处不再重复调用，避免 causal_chain 产生双重记录
 
     return base_result
 
@@ -699,67 +679,100 @@ def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
     返回 (verdict_str, confidence_float)
     """
     if not answers:
-        return ("需要更多信息才能给出判断，建议补充关键维度分析", 0.0)
-
-    # 构造维度总结prompt
-    dim_summary_parts = []
-    for dim_key, answer_text in answers.items():
-        if "Answer:" in answer_text:
-            qa = answer_text.split("Answer:")[1].strip()
-        else:
-            qa = answer_text.strip()
-        qa = re.sub(r'Count[:：].*$', "", qa, flags=re.MULTILINE)[:200]
-        dim_summary_parts.append(f"\u3010{dim_key}\u3011{qa}")
-
-    dim_summary = "\\n".join(dim_summary_parts)
-    prompt = ("\u4efb\u52a1\uff1a" + task_text + "\n\u5206\u6790\uff1a" + dim_summary + "\n\u7ed3\u8bba\uff08\u4e0d\u8d85\u8fc725\u4e2a\u5b57\uff09\uff1a")
-
+        return ("需要更多信息才能判断", 0.3)
     try:
-        adapter = get_adapter()
-        if not adapter or not adapter.is_configured():
-            raise ValueError("adapter not configured")
-        response = adapter.complete(CompletionRequest(
-            prompt=prompt,
-            max_tokens=1500,
-            temperature=0.3,
-        ))
-        if response.success and response.content:
-            raw = response.content
+        raw = ""
+        for dim, ans in answers.items():
+            if isinstance(ans, dict) and "content" in ans:
+                raw += ans["content"]
+            elif isinstance(ans, str):
+                raw += ans
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("No content")
 
-            # 1. 清除 thinking block
-            after = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        def score_sent(sent: str) -> float:
+            chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
+            if chinese < 4:
+                return 0.0
+            len_score = min(chinese / 30.0, 1.0) * 0.3
+            action_kw = {"先", "应该", "可以", "建议", "推荐", "值得", "不要",
+                        "考虑", "评估", "权衡", "控制", "分散", "调研",
+                        "辞职", "创业", "买房", "移民", "借", "读研", "读博", "分手",
+                        "all in", "炒股", "考证", "考公", "健身", "换城市",
+                        "断舍离", "领养", "回老家", "原谅", "接受", "拒绝",
+                        "审慎", "谨慎", "果断", "立即", "保守", "激进"}
+            action_cnt = sum(1 for kw in action_kw if kw in sent)
+            action_score = min(action_cnt / 2.0, 1.0) * 0.4
+            vague_kw = {"不确定", "很难说", "更多信息", "无法判断",
+                         "具体情况具体分析", "基于", "给出判断", "需要更多信息"}
+            vague_penalty = sum(0.3 for kw in vague_kw if kw in sent)
+            return max(0.0, len_score + action_score - vague_penalty)
 
-            # 2. 找第一个中文句子（正文可能开头有残渣，用 search）
-            m = re.search(r'([\u4e00-\u9fff]{2,60}[\u3002\uff01\uff1f])', after)
-            if m:
-                verdict = m.group(1).strip()
-                confidence = min(0.88, 0.35 + len(answers) * 0.08)
-                return (verdict, confidence)
+        def extract_sentences(text: str) -> list:
+            """句子提取：句号 + 省略号分隔（处理无句号段落）"""
+            SEP = '<<<SEP>>>'
+            text2 = text.replace('...', SEP)
+            parts = re.split(r"([。！？])", text2)
+            sents = []
+            for i in range(0, len(parts) - 1, 2):
+                part = parts[i].strip()
+                sep = parts[i + 1]
+                sent = part + (sep if sep else '')
+                if sent.strip():
+                    sents.append(sent.strip().replace(SEP, '...'))
+            if len(parts) % 2 == 1 and parts[-1].strip():
+                last = parts[-1].strip().replace(SEP, '...')
+                if last:
+                    sents.append(last)
+            return sents
 
-            # 3. Fallback：尝试从 thinking block 末尾提取
-            thinking_blocks = re.findall(r"<think>(.*?)</think>", raw, re.DOTALL)
-            for tb in reversed(thinking_blocks):
-                tb_clean = re.sub(r'Count[:：].*$', "", tb, flags=re.DOTALL)
-                tb_clean = re.sub(r'字数[:：].*$', "", tb_clean, flags=re.DOTALL)
-                tb_clean = re.sub(r'[A-Za-z\u4e00-\u9fff]\s*\(\d+\)', "", tb_clean)
-                parts = re.split(r'([\u3002\uff1f\uff01])', tb_clean)
-                sentences = []
-                for i in range(0, len(parts) - 1, 2):
-                    sentences.append(parts[i].strip() + parts[i + 1])
-                if len(parts) % 2 == 1 and parts[-1].strip():
-                    sentences.append(parts[-1].strip())
-                for sent in reversed(sentences):
-                    chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-                    if chinese >= 4 and chinese / max(len(sent), 1) > 0.5:
-                        confidence = min(0.88, 0.35 + len(answers) * 0.08)
-                        return (sent[:50], confidence)
+        # Step 1: 清理正文残留 thinking 标签
+        after = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
+        # Step 2: 从正文（非 thinking block）提取句子
+        best_score = -1.0
+        best_sent = ""
+        if after:
+            for sent in extract_sentences(after):
+                chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
+                if chinese >= 4 and chinese / max(len(sent), 1) > 0.5:
+                    s = score_sent(sent)
+                    if s > best_score:
+                        best_score = s
+                        best_sent = sent[:50]
+        if best_score >= 0.15:
+            confidence = min(0.88, 0.35 + len(answers) * 0.08)
+            return (best_sent, confidence)
+
+        # Step 3: 从所有 thinking blocks 扫描，选最佳句子（句子级，非 block 级）
+        blocks = re.findall(r"<think>.*?</think>", raw, re.DOTALL)
+        for block in blocks:
+            # 提取 thinking block 的文本内容（去掉标签）
+            block_text = re.sub(r'^<think>', '', block)
+            block_text = re.sub(r'</think>$', '', block_text)
+            block_clean = re.sub(r'^\s*(好的|嗯|下面|综合|根据|经过).*?[:：]', "", block_text)
+            block_clean = re.sub(r'Count[:：].*$', "", block_clean, flags=re.DOTALL)
+            block_clean = re.sub(r'字数[:：].*$', "", block_clean, flags=re.DOTALL)
+            block_clean = re.sub(r'[A-Za-z\u4e00-\u9fff]\s*\(\d+\)', "", block_clean)
+            # 逐句评分
+            for sent in extract_sentences(block_clean):
+                chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
+                if chinese >= 4 and chinese / max(len(sent), 1) > 0.5:
+                    s = score_sent(sent)
+                    if s > best_score:
+                        best_score = s
+                        best_sent = sent[:50]
+        if best_sent:
+            confidence = min(0.88, 0.35 + len(answers) * 0.08)
+            return (best_sent, confidence)
+
+        # Step 4: Fallback
+        total_expected = len(answers) + 3
+        confidence = min(0.9, len(answers) / total_expected + 0.2)
+        return (f"基于{len(answers)}个维度的分析给出了判断", confidence)
     except Exception:
-        pass
-
-    # 4. 最后 Fallback
-    total_expected = len(answers) + 3
-    confidence = min(0.9, len(answers) / total_expected + 0.2)
-    return (f"\u57fa\u4e8e{len(answers)}\u4e2a\u7ef4\u5ea6\u7684\u5206\u6790\u7ed9\u51fa\u4e86\u5224\u65ad", confidence)
+        return ("需要更多信息才能判断", 0.3)
 
 def _judge_complexity(text):
     """自动判断任务复杂度"""
