@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from contextlib import contextmanager
 from threading import Lock
 
-_JD = Path(__file__).parent.parent / "data" / "judgment_data"
+_JD = Path(__file__).parent.parent.parent / "data" / "judgment_data"
 _DB = _JD / "juhuo_judgment.db"
 _JD.mkdir(parents=True, exist_ok=True)
 
