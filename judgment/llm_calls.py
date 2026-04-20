@@ -31,7 +31,7 @@ def inject_emotion_signal(task_text: str) -> str:
 
 
 
-def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = None) -> str:
+def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None) -> str:
     """构造LLM回答问题的prompt"""
     dim_labels = {
         "cognitive": "认知维度",
@@ -69,7 +69,7 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
 
 
 
-def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None) -> dict:
+def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None) -> dict:
     """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
     adapter = get_adapter()
 
@@ -78,7 +78,7 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
         print("[LLM] MiniMax未配置 api_key，跳过answer生成")
         return {}
 
-    prompt = _build_answer_prompt(task_text, questions, agent_profile)
+    prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj)
 
     # 截断prompt（LLM context limit）
     if len(prompt) > 6000:

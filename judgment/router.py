@@ -125,7 +125,7 @@ def inject_emotion_signal(task_text: str) -> str:
     return None
 
 
-def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = None) -> str:
+def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None) -> str:
     """构造LLM回答问题的prompt"""
     dim_labels = {
         "cognitive": "认知维度",
@@ -145,8 +145,25 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
         name = agent_profile.get("name", "通用AI")
         profile_context = f"\n你是{name}的判断分身。价值取向：{', '.join(agent_profile.get('values', []))}。"
 
+    # ── 注入维度权重上下文（Self-Evolver 闭环关键）─────────────────
+    # prior_adj = {dim_id: belief}，belief 越高表示该维度判断越准确
+    # 让 LLM 知道在哪些维度上可以更信任自己的分析
+    weight_context = ""
+    if prior_adj:
+        dim_weights = {k: v for k, v in prior_adj.items() if k in dim_labels}
+        if dim_weights:
+            strong = [dim_labels[k] for k, v in dim_weights.items() if v >= 0.7]
+            weak = [dim_labels[k] for k, v in dim_weights.items() if v <= 0.45]
+            hints = []
+            if strong:
+                hints.append(f"对[{', '.join(strong)}]的分析可以更自信深入")
+            if weak:
+                hints.append(f"对[{', '.join(weak)}]的分析需更谨慎，补充更多依据")
+            if hints:
+                weight_context = "\n[判断背景] " + "；".join(hints) + "。"
+
     parts = [
-        f"任务：{task_text}{profile_context}\n",
+        f"任务：{task_text}{profile_context}{weight_context}\n",
         "请针对以下问题给出简短而深刻的回答（每条回答不超过50字）：\n",
     ]
 
@@ -162,7 +179,7 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
     return "\n".join(parts)
 
 
-def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None) -> dict:
+def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None) -> dict:
     """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
     adapter = get_adapter()
 
@@ -171,7 +188,7 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
         print("[LLM] MiniMax未配置 api_key，跳过answer生成")
         return {}
 
-    prompt = _build_answer_prompt(task_text, questions, agent_profile)
+    prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj)
 
     # 截断prompt（LLM context limit）
     if len(prompt) > 6000:
@@ -429,7 +446,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         prior_adj = get_prior_adjustments()
     except Exception:
         pass
-    answers = _answer_questions(task_text, questions, agent_profile)
+    answers = _answer_questions(task_text, questions, agent_profile, prior_adj)
 
     _ret = {
         "task": task_text,
@@ -609,7 +626,7 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None):
         all_questions.update(dim_result)
     # LLM回答
     _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
-    answers = _answer_questions(task_text, all_questions, agent_profile)
+    answers = _answer_questions(task_text, all_questions, agent_profile, _prior_adj)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
