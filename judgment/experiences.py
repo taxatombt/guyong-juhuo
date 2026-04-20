@@ -229,6 +229,43 @@ def find_similar(
     return scored[:limit]
 
 
+# ── 冷启动种子 ────────────────────────────────────────────────
+
+EXPERIENCE_SEEDS = [
+    {"task": "有一笔50万存款，3%年利率，另一投资机会50%概率翻倍，50%概率亏损30%，怎么选？", "verdict": "选分散配置，不要全押高风险", "confidence": 0.80},
+    {"task": "高薪大公司996 vs 低薪小公司朝九晚五，怎么选？", "verdict": "看成长空间和个人阶段，不一概而论", "confidence": 0.75},
+    {"task": "朋友借钱不还，还要不要借第二次？", "verdict": "看关系深浅和金额大小，救急不救穷", "confidence": 0.78},
+    {"task": "要不要从大公司跳槽到创业公司？", "verdict": "看赛道和团队，靠谱的可以博一把", "confidence": 0.77},
+    {"task": "要不要裸辞休息一段时间？", "verdict": "有积蓄有方向就休息，没有就别裸辞", "confidence": 0.76},
+    {"task": "要不要报一个5万块的MBA课程？", "verdict": "看目的和ROI，不是为了学历镀金", "confidence": 0.75},
+    {"task": "要不要all in炒股？", "verdict": "普通人all in炒股风险极高，不要", "confidence": 0.85},
+    {"task": "要不要移民？", "verdict": "想清楚代价和目的，想好了就去", "confidence": 0.73},
+    {"task": "要不要和对象分手？", "verdict": "触及底线就分，不是底线就磨合", "confidence": 0.80},
+    {"task": "要不要买房？", "verdict": "看城市看时机，不要跟风", "confidence": 0.78},
+    {"task": "要不要创业？", "verdict": "先做调研，见过足够多创业案例再决定", "confidence": 0.80},
+    {"task": "要不要借钱给亲戚？", "verdict": "做好不还的准备再借，借了就别惦记", "confidence": 0.82},
+    {"task": "要不要读研究生？", "verdict": "看专业和职业规划，不是为了逃避就业", "confidence": 0.76},
+    {"task": "要不要考证？", "verdict": "考证是手段不是目的，看有没有实际用处", "confidence": 0.75},
+    {"task": "要不要换城市工作？", "verdict": "权衡机会成本和生活成本，不为逃避而换", "confidence": 0.77},
+    {"task": "要不要投资数字货币？", "verdict": "高风险，做好归零准备再用闲钱", "confidence": 0.72},
+    {"task": "要不要接受父母安排的相亲？", "verdict": "去见见无妨，不合适就直说", "confidence": 0.74},
+    {"task": "要不要让孩子学奥数？", "verdict": "看孩子兴趣，不要强推", "confidence": 0.76},
+    {"task": "要不要帮朋友做担保？", "verdict": "不要，担保风险极高", "confidence": 0.85},
+    {"task": "要不要接受一份低于市场价的offer？", "verdict": "看成长性和领导，长期有回报就考虑", "confidence": 0.74},
+]
+
+
+def seed_initial_experiences():
+    """用初始种子数据填充 experiences 表（冷启动，只运行一次）"""
+    init()
+    added = 0
+    for case in EXPERIENCE_SEEDS:
+        eid = save_experience(case["task"], case["verdict"], case["confidence"])
+        if eid != -1:
+            added += 1
+    return added
+
+
 def get_context_for_judgment(task_text: str) -> str:
     """
     为判断生成历史参考上下文。
