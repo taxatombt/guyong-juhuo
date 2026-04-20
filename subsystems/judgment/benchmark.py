@@ -167,6 +167,27 @@ class Benchmark:
         covered = sum(1 for kd in case.key_dims if kd in dims)
         coverage = covered / len(case.key_dims) if case.key_dims else 0.0
 
+        # ── 闭环Step3：benchmark结果自动反馈进 evolver ──────────────
+        # match_score → outcome_score：≥0.5=判断正确，<0.5=判断错误
+        # receive_verdict() 会：
+        #   1. 更新 judgment_snapshots.outcome_auto + corrected
+        #   2. 触发 evolver.record_outcome()
+        #   3. 触发 dimension_beliefs 更新
+        chain_id = result.get("meta", {}).get("chain_id", "")
+        try:
+            from .closed_loop import receive_verdict
+            receive_verdict(
+                chain_id=chain_id,
+                task_text=case.task if not chain_id else None,
+                correct=(match >= 0.5),
+                notes=f"benchmark:{case.id}",
+                outcome_score=match,
+                actual_action=case.expected,
+                verifier="benchmark",
+            )
+        except Exception as e:
+            log.warning(f"[benchmark] receive_verdict failed for {case.id}: {e}")
+
         return BenchmarkResult(
             case_id=case.id,
             task=case.task,
