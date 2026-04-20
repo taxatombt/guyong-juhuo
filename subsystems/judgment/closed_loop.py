@@ -98,7 +98,7 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
             r=c.execute("""
                 SELECT id,dimensions FROM causal_chain 
                 WHERE chain_id=? AND corrected=0 
-                AND dimensions LIKE '%"dims":[%'
+                AND INSTR(dimensions,'"dims"')>0
                 ORDER BY ts DESC LIMIT 1
             """,(chain_id,)).fetchone()
             if r: target=r
@@ -106,7 +106,7 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
             r=c.execute("""
                 SELECT id,dimensions FROM causal_chain 
                 WHERE task_hash=? AND corrected=0 
-                AND dimensions LIKE '%"dims":[%'
+                AND INSTR(dimensions,'"dims"')>0
                 ORDER BY ts DESC LIMIT 1
             """,(_hash_task(task_text),)).fetchone()
             if r: target=r
