@@ -273,7 +273,7 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
     # 2. 写入 evolutions/evolved_weights.json（动态权重备份）
     try:
         import os
-        evol_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "evolutions")
+        evol_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "evolutions")
         os.makedirs(evol_dir, exist_ok=True)
         evol_file = os.path.join(evol_dir, "evolved_weights.json")
         
@@ -296,6 +296,26 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
         with open(evol_file, "w", encoding="utf-8") as f:
             json.dump({"current": new_weights, "history": history}, f, ensure_ascii=False, indent=2)
         log.info("Written to evolutions/evolved_weights.json")
+
+        # ── 【关键修复】同步到 dimension_beliefs 表 ───────────────────
+        # apply_evolved_weights() 只写文件是不够的。
+        # check10d() 通过 get_prior_adjustments() 从 dimension_beliefs 读权重。
+        # 不写 dimension_beliefs，进化的权重永远不会影响判断。
+        try:
+            from .closed_loop import _get_db_conn
+            conn = _get_db_conn()
+            for dim_id, belief in new_weights.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO dimension_beliefs (dim_id, belief, hit_count, miss_count) "
+                    "VALUES (?, ?, COALESCE((SELECT hit_count FROM dimension_beliefs WHERE dim_id=?), 0), "
+                    "COALESCE((SELECT miss_count FROM dimension_beliefs WHERE dim_id=?), 0))",
+                    (dim_id, belief, dim_id, dim_id)
+                )
+            conn.commit()
+            conn.close()
+            log.info(f"[Self-Evolver] dimension_beliefs 已同步: {new_weights}")
+        except Exception as e:
+            log.warning(f"[Self-Evolver] dimension_beliefs 同步失败: {e}")
     except Exception as e:
         log.error(f"Evolved weights update failed: {e}")
         success = False
@@ -566,25 +586,74 @@ class EvolverScheduler:
         return result
     
     def _rollback(self, evolution_id: str, data: Dict, delta: float) -> bool:
-        """回滚到旧规则"""
+        """回滚：恢复 evolved_weights.json 的上一条历史权重，并同步到 dimension_beliefs"""
         try:
-            from self_model.self_model import load_model, save_model
+            # 1. 从 evolved_weights.json 的 history 读取上一条权重
+            import os
+            evol_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "evolutions")
+            evol_file = os.path.join(evol_dir, "evolved_weights.json")
             
-            model = load_model()
+            old_weights = None
+            if os.path.exists(evol_file):
+                with open(evol_file, "r", encoding="utf-8") as f:
+                    ew = json.load(f)
+                history = ew.get("history", [])
+                if len(history) >= 2:
+                    old_weights = history[-2]["weights"]  # history[-1]是当前错误权重
+                elif len(history) == 1:
+                    # 只有一条历史 → 回滚到默认值 0.5
+                    old_weights = {d: 0.5 for d in ["cognitive","game_theory","economic","dialectical","emotional","intuitive","moral","social","temporal","metacognitive"]}
             
-            # 从 fitness_baseline 获取旧权重
+            if not old_weights:
+                log.warning(f"[Self-Evolver] Rollback 失败：无法找到旧权重")
+                return False
+            
+            # 2. 写入 self_model.json
             try:
-                from .fitness_baseline import load_baseline
-                baseline = load_baseline()
-                if baseline and "weights" in baseline:
-                    model.weights = baseline["weights"].copy()
-                    save_model(model)
-                    return True
-            except:
-                pass
+                from self_model.self_model import load_model, save_model
+                model = load_model()
+                model.weights = old_weights.copy()
+                save_model(model)
+                log.info(f"[Self-Evolver] self_model.json 已回滚: {old_weights}")
+            except Exception as e:
+                log.warning(f"[Self-Evolver] self_model.json 回滚失败: {e}")
             
-            return False
-        except:
+            # 3. 【关键修复】同步到 dimension_beliefs（让 check10d 实际使用旧权重）
+            try:
+                from .closed_loop import _get_db_conn
+                conn = _get_db_conn()
+                for dim_id, belief in old_weights.items():
+                    conn.execute(
+                        "INSERT OR REPLACE INTO dimension_beliefs (dim_id, belief, hit_count, miss_count) "
+                        "VALUES (?, ?, COALESCE((SELECT hit_count FROM dimension_beliefs WHERE dim_id=?), 0), "
+                        "COALESCE((SELECT miss_count FROM dimension_beliefs WHERE dim_id=?), 0))",
+                        (dim_id, belief, dim_id, dim_id)
+                    )
+                conn.commit()
+                conn.close()
+                log.info(f"[Self-Evolver] dimension_beliefs 已回滚: {old_weights}")
+            except Exception as e:
+                log.warning(f"[Self-Evolver] dimension_beliefs 回滚失败: {e}")
+
+            # 4. 同步更新 evolved_weights.json 的 current（保持一致性）
+            try:
+                with open(evol_file, "r", encoding="utf-8") as f:
+                    ew = json.load(f)
+                ew["current"] = old_weights
+                ew["history"].append({
+                    "timestamp": datetime.now().isoformat(),
+                    "weights": old_weights,
+                    "_rollback_of": evolution_id,
+                })
+                with open(evol_file, "w", encoding="utf-8") as f:
+                    json.dump(ew, f, ensure_ascii=False, indent=2)
+                log.info(f"[Self-Evolver] evolved_weights.json current 已回滚")
+            except Exception as e:
+                log.warning(f"[Self-Evolver] evolved_weights.json 回滚失败: {e}")
+
+            return True
+        except Exception as e:
+            log.error(f"[Self-Evolver] Rollback 异常: {e}")
             return False
     
     def _update_validation_record(self, result: Dict) -> None:
