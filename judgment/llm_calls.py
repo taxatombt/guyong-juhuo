@@ -65,11 +65,12 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
             parts.append(f"  Q{i}. {q}")
         parts.append("")
 
-    parts.append("【最终输出格式】")
-    parts.append("请在所有维度回答之后，另起一行输出：")
-    parts.append("## 结论")
-    parts.append("（紧跟一行结论句子，10-20字，直接给出判断或行动建议，不能是反思或分析，必须是具体结论）")
-    parts.append("例如：## 结论  建议先做市场调研再决定是否创业。")
+    parts.append("【回答格式要求】")
+    parts.append("每个维度末尾必须加一行 `=>` 开头的结论，例如：")
+    parts.append("  => 认知建议：先评估技能市场价值再做决定")
+    parts.append("所有维度回答完后，另起一行输出：")
+    parts.append("## 最终结论：你的判断（10-20字，直接说行动，不说分析）")
+    parts.append("例如：## 最终结论：建议先做市场调研再决定是否创业。")
 
     return "\n".join(parts)
 
@@ -245,108 +246,45 @@ def _score_verdict_candidate(sent: str, position_boost: float = 0.0) -> float:
 
 
 
+
 def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
     """
-    基于各维度回答合成 verdict 和 confidence。
-    核心原则：选最像"结论"的句子，而非最像"反思"的句子。
+    从 LLM 直接输出的结论行提取 verdict：
+    1. 优先取 ## 最终结论 行
+    2. 其次取 => 结论行（取最后一个）
+    3. 最后 fallback
     """
     if not answers:
         return ("需要更多信息才能判断", 0.3)
-    try:
-        raw = ""
-        for dim, ans in answers.items():
-            if isinstance(ans, dict) and "content" in ans:
-                raw += ans["content"]
-            elif isinstance(ans, str):
-                raw += ans
-        raw = raw.strip()
-        if not raw:
-            raise ValueError("No content")
 
-        # ── 句子提取 ────────────────────────────────────────
-        def _extract(text: str):
-            text = re.sub(r'@\d{10,}', '', text)
-            SEP = '<<<SEP>>>'
-            text2 = text.replace('...', SEP)
-            parts = re.split(r'([。！？])', text2)
-            sents = []
-            for i in range(0, len(parts) - 1, 2):
-                part = parts[i].strip()
-                sep = parts[i + 1]
-                s = (part + sep).strip().replace(SEP, '...')
-                if s:
-                    sents.append(s)
-            if len(parts) % 2 == 1 and parts[-1].strip():
-                last = parts[-1].strip().replace(SEP, '...')
-                if last:
-                    sents.append(last)
-            return sents
-
-        # ── Step 0: 优先提取 ## 结论 / ## 最终判断 结构 ──────
-        m_conc = re.search(
-            '(?:##\s*(?:结论|最终判断|最终建议|综合结论)[：:].*?)(?=\n##|\Z)',
-            raw, re.DOTALL
-        )
-        if m_conc:
-            section_sents = _extract(m_conc.group(0))
-            if section_sents:
-                best = max(section_sents, key=lambda s: _score_verdict_candidate(s, 0.0))
-                if _score_verdict_candidate(best) >= 0.08:
-                    confidence = min(0.88, 0.42 + len(answers) * 0.05)
-                    return (best[:60], confidence)
-
-        # ── Step 1: 清理正文残留 thinking 标签 ─────────────
-        after = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
-
-        # ── Step 2: 正文句子评分 ────────────────────────────
-        best_score = -1.0
-        best_sent = ""
-        if after:
-            for sent in _extract(after):
-                chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-                if chinese >= 4:
-                    score = _score_verdict_candidate(sent, 0.0)
-                    if score > best_score:
-                        best_score = score
-                        best_sent = sent[:60]
-        if best_score >= 0.08:
-            confidence = min(0.88, 0.42 + len(answers) * 0.05)
-            return (best_sent, confidence)
-
-        # ── Step 3: thinking blocks 句子评分（位置加权）──────
-        blocks = re.findall(r'<think>(.*?)</think>', raw, flags=re.DOTALL)
-        if blocks:
-            for block in blocks:
-                block_clean = re.sub(r'@\d{10,}', '', block).strip()
-                sents = _extract(block_clean)
-                n = len(sents)
-                for pos, sent in enumerate(sents):
-                    chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-                    if chinese >= 4:
-                        boost = 0.15 * pos / max(n - 1, 1)
-                        score = _score_verdict_candidate(sent, boost)
-                        if score > best_score:
-                            best_score = score
-                            best_sent = sent[:60]
-            if best_score >= 0.08:
-                confidence = min(0.88, 0.42 + len(answers) * 0.05)
-                return (best_sent, confidence)
-
-        # ── Step 4: 无句号长段落，取末尾 ─────────────────────
-        if not best_sent and blocks:
-            last_block = re.sub(r'@\d{10,}', '', blocks[-1]).strip()
-            chunks = [c.strip() for c in last_block.split('。') if c.strip()]
-            if chunks:
-                chunk = chunks[-1]
-                chinese = len(re.findall(r'[\u4e00-\u9fff]', chunk))
-                if chinese >= 10:
-                    score = _score_verdict_candidate(chunk, 0.1)
-                    if score >= 0.08:
-                        confidence = min(0.88, 0.42 + len(answers) * 0.05)
-                        return (chunk[-50:].strip(), confidence)
-
-        # ── Step 5: 最终 fallback ───────────────────────────
-        confidence = 0.38 + len(answers) * 0.04
-        return ("需要更多信息才能判断", confidence)
-    except Exception:
+    # 合并所有维度的 content
+    raw = ""
+    for dim, ans in answers.items():
+        if isinstance(ans, dict) and "content" in ans:
+            raw += ans["content"]
+        elif isinstance(ans, str):
+            raw += ans
+    raw = raw.strip()
+    if not raw:
         return ("需要更多信息才能判断", 0.3)
+
+    # Step 1: 优先取 ## 最终结论 行
+    # 格式：## 最终结论[：:\s]+结论内容
+    m_final = re.search(r'##\s*最终结论[：:\s]+(.+)', raw)
+    if m_final:
+        verdict = m_final.group(1).strip()
+        if 5 <= len(verdict) <= 60:
+            confidence = min(0.90, 0.50 + len(answers) * 0.05)
+            return (verdict[:60], confidence)
+
+    # Step 2: 取最后一个 => 结论行
+    conclusion_lines = re.findall(r'=>\s*(.+)', raw)
+    if conclusion_lines:
+        verdict = conclusion_lines[-1].strip()
+        if 5 <= len(verdict) <= 60:
+            confidence = min(0.88, 0.45 + len(answers) * 0.05)
+            return (verdict[:60], confidence)
+
+    # Step 3: fallback
+    confidence = 0.38 + len(answers) * 0.04
+    return ("需要更多信息才能判断", confidence)
