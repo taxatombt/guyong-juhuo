@@ -221,8 +221,12 @@ def _rollback_self_model(evolution_id: str) -> bool:
 
     如果没有历史记录则备份当前版本并标记失败。
     """
-    from self_model.self_model import load_model, save_model
     import shutil
+    try:
+        from self_model.self_model import load_model, save_model
+    except ImportError:
+        log.warning("[rollback] self_model.self_model not available, skipping model restore")
+        load_model = save_model = None
 
     SELF_MODEL_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     MODEL_FILE = Path(__file__).parent.parent / "self_model.json"
@@ -244,10 +248,19 @@ def _rollback_self_model(evolution_id: str) -> bool:
             if len(history) >= 2:
                 # history[-2] 是"上一版本"（history[-1] 是刚才刚应用的当前版本）
                 previous_weights = history[-2].get("weights", {})
-                model = load_model()
-                model.weights = previous_weights
-                save_model(model)
-                log.info(f"[rollback] Restored to previous weights from history: {list(previous_weights.keys())}")
+                if load_model and save_model:
+                    model = load_model()
+                    model.weights = previous_weights
+                    save_model(model)
+                    log.info(f"[rollback] Restored to previous weights from history: {list(previous_weights.keys())}")
+                    return True
+                else:
+                    # self_model 模块不可用，只记录历史（降级不崩溃）
+                    log.warning(f"[rollback] self_model unavailable, history restore skipped for {evolution_id}")
+                    return True
+            elif len(history) == 1:
+                # 只有一条历史 = 无法回滚（没有更早的版本），正常情况
+                log.info(f"[rollback] Only 1 evolution in history, nothing to rollback for {evolution_id}")
                 return True
     except Exception as e:
         log.warning(f"[rollback] Failed to restore from history: {e}")

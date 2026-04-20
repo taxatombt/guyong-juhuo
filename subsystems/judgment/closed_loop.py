@@ -46,6 +46,19 @@ def init():
                 c.execute(f"ALTER TABLE judgment_snapshots ADD COLUMN {col} {dtype}")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+        # evolution_validation 表：Self-Evolver 验证追踪（补漏，避免 evolver 无表可用）
+        c.execute("""CREATE TABLE IF NOT EXISTS evolution_validation (
+            evolution_id TEXT PRIMARY KEY,
+            applied_at TEXT,
+            pre_accuracy REAL,
+            post_judgments INTEGER DEFAULT 0,
+            post_correct INTEGER DEFAULT 0,
+            status TEXT,
+            post_accuracy REAL,
+            accuracy_delta REAL,
+            validated_at TEXT,
+            rollback_reason TEXT
+        )""")
         for d in DIMS:c.execute("INSERT OR IGNORE INTO dimension_beliefs (dim_id,belief) VALUES (?,0.5)",(d,))
         c.commit()
     finally:c.close()

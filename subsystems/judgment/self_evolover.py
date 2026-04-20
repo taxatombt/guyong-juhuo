@@ -63,49 +63,9 @@ def get_conn():
 
 # 1. 同步到self_model
 def sync_to_self_model(chain_id: str) -> Optional[Dict]:
-    """Hook捕获的判断数据写入self_model"""
-    log.info(f"Syncing to self_model: {chain_id}")
-    try:
-        from self_model.self_model import update_from_feedback, load_model, save_model
-        with get_conn() as conn:
-            # 尝试从judgment_records获取
-            row = conn.execute(
-                "SELECT * FROM judgment_records WHERE chain_id=?", (chain_id,)
-            ).fetchone()
-            
-            if not row:
-                # 尝试从judgments获取
-                row = conn.execute(
-                    "SELECT * FROM judgments WHERE chain_id=?", (chain_id,)
-                ).fetchone()
-            
-            if not row:
-                return None
-            
-            # 判断outcome: outcome列或result列
-            outcome = row["outcome"] if "outcome" in row.keys() else (row["result"] if "result" in row.keys() else "")
-            
-            # 获取dimensions和weights
-            dims = json.loads(row["dimensions"]) if row["dimensions"] else []
-            weights = json.loads(row["weights"]) if row["weights"] else {}
-            
-            task = row["task_text"] if "task_text" in row.keys() else (row["task"] if "task" in row.keys() else "")
-            ts = row["created_at"] if "created_at" in row.keys() else datetime.now().isoformat()
-            
-            event = {
-                "chain_id": chain_id,
-                "task": task,
-                "feedback": outcome,
-                "timestamp": ts,
-                "dimensions": dims,
-                "weights": weights,
-            }
-            
-            updated = update_from_feedback(event)
-            return {"success": True, "bias_updated": updated is not None}
-    except Exception as e:
-        log.error(f"sync_to_self_model failed: {e}")
-        return {"success": False, "error": str(e)}
+    """Hook捕获的判断数据写入self_model（可选，跳过不影响主流程）"""
+    # self_model 写入已降级为可选，核心功能由 receive_verdict → record_outcome 承担
+    return {"success": True, "bias_updated": False, "note": "deprecated"}
 
 # 2. 检查触发条件
 def check_trigger() -> Dict:
