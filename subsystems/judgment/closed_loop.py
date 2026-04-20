@@ -93,10 +93,22 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
     try:
         target=None
         if chain_id:
-            r=c.execute("SELECT id,dimensions FROM causal_chain WHERE chain_id=? AND corrected=0",(chain_id,)).fetchone()
+            # 【修复】添加 ORDER BY ts DESC，确保取到最新的完整记录
+            # 同时过滤 dimensions 为空或格式不对的记录
+            r=c.execute("""
+                SELECT id,dimensions FROM causal_chain 
+                WHERE chain_id=? AND corrected=0 
+                AND dimensions LIKE '%"dims":[%'
+                ORDER BY ts DESC LIMIT 1
+            """,(chain_id,)).fetchone()
             if r: target=r
         elif task_text:
-            r=c.execute("SELECT id,dimensions FROM causal_chain WHERE task_hash=? AND corrected=0 ORDER BY ts DESC LIMIT 1",(_hash_task(task_text),)).fetchone()
+            r=c.execute("""
+                SELECT id,dimensions FROM causal_chain 
+                WHERE task_hash=? AND corrected=0 
+                AND dimensions LIKE '%"dims":[%'
+                ORDER BY ts DESC LIMIT 1
+            """,(_hash_task(task_text),)).fetchone()
             if r: target=r
         if not target: return {"updated":False,"reason":"no_record_found"}
         rec_id,dims_json=target;dims_data=json.loads(dims_json);correction=1.0 if correct else -1.0;changes={}

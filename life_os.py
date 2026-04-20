@@ -1,133 +1,150 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import argparse, sys, os, re
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+"""Life OS 最小 CLI"""
 
-ADAPTER_OK = False
-try:
-    from subsystems.judgment.emotion_adapter import get_emotion_modulation
-    ADAPTER_OK = True
-except ImportError:
-    pass
+import sys
+import argparse
+from typing import Dict, List, Optional
+from dataclasses import dataclass
 
-TASK_DEMAND = {
-    "report": 80, "bp": 90, "coding": 85, "email": 20, "ppt": 70,
-    "meeting": 50, "client": 60, "gym": 30, "call": 30,
-    "file": 20, "read": 40, "think": 70, "decision": 80,
-    "negotiate": 75, "interview": 65, "learn": 60,
-}
+ENERGY_HIGH = 70
+ENERGY_MED = 45
+ENERGY_LOW = 30
+AROUSAL_SOCIAL = 0.3
 
-def parse_energy(s):
-    s = s.strip().rstrip('%')
-    return max(0, min(100, int(s))) if s.isdigit() else 50
+@dataclass
+class Task:
+    name: str
+    cognitive_demand: int = 20
+    social_demand: int = 20
+    emotional_benefit: int = 20
+    physical_demand: int = 20
 
-def parse_pad(s):
-    if not s: return None
-    if ',' in s and s.count(',') == 2:
-        try:
-            parts = s.split(',')
-            return dict(zip(['P','A','D'], [float(x) for x in parts]))
-        except:
-            return None
-    return None
+@dataclass
+class LifeState:
+    energy: int
+    emotion_state: Dict[str, float]
+    emotion_label: str
 
-def parse_tasks(s):
-    sep = "," if "," in s else (";" if ";" in s else None)
-    raw = s.split(sep) if sep else [s]
-    tasks = []
-    for t in raw:
-        t = t.strip()
-        if not t: continue
-        m = re.search(r'@(\d+)', t)
-        hint = int(m.group(1)) if m else None
-        t = re.sub(r'@\d+', '', t).strip()
-        tasks.append({'name': t, 'demand': hint})
-    return tasks
+def classify_task(task_name: str) -> Task:
+    name_lower = task_name.lower()
+    t = Task(name=task_name)
+    high_cog = ["写", "bp", "报告", "分析", "规划", "策略", "思考", "开发"]
+    if any(kw in name_lower for kw in high_cog):
+        t.cognitive_demand = 80
+    social_kw = ["见", "会", "电话", "聊", "客户", "会议"]
+    if any(kw in name_lower for kw in social_kw):
+        t.social_demand = 80
+    phys_kw = ["健", "跑", "瑜伽", "运动", "健身"]
+    if any(kw in name_lower for kw in phys_kw):
+        t.physical_demand = 80
+    emotional_kw = ["妈妈", "家人", "朋友", "放松", "休息"]
+    if any(kw in name_lower for kw in emotional_kw):
+        t.emotional_benefit = 80
+    return t
 
-def infer_demand(name):
-    for kw, d in TASK_DEMAND.items():
-        if kw in name.lower(): return d
-    return 50
+def can_execute(task: Task, state: LifeState) -> tuple:
+    if task.cognitive_demand >= 70 and state.energy < ENERGY_MED:
+        return False, "精力{}%不足".format(state.energy)
+    if task.social_demand >= 70 and state.emotion_state.get("A", 0) < AROUSAL_SOCIAL:
+        return False, "激活度不足"
+    return True, "OK"
 
-def build_plan(tasks, energy, mod, label):
-    plan = []
-    remaining = energy
-    hour = 9
-    rec = mod.get('recommended_dims', []) if mod else []
-    for t in tasks:
-        demand = t['demand'] if t['demand'] is not None else infer_demand(t['name'])
-        tag = ''
-        if 'cognitive' in rec: tag = ' [clarity]'
-        elif label == 'anxiety' and demand > 60: tag = ' [defer]'
-        elif label == 'excitement' and demand > 70: tag = ' [now_best]'
-        block_h = max(0.5, demand / 40.0)
-        if remaining >= demand / 2.0:
-            end_h = hour + int(block_h)
-            end_m = int((block_h - int(block_h)) * 60)
-            plan.append(f'{hour:02d}:00-{end_h:02d}:{end_m:02d}  {t["name"]}{tag}  @{demand}')
-            remaining -= demand
-            hour = end_h
-            if hour >= 12:
-                plan.append(f'{hour:02d}:00-{hour+1:02d}:00  [lunch_break]  @0')
-                hour += 1
-                remaining = min(100, remaining + 30)
-        else:
-            plan.append(f'[tomorrow]  {t["name"]}  @{demand}  (energy={remaining}% insufficient)')
-    return plan
+def score_task(task: Task, state: LifeState) -> int:
+    score = 50
+    if task.cognitive_demand >= 70:
+        score += 30 if state.energy >= ENERGY_HIGH else -10
+    bonus = {"excitement": 20, "joy": 15, "anxiety": -30, "sadness": -10, "calm": 10}
+    score += bonus.get(state.emotion_label, 0)
+    score += task.emotional_benefit // 10
+    return max(0, min(100, score))
+
+def pad_to_emotion(pad: Dict) -> str:
+    P, A = pad.get("P", 0), pad.get("A", 0)
+    if P > 0.2 and A > 0.2: return "excitement"
+    if P < -0.2 and A > 0.2: return "anxiety"
+    if P > 0.2 and A < 0.2: return "joy"
+    if P < -0.2 and A < 0.2: return "sadness"
+    return "calm"
+
+def schedule(tasks: List[str], energy: int, pad: Dict) -> List[Dict]:
+    emotion_label = pad_to_emotion(pad)
+    state = LifeState(energy=energy, emotion_state=pad, emotion_label=emotion_label)
+    results = []
+    for task_name in tasks:
+        task = classify_task(task_name)
+        can_do, reason = can_execute(task, state)
+        score = score_task(task, state) if can_do else 0
+        slot = "上午 (08:30-11:30)" if task.cognitive_demand >= 70 else \
+               "下午 (16:00-18:00)" if task.physical_demand >= 70 else "灵活"
+        results.append({
+            "task": task_name,
+            "can_do": can_do,
+            "reason": reason if not can_do else "",
+            "score": score,
+            "time_slot": slot if can_do else "延期",
+            "type": "cognitive" if task.cognitive_demand >= 70 else \
+                    "social" if task.social_demand >= 70 else \
+                    "physical" if task.physical_demand >= 70 else "admin"
+        })
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
 
 def main():
-    p = argparse.ArgumentParser(description='Life OS minimum CLI')
-    p.add_argument('tasks', nargs='?', default='')
-    p.add_argument('-e', '--energy', default='70')
-    p.add_argument('-m', '--emotion', default='')
-    p.add_argument('-i', '--interactive', action='store_true')
-    args = p.parse_args()
-    tasks_raw = args.tasks
-    energy = parse_energy(args.energy)
-    pad = parse_pad(args.emotion)
-    if args.interactive:
-        tasks_raw = input('Tasks: ').strip() or tasks_raw
-        e = input('Energy (0-100): ').strip()
-        if e: energy = parse_energy(e)
-        p_in = input('PAD (P,A,D): ').strip()
-        if p_in: pad = parse_pad(p_in)
-    tasks = parse_tasks(tasks_raw) if tasks_raw else []
-    if not tasks:
-        print('Usage: python life_os.py "write_bp,email,gym" -e 45 -m -0.6,0.4,-0.3')
+    parser = argparse.ArgumentParser(description="Life OS 最小 CLI")
+    parser.add_argument("tasks", nargs="*", help="任务列表，逗号分隔")
+    parser.add_argument("--energy", type=int, default=70, help="精力 0-100")
+    parser.add_argument("--emotion", default="", help="PAD状态 P=0.3,A=0.5,D=0.6")
+    args = parser.parse_args()
+    
+    if not args.tasks:
+        print("用法: python life_os.py <任务1/任务2/...> [--energy 80] [--emotion P=0.3,A=0.5,D=0.6]")
         return
+    tasks = []
+    for t in args.tasks:
+        tasks.extend([x.strip() for x in t.replace("、", "/").split("/") if x.strip()])
+    
+    pad = {"P": 0.0, "A": 0.0, "D": 0.0}
+    if args.emotion:
+        for part in args.emotion.split(","):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                pad[k.strip()] = float(v.strip())
+    
+    emotion_label = pad_to_emotion(pad)
+    
+    print("=== Life OS 调度 ===")
+    print("精力: {}% | 情绪: {} (P={:.1f}, A={:.1f}, D={:.1f})".format(
+        args.energy, emotion_label, pad["P"], pad["A"], pad["D"]))
     print()
-    print('=' * 50)
-    print('Life OS Daily Plan')
-    print('=' * 50)
-    print(f'Energy: {energy}%')
-    print(f'Tasks: {len(tasks)} items')
-    if pad:
-        print(f'PAD: P={pad["P"]:+.1f} A={pad["A"]:+.1f} D={pad["D"]:+.1f}')
-    else:
-        print('PAD: neutral')
+    
+    results = schedule(tasks, args.energy, pad)
+    print("{:<4} {:<20} {:<10} {:<4} {:<20}".format("序号", "任务", "类型", "分", "时段"))
+    print("-" * 60)
+    for i, r in enumerate(results, 1):
+        status = "[OK]" if r["can_do"] else "[延]"
+        print("{:<4} {:<20} {:<10} {:<4} {:<20} {}".format(
+            i, r["task"], r["type"], r["score"], r["time_slot"], status))
     print()
-    mod, label, conf_adj = None, 'calm', 0.0
-    if pad and ADAPTER_OK:
-        mod = get_emotion_modulation(pad)
-        label = mod.emotion_label
-        conf_adj = mod.confidence_adjustment
-        print(f'Emotion: {mod.emotion_label} (intensity={mod.intensity})')
-        if mod.recommended_dims: print(f'  Boost: {mod.recommended_dims}')
-        if mod.suppressed_dims: print(f'  Reduce: {mod.suppressed_dims}')
-        print(f'  Confidence adj: {mod.confidence_adjustment:+.2f}')
-        print()
-        mod_dict = mod.__dict__
-    else:
-        mod_dict = None
-    plan = build_plan(tasks, energy, mod_dict, label)
-    print('--- Plan ---')
-    for item in plan: print(f'  {item}')
+    
+    if emotion_label == "anxiety":
+        print("[建议] 焦虑状态，建议先做低认知任务或运动调节")
+    elif emotion_label == "excitement":
+        print("[建议] 兴奋状态，适合深度工作和高认知任务")
+    elif args.energy < ENERGY_MED:
+        print("[建议] 精力{}%较低，推迟高认知任务".format(args.energy))
+    
+    cog = [r for r in results if r["type"] == "cognitive" and r["can_do"]]
+    soc = [r for r in results if r["type"] == "social" and r["can_do"]]
+    phy = [r for r in results if r["type"] == "physical" and r["can_do"]]
+    
+    if cog and soc:
+        print("[推荐组合] 上午{} + 下午{}".format(cog[0]["task"], soc[0]["task"]))
+    if phy:
+        print("[体力调节] 建议{}放在傍晚".format(phy[0]["task"]))
+    
     print()
-    if conf_adj != 0:
-        print(f'[Emotion] Confidence adjusted by {conf_adj:+.2f}')
-    print()
-    if not pad and ADAPTER_OK:
-        print('Tip: -m -0.6,0.4,-0.3 = anxiety  |  -m 0.8,0.6,0.5 = excitement')
+    print("=== 完成 ===")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
