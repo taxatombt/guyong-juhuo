@@ -179,9 +179,7 @@ python cli.py benchmark      # Benchmark 测试
 
 - [x] **Verdict 数据积累** — 49条 verdict_outcomes（2026-04-21 v1.8）
 - [x] **维度权重闭环** — verdict → belief → prior_adj → LLM prompt 全通（2026-04-21 v1.8）
-- [ ] **生产数据积累** — InsightTracker 读数达到可读报告（需要真实 verdicts 驱动）
-- [ ] **HRR 监控** — difflib 延迟超 100ms 或事件超 500 条时触发升级
-- [x] 因果记忆选型（JSONL主力，SQLite归档 __trash__/）（v1.7）
+- [ ] **生产数据积累** — InsightTracker 读数达到可读报告（需要真实 verdicts 驱动）（JSONL主力，SQLite归档 __trash__/）（v1.7）
 - [x] Self-Evolver rollback 修复 + 验证闭环（v1.6）
 - [x] judgment/config.py 集中生产配置（v1.6）
 - [x] GDPVal Benchmark 22案例 + A/B/C/D 评分（v1.6）
