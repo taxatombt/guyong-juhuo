@@ -313,6 +313,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     标准化接口：十维检视
     因果记忆：自动注入相关历史判断到任务上下文
     情绪调制：PAD状态直接调制维度权重和信心度
+    经历层：历史判断自动作为参考上下文
 
     参数:
         task_text: 任务描述
@@ -328,6 +329,12 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
             "A": float,   # 激活度 -1~+1
             "D": float,   # 支配度 -1~+1
         }
+
+    返回:
+        dict，包含 verdict / confidence / 各维度分析 / 历史参考
+    """
+    # 懒启动（初始化 experiences 表等）
+    _ensure_started()
         当提供 emotion_state 时，情绪状态将直接影响：
         - 各维度问题权重（调制prompt）
         - 信心度（confidence_adjustment）

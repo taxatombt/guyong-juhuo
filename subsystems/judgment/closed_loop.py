@@ -145,6 +145,20 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
             _logger.debug(f"[self_evolver] recorded outcome: correct={correct}")
         except Exception as e:
             _logger.debug(f"[self_evolver] record_outcome skip: {e}")
+
+        # 经历层闭环：outcome 写回 experiences 表
+        if task_text:
+            try:
+                import sys, os.path as op
+                # experiences.py 在 judgment/，closed_loop.py 在 subsystems/judgment/
+                _exp_path = op.join(op.dirname(op.dirname(op.dirname(op.abspath(__file__)))), 'judgment', 'experiences.py')
+                if op.exists(_exp_path):
+                    sys.path.insert(0, op.dirname(op.dirname(op.dirname(op.abspath(__file__)))))
+                    from judgment.experiences import record_outcome as _rec_outcome
+                    _score = outcome_score if outcome_score is not None else (1.0 if correct else 0.0)
+                    _rec_outcome(task_text, outcome=actual_action or ("对" if correct else "错"), outcome_score=_score, notes=notes)
+            except Exception:
+                pass
         
         # 【闭环Step3.1】evolution_validator 验证追踪
         try:
