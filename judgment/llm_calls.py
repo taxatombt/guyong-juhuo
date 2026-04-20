@@ -65,6 +65,12 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
             parts.append(f"  Q{i}. {q}")
         parts.append("")
 
+    parts.append("【最终输出格式】")
+    parts.append("请在所有维度回答之后，另起一行输出：")
+    parts.append("## 结论")
+    parts.append("（紧跟一行结论句子，10-20字，直接给出判断或行动建议，不能是反思或分析，必须是具体结论）")
+    parts.append("例如：## 结论  建议先做市场调研再决定是否创业。")
+
     return "\n".join(parts)
 
 
