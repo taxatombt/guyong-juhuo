@@ -177,8 +177,8 @@ python cli.py benchmark      # Benchmark 测试
 
 > 方向收拢：因果记忆选型已完成，Self-Evolver 目标降级为「维度权重自动调整」。
 
-- [ ] **Verdict 数据积累** — 目标 50+ 条真实反馈，覆盖多场景（进行中：36条种子 + benchmark）
-- [ ] **维度权重闭环** — verdict → belief 权重自动调整（Self-Evolver Phase 2 降级目标）
+- [x] **Verdict 数据积累** — 49条 verdict_outcomes（2026-04-21 v1.8）
+- [x] **维度权重闭环** — verdict → belief → prior_adj → LLM prompt 全通（2026-04-21 v1.8）
 - [ ] **生产数据积累** — InsightTracker 读数达到可读报告（需要真实 verdicts 驱动）
 - [ ] **HRR 监控** — difflib 延迟超 100ms 或事件超 500 条时触发升级
 - [x] 因果记忆选型（JSONL主力，SQLite归档 __trash__/）（v1.7）
@@ -193,6 +193,24 @@ python cli.py benchmark      # Benchmark 测试
 ---
 
 ## 版本更新
+
+### v1.8 (2026-04-21) — Self-Evolver 闭环全通 + P0 死锁修复
+
+**核心修复：**
+- **RLock 死锁**：`judgment_db.py` `Lock()` → `RLock()` — 解决 `receive_verdict` → `verify_evolution` 嵌套调用永久阻塞（120s → 0.3s）
+- **INSTR SQL**：`closed_loop.py` `LIKE '%"dims":[%'` → `INSTR(dimensions,'\"dims\"')>0` — SQLite LIKE 双引号转义失效修复
+
+**闭环打通（v1.7 遗留 P0）：**
+- `apply_evolved_weights()` 末尾同步写 `dimension_beliefs` 表（进化后权重真正影响判断）
+- `_rollback()` 从 `evolved_weights.json.history[-2]` 恢复（路径修复 + 数据源修正）
+- `prior_adj` 注入 LLM prompt（强维度≥0.7→"更自信深入"，弱维度≤0.45→"更谨慎"）
+- `_ensure_started()` 懒启动（消除 import 副作用，测试可正常 mock）
+
+**数据状态：**
+- verdict_outcomes: 49条（接近50目标）
+- causal_chain: 100条（滚动缓冲区上限）
+
+### v1.7 (2026-04-18) — 三层架构重构 Phase 1
 
 ### v1.6 (2026-04-17) — Self-Evolver 验证闭环完成
 
