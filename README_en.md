@@ -177,11 +177,11 @@ python cli.py benchmark         # Benchmark
 
 > The biggest gap right now is not new features — it's making Self-Evolver go from "runs" to "verified".
 
-- [ ] **Verdict data accumulation** — Target 50+ cases, multi-scenario coverage *(in progress: 22 benchmark + judgment_db seeds)*
-- [ ] **Self-Evolver verification loop** — verify_evolution() + auto-verify + rollback *(v1.6: closed)*
-- [ ] **Production config** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h *(v1.6: judgment/config.py)*
-- [ ] **GDPVal Benchmark** — Evaluate judgment quality with standard case set *(v1.6: 22 cases, A/B/C/D grade)*
-- [ ] **HRR vector retrieval** — Evaluate if causal memory needs vector search upgrade *(v1.6: report done, trigger at 500 events)*
+- [ ] **Verdict data accumulation** — Target 50+ cases, multi-scenario coverage *(in progress: 49 verdict_outcomes)*
+- [x] **Self-Evolver verification loop** — verify_evolution() + auto-verify + rollback *(v1.6: closed)*
+- [x] **Production config** — BIAS=3, MIN_SAMPLES=5, COOLDOWN=24h *(v1.6: done)*
+- [x] **GDPVal Benchmark** — Evaluate judgment quality with standard case set *(v1.6: done)*
+- [x] **HRR vector retrieval** — Evaluate if causal memory needs vector search upgrade *(v1.6: done)*
 - [x] Verdict auto-accumulation (v1.5)
 - [x] evolution_validator tracking (v1.5)
 - [x] InsightTracker full implementation + router.py + closed_loop.py (v1.5)
