@@ -35,14 +35,29 @@ from judgment.self_evolover import start_evolver_scheduler
 # Verdict 自动积累
 from evolver.verdict_collector import save_verdict as _save_auto_verdict, VerdictRecord
 
-# 初始化
-init()
+# LLM 调用函数（从 router.py 拆分，独立可测）
+# 注意：inject_emotion_signal 需使用 router.py 中的 global_emotion_system，
+# 已在 router.py line 108 初始化，此处直接用同名引用。
+from judgment.llm_calls import (
+    inject_emotion_signal,
+    _build_answer_prompt,
+    _answer_questions,
+    _keyword_match,
+    _synthesize_verdict,
+)
 
-# 启动 verdict 自动监听线程（后台闭环核心）
-start_verdict_listener()
+# 懒启动标记（避免 import 时执行副作用，测试可正常 mock）
+_STARTED = False
 
-# 启动 Self-Evolver 自动调度器（后台定时触发进化验证）
-start_evolver_scheduler()
+def _ensure_started():
+    """首次调用 check10d_run 时才启动，重复调用无操作。"""
+    global _STARTED
+    if _STARTED:
+        return
+    _STARTED = True
+    init()
+    start_verdict_listener()
+    start_evolver_scheduler()
 
 # 兼容旧接口命名
 class _CausalMemoryCompat:
@@ -581,6 +596,7 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None):
     注意：asyncio.run() 会与模块级后台线程冲突，
     所以这里直接同步调用 check10d，不做嵌套异步。
     """
+    _ensure_started()
     base_result = check10d(task_text, agent_profile, complexity="critical", emotion_state=emotion_state)
     # 同步构建所有维度问题
     must = base_result["must_check"]
