@@ -58,6 +58,7 @@ def _ensure_started():
     init()
     start_verdict_listener()
     start_evolver_scheduler()
+    _init_exp()  # 初始化经历表
 
 # 兼容旧接口命名
 class _CausalMemoryCompat:
@@ -83,6 +84,9 @@ from .fitness_baseline import FitnessBaseline
 # LLM接入：MiniMax适配器
 from llm_adapter.minimax import get_adapter
 from llm_adapter.base import CompletionRequest
+
+# 经历层：历史判断记忆
+from judgment.experiences import get_context_for_judgment, save_experience, init as _init_exp
 
 # P0改进：因果推断引擎 - 给judgment提供推理底座
 from causal_memory.causal_inference import CausalInferenceEngine, infer_causal_chain
@@ -179,7 +183,7 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
     return "\n".join(parts)
 
 
-def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None) -> dict:
+def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None, history_context: str = "") -> dict:
     """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
     adapter = get_adapter()
 
@@ -188,7 +192,7 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
         print("[LLM] MiniMax未配置 api_key，跳过answer生成")
         return {}
 
-    prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj)
+    prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj, history_context)
 
     # 截断prompt（LLM context limit）
     if len(prompt) > 6000:
@@ -446,7 +450,9 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         prior_adj = get_prior_adjustments()
     except Exception:
         pass
-    answers = _answer_questions(task_text, questions, agent_profile, prior_adj)
+    # 经历层：历史相似判断
+    _hist_ctx = get_context_for_judgment(task_text)
+    answers = _answer_questions(task_text, questions, agent_profile, prior_adj, _hist_ctx)
 
     _ret = {
         "task": task_text,
@@ -577,6 +583,12 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     _ret["verdict"] = verdict_str
     _ret["confidence"] = confidence
 
+    # 经历层：存为历史记忆
+    try:
+        save_experience(original_task, verdict_str, confidence, context=_hist_ctx)
+    except Exception:
+        pass
+
     # Emotion × Judgment 集成：情绪调制信心度
     if emotion_modulation is not None and emotion_modulation.confidence_adjustment != 0.0:
         _old_conf = confidence
@@ -626,16 +638,25 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None):
         all_questions.update(dim_result)
     # LLM回答
     _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
-    answers = _answer_questions(task_text, all_questions, agent_profile, _prior_adj)
+    # 经历层：先获取历史相似判断作为上下文
+    _history_ctx = get_context_for_judgment(task_text)
+    answers = _answer_questions(task_text, all_questions, agent_profile, _prior_adj, _history_ctx)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
     base_result["meta"]["parallel"] = False
     base_result["meta"]["prior_adjustments"] = _prior_adj
+    base_result["meta"]["history_context"] = _history_ctx  # 保留，供输出参考
     # 末尾再次合成 verdict（用全部9维答案覆盖 check10d() 里的早期合成）
     verdict_str, confidence = _synthesize_verdict(task_text, answers)
     base_result["verdict"] = verdict_str
     base_result["confidence"] = confidence
+
+    # 经历层：判断完成后自动存为经历
+    try:
+        save_experience(task_text, verdict_str, confidence, context=_history_ctx)
+    except Exception:
+        pass  # 不阻断判断主流程
 
     # 【修复】check10d() 内部已通过 record_judgment() 调用过 snapshot_judgment()
     # 此处不再重复调用，避免 causal_chain 产生双重记录
