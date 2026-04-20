@@ -68,6 +68,30 @@ def ensure_user_dir() -> Path:
     return JUHuo_USER_DIR
 
 
+def create_env_template() -> Path:
+    """创建 .env 模板文件到用户目录"""
+    ensure_user_dir()
+    template = """# Juhuo 环境变量配置
+# MiniMax API
+MINIMAX_API_KEY=your_minimax_api_key_here
+MINIMAX_MODEL=abab6.5s-chat
+
+# OpenAI (可选)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Ollama (可选)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3
+
+# 日志
+LOG_LEVEL=INFO
+"""
+    path = JUHuo_USER_DIR / ".env.example"
+    if not path.exists():
+        path.write_text(template, encoding="utf-8")
+    return path
+
+
 # 自动加载
 load_env_files()
 

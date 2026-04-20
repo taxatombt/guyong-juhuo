@@ -15,10 +15,6 @@ def _sc(c):
         _j.dump(c, f, ensure_ascii=False, indent=2)
 
 def build_causal_chain(result):
-    """
-    Build causal chain from judgment result.
-    Returns: {"chain": [...], "root_causes": [...], "key_levers": [...], "summary": str}
-    """
     scores = result.get("scores", {})
     weights = result.get("weights", {})
     dimensions = result.get("dimensions", {})
@@ -93,3 +89,17 @@ def format_causal_report(chain_result):
         lines.append("  %-12s %5.0f%% %-30s %s" % (
             c["dimension_name"][:12], c["score"] * 100, bar, c["reason"][:40]))
     return "\n".join(lines)
+
+# ── CLI re-exports (judgment/closed_loop 中的函数) ──
+# Lazy import 避免触发 judgment/llm_adapter 链
+def get_recent_chains(limit=10):
+    from subsystems.judgment.closed_loop import get_recent_chains as _f
+    return _f(limit=limit)
+
+def get_chain_detail(chain_id: str) -> dict:
+    from subsystems.judgment.closed_loop import get_recent_chains as _f
+    chains = _f(limit=9999)
+    for c in chains:
+        if c.get("chain_id") == chain_id:
+            return c
+    return {"chain_id": chain_id, "task": "(not found)"}

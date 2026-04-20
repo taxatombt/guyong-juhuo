@@ -11,6 +11,15 @@ Usage:
     python -m juhuo verdict     # Verdict
     python -m juhuo config      # 配置
 """
+import sys, io
+
+# Windows 控制台 UTF-8 支持
+if sys.platform == "win32":
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from cli import main
 

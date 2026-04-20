@@ -1,76 +1,68 @@
+# causal_memory/__init__.py — Lazy-loading Shim
+# router.py: from causal_memory import recall_causal_history, inject_to_judgment_input, find_similar_events, init
+# cli.py: from causal_memory.causal_chain import get_recent_chains, get_chain_detail
 from .causal_memory import (
     init,
-    log_causal_event,
-    find_similar_events,
     load_all_events,
     load_all_links,
+    record_event,
+    log_causal_event,
     add_causal_link,
+    capture_causal_link,
+    find_similar_events,
     recall_causal_history,
     inject_to_judgment_input,
-    infer_daily_causal_chains,
-    fix_causal_link,
-    derive_causal_link,
-    capture_causal_link,
-    suggest_evolution,
     get_links_needing_revalidation,
-    get_statistics,
     scan_low_quality_links,
-    mark_cascade_revalidation,
+    suggest_evolution,
+    get_stats,
+    get_statistics,
     update_link_quality_for_event,
+    fix_causal_link,
+    check_and_trigger_self_model_update,
 )
+from .causal_chain import (
+    build_causal_chain,
+    format_causal_report,
+    get_recent_chains,
+    get_chain_detail,
+)
+from subsystems.judgment.closed_loop import get_recent_chains as _grc_closed_loop
 
-from .types import (
-    CausalEvent,
-    CausalLink,
-    CausalLinkQuality,
-    CausalRelation,
-    EvolutionType,
-    EvolutionSuggestion,
-    CausalStats,
-)
 
-from .diff_tracker import (
-    TurnDiffTracker,
-    FileChange,
-    TurnDiff,
-    TRACKER_FILE,
-)
+# CausalMemoryCompat — 让 router.py 的 `causal_memory.recall_causal_history(task)` 语法工作
+class _CausalMemoryCompat:
+    def recall_causal_history(self, task):
+        return recall_causal_history(task)
+    def inject_to_judgment_input(self, task):
+        return inject_to_judgment_input(task)
+    def find_similar_events(self, task, max_results=3):
+        return find_similar_events(task, max_results)
+    def init(self):
+        return init()
+
+causal_memory = _CausalMemoryCompat()
+
+# ── Lazy-load causal_inference（触发 llm_adapter/SSL，不在顶层导入）────────
+_LAZY = {
+    "CausalInferenceEngine": (".causal_inference", "CausalInferenceEngine"),
+    "infer_causal_chain": (".causal_inference", "infer_causal_chain"),
+}
+
+def __getattr__(name):
+    if name in _LAZY:
+        mod_path, attr = _LAZY[name]
+        from importlib import import_module
+        mod = import_module(mod_path, __package__)
+        return getattr(mod, attr)
+    raise AttributeError(f"module 'causal_memory' has no attribute '{name}'")
 
 __all__ = [
-    # 核心功能
-    "init",
-    "log_causal_event",
-    "find_similar_events",
-    "load_all_events",
-    "load_all_links",
-    "add_causal_link",
-    "recall_causal_history",
-    "inject_to_judgment_input",
-    "infer_daily_causal_chains",
-    # OpenSpace 启发的三级进化 + 级联更新
-    "fix_causal_link",          # FIX: 就地修正
-    "derive_causal_link",       # DERIVED: 衍生特定版本
-    "capture_causal_link",      # CAPTURED: 捕获全新
-    "suggest_evolution",        # 扫描建议进化
-    "get_links_needing_revalidation",
-    "get_statistics",
-    "scan_low_quality_links",   # 低质量扫描（对应 OpenSpace 指标监控）
-    "mark_cascade_revalidation", # 级联更新标记（OpenSpace 级联进化）
-    "update_link_quality_for_event",
-    # 类型
-    "CausalEvent",
-    "CausalLink",
-    "CausalLinkQuality",
-    "CausalRelation",
-    "EvolutionType",
-    "EvolutionSuggestion",
-    "CausalStats",
-    # TurnDiffTracker（决策影响追踪）
-    "TurnDiffTracker",
-    "FileChange",
-    "TurnDiff",
-    "TRACKER_FILE",
+    "init", "recall_causal_history", "inject_to_judgment_input",
+    "find_similar_events", "record_event", "log_causal_event",
+    "add_causal_link", "capture_causal_link", "get_recent_chains",
+    "get_stats", "get_statistics",
+    "build_causal_chain", "format_causal_report",
+    "causal_memory",
+    "get_chain_detail",
 ]
-
-# 兼容旧名称
-record_judgment_event = log_causal_event
