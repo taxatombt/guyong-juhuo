@@ -183,10 +183,66 @@ def _keyword_match(text, keywords):
 
 
 
+def _score_verdict_candidate(sent: str, position_boost: float = 0.0) -> float:
+    """
+    评分一条 verdict 候选句。
+    position_boost: 位置加成（越靠后越高，最多+0.15）
+    """
+    chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
+    if chinese < 4:
+        return 0.0
+
+    # 长度分数（句子要够长才具体）
+    len_score = min(chinese / 30.0, 1.0) * 0.25
+
+    # 行动词（直接指示动作）
+    action_kw = {
+        "先", "应该", "可以", "建议", "推荐", "值得", "不要",
+        "考虑", "评估", "权衡", "控制", "分散", "调研",
+        "辞职", "创业", "买房", "移民", "借", "读研", "读博", "分手",
+        "all in", "炒股", "考证", "考公", "健身", "换城市",
+        "断舍离", "领养", "回老家", "原谅", "接受", "拒绝",
+        "审慎", "谨慎", "果断", "立即", "保守", "激进",
+        "留在", "离开", "接受", "放弃", "坚持", "改变",
+    }
+    action_cnt = sum(1 for kw in action_kw if kw in sent)
+    action_score = min(action_cnt / 2.0, 1.0) * 0.35
+
+    # 结论过渡词（"总之..."："我决定..."）
+    conclusion_kw = {
+        "总之", "综上", "最终决定", "最终建议", "最终", "综合来看",
+        "综合考虑", "权衡之后", "权衡利弊", "经过分析",
+    }
+    conclusion_score = 0.2 if any(kw in sent for kw in conclusion_kw) else 0.0
+
+    # 决策框架词（"我建议选A"："选A不选B"）
+    decide_kw = {"选", "不选", "优先选", "主推", "更推荐", "更建议"}
+    decide_score = 0.15 if any(kw in sent for kw in decide_kw) else 0.0
+
+    # 模糊词（越少越好）
+    vague_kw = {
+        "不确定", "很难说", "更多信息", "无法判断",
+        "具体情况具体分析", "基于", "给出判断", "需要更多信息",
+        "再给出判断", "再综合考虑", "综合给出", "多维分析给出",
+        "需要进一步", "有待观察", "视情况", "因人而异",
+    }
+    vague_penalty = sum(0.25 for kw in vague_kw if kw in sent)
+
+    # 反向指标：还在说"还是"的 = 未决策
+    indecisive = 0.1 if ("还是" in sent and "或者" in sent) else 0.0
+
+    return max(0.0,
+        len_score + action_score + conclusion_score + decide_score + position_boost
+        - vague_penalty - indecisive
+    )
+
+
+
+
 def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
     """
-    基于各维度回答合成 verdict 和 confidence
-    返回 (verdict_str, confidence_float)
+    基于各维度回答合成 verdict 和 confidence。
+    核心原则：选最像"结论"的句子，而非最像"反思"的句子。
     """
     if not answers:
         return ("需要更多信息才能判断", 0.3)
@@ -201,93 +257,90 @@ def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
         if not raw:
             raise ValueError("No content")
 
-        def score_sent(sent: str) -> float:
-            chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-            if chinese < 4:
-                return 0.0
-            len_score = min(chinese / 30.0, 1.0) * 0.3
-            action_kw = {"先", "应该", "可以", "建议", "推荐", "值得", "不要",
-                        "考虑", "评估", "权衡", "控制", "分散", "调研",
-                        "辞职", "创业", "买房", "移民", "借", "读研", "读博", "分手",
-                        "all in", "炒股", "考证", "考公", "健身", "换城市",
-                        "断舍离", "领养", "回老家", "原谅", "接受", "拒绝",
-                        "审慎", "谨慎", "果断", "立即", "保守", "激进"}
-            action_cnt = sum(1 for kw in action_kw if kw in sent)
-            action_score = min(action_cnt / 2.0, 1.0) * 0.4
-            vague_kw = {"不确定", "很难说", "更多信息", "无法判断",
-                         "具体情况具体分析", "基于", "给出判断", "需要更多信息",
-                         "再给出判断", "再综合考虑", "综合给出", "多维分析给出"}
-            vague_penalty = sum(0.3 for kw in vague_kw if kw in sent)
-            return max(0.0, len_score + action_score - vague_penalty)
-
-        def extract_sentences(text: str) -> list:
-            """句子提取：句号 + 省略号分隔（处理无句号段落）"""
-            # 先清理残留的 thinking 标签
-            text = re.sub(r'^好了?\s*', '', text)
-            text = re.sub(r'好了?\s*$', '', text)
-            text = re.sub(r'^<think>\s*', '', text)
-            text = re.sub(r'<think>\s*$', '', text)
-            text = re.sub(r'@\d{10,}', '', text)  # 去掉 @时间戳
+        # ── 句子提取 ────────────────────────────────────────
+        def _extract(text: str):
+            text = re.sub(r'@\d{10,}', '', text)
             SEP = '<<<SEP>>>'
             text2 = text.replace('...', SEP)
-            parts = re.split(r"([。！？])", text2)
+            parts = re.split(r'([。！？])', text2)
             sents = []
             for i in range(0, len(parts) - 1, 2):
                 part = parts[i].strip()
                 sep = parts[i + 1]
-                sent = part + (sep if sep else '')
-                if sent.strip():
-                    sents.append(sent.strip().replace(SEP, '...'))
+                s = (part + sep).strip().replace(SEP, '...')
+                if s:
+                    sents.append(s)
             if len(parts) % 2 == 1 and parts[-1].strip():
                 last = parts[-1].strip().replace(SEP, '...')
                 if last:
                     sents.append(last)
             return sents
 
-        # Step 1: 清理正文残留 thinking 标签
-        after = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        # ── Step 0: 优先提取 ## 结论 / ## 最终判断 结构 ──────
+        m_conc = re.search(
+            '(?:##\s*(?:结论|最终判断|最终建议|综合结论)[：:].*?)(?=\n##|\Z)',
+            raw, re.DOTALL
+        )
+        if m_conc:
+            section_sents = _extract(m_conc.group(0))
+            if section_sents:
+                best = max(section_sents, key=lambda s: _score_verdict_candidate(s, 0.0))
+                if _score_verdict_candidate(best) >= 0.08:
+                    confidence = min(0.88, 0.42 + len(answers) * 0.05)
+                    return (best[:60], confidence)
 
-        # Step 2: 从正文（非 thinking block）提取句子
+        # ── Step 1: 清理正文残留 thinking 标签 ─────────────
+        after = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+
+        # ── Step 2: 正文句子评分 ────────────────────────────
         best_score = -1.0
         best_sent = ""
         if after:
-            for sent in extract_sentences(after):
+            for sent in _extract(after):
                 chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-                if chinese >= 4 and chinese / max(len(sent), 1) > 0.5:
-                    s = score_sent(sent)
-                    if s > best_score:
-                        best_score = s
-                        best_sent = sent[:50]
-        if best_score >= 0.15:
-            confidence = min(0.88, 0.35 + len(answers) * 0.08)
+                if chinese >= 4:
+                    score = _score_verdict_candidate(sent, 0.0)
+                    if score > best_score:
+                        best_score = score
+                        best_sent = sent[:60]
+        if best_score >= 0.08:
+            confidence = min(0.88, 0.42 + len(answers) * 0.05)
             return (best_sent, confidence)
 
-        # Step 3: 从所有 thinking blocks 扫描，选最佳句子（句子级，非 block 级）
-        blocks = re.findall(r"<think>.*?</think>", raw, re.DOTALL)
-        for block in blocks:
-            # 提取 thinking block 的文本内容（去掉标签）
-            block_text = re.sub(r'^<think>', '', block)
-            block_text = re.sub(r'</think>$', '', block_text)
-            block_clean = re.sub(r'^\s*(好的|嗯|下面|综合|根据|经过).*?[:：]', "", block_text)
-            block_clean = re.sub(r'Count[:：].*$', "", block_clean, flags=re.DOTALL)
-            block_clean = re.sub(r'字数[:：].*$', "", block_clean, flags=re.DOTALL)
-            block_clean = re.sub(r'[A-Za-z\u4e00-\u9fff]\s*\(\d+\)', "", block_clean)
-            # 逐句评分
-            for sent in extract_sentences(block_clean):
-                chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-                if chinese >= 4 and chinese / max(len(sent), 1) > 0.5:
-                    s = score_sent(sent)
-                    if s > best_score:
-                        best_score = s
-                        best_sent = sent[:50]
-        if best_sent:
-            confidence = min(0.88, 0.35 + len(answers) * 0.08)
-            return (best_sent, confidence)
+        # ── Step 3: thinking blocks 句子评分（位置加权）──────
+        blocks = re.findall(r'<think>(.*?)</think>', raw, flags=re.DOTALL)
+        if blocks:
+            for block in blocks:
+                block_clean = re.sub(r'@\d{10,}', '', block).strip()
+                sents = _extract(block_clean)
+                n = len(sents)
+                for pos, sent in enumerate(sents):
+                    chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
+                    if chinese >= 4:
+                        boost = 0.15 * pos / max(n - 1, 1)
+                        score = _score_verdict_candidate(sent, boost)
+                        if score > best_score:
+                            best_score = score
+                            best_sent = sent[:60]
+            if best_score >= 0.08:
+                confidence = min(0.88, 0.42 + len(answers) * 0.05)
+                return (best_sent, confidence)
 
-        # Step 4: Fallback
-        total_expected = len(answers) + 3
-        confidence = min(0.9, len(answers) / total_expected + 0.2)
-        return (f"基于{len(answers)}个维度的分析给出了判断", confidence)
+        # ── Step 4: 无句号长段落，取末尾 ─────────────────────
+        if not best_sent and blocks:
+            last_block = re.sub(r'@\d{10,}', '', blocks[-1]).strip()
+            chunks = [c.strip() for c in last_block.split('。') if c.strip()]
+            if chunks:
+                chunk = chunks[-1]
+                chinese = len(re.findall(r'[\u4e00-\u9fff]', chunk))
+                if chinese >= 10:
+                    score = _score_verdict_candidate(chunk, 0.1)
+                    if score >= 0.08:
+                        confidence = min(0.88, 0.42 + len(answers) * 0.05)
+                        return (chunk[-50:].strip(), confidence)
+
+        # ── Step 5: 最终 fallback ───────────────────────────
+        confidence = 0.38 + len(answers) * 0.04
+        return ("需要更多信息才能判断", confidence)
     except Exception:
         return ("需要更多信息才能判断", 0.3)
-
