@@ -74,4 +74,8 @@ precheck.bat
 
 # Database (用户数据，不打包)
 *.db
-data/judgment_data/*.db
+data/
+causal_memory/
+emotions.json
+self_model.json
+subsystems/data/
