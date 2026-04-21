@@ -148,18 +148,50 @@ python cli.py config edit  # 编辑配置
 ## CLI 命令
 
 ```bash
-python cli.py "问题"         # 单次判断
-python cli.py shell         # 交互模式
-python cli.py web           # Web Console
-python cli.py status         # 状态查看
-python cli.py verdict list   # 判断历史
+python cli.py "问题"           # 单次判断
+python cli.py shell           # 交互模式
+python cli.py web             # Web Console（默认 port 18768）
+python cli.py status          # 状态查看
+python cli.py verdict list    # 判断历史
 python cli.py verdict correct <id>   # 标记正确
 python cli.py verdict wrong <id>     # 标记错误
-python cli.py config show    # 显示配置
-python cli.py config init    # 初始化配置
-python cli.py test           # 自检
-python cli.py benchmark      # Benchmark 测试
+python cli.py config show     # 显示配置
+python cli.py config wizard   # 首次配置向导
+python cli.py bio show        # 查看用户画像
+python cli.py bio add "我30岁程序员"  # 添加生平信息
+python cli.py bio list        # 列出所有生平事实
+python cli.py behavior stats  # 行为统计（各通道）
+python cli.py behavior list   # 最近行为记录
+python cli.py behavior show <id>  # 行为详情
+python cli.py test            # 自检
+python cli.py benchmark       # Benchmark 测试
 ```
+
+---
+
+## Life OS（精力/情绪驱动的任务调度）
+
+独立脚本，不需要 MiniMax API key（rules mode）或可配合 juhuo（juhuo mode）：
+
+```bash
+# Rules mode（基于内置规则，无 API 调用）
+python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D=0.7
+
+# Juhuo mode（调用 MiniMax LLM 排序，需要 API key）
+python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D=0.7 --juhuo
+
+# 参数
+#   --energy <0-100>  精力水平（默认 50）
+#   --emotion P=X,A=X,D=X  PAD情绪坐标（P愉悦/A唤醒/D支配，-1到1）
+#   --juhuo  启用 juhuo 模式
+```
+
+情绪关键字：
+| 关键字 | PAD | 情绪 |
+|--------|-----|------|
+| `P=0.3,A=0.5,D=0.6` | 兴奋 | 高能量状态，适合深度工作 |
+| `P=-0.4,A=0.3,D=-0.2` | 焦虑 | 低能量，谨慎决策 |
+| `P=0.5,A=-0.2,D=0.3` | 愉悦 | 放松，适合创造性工作 |
 
 ---
 
@@ -179,6 +211,8 @@ python cli.py benchmark      # Benchmark 测试
 
 - [x] **Verdict 数据积累** — 49条 verdict_outcomes（2026-04-21 v1.8）
 - [x] **维度权重闭环** — verdict → belief → prior_adj → LLM prompt 全通（2026-04-21 v1.8）
+- [x] **三途径信息层** — biography 生平 + experiences 经历 + behavior 行为日志（v2.0）
+- [x] **Life OS v3** — 精力/情绪驱动任务调度，rules + juhuo 双模式（v2.0）
 - [ ] **生产数据积累** — InsightTracker 读数达到可读报告（需要真实 verdicts 驱动）（JSONL主力，SQLite归档 __trash__/）（v1.7）
 - [x] Self-Evolver rollback 修复 + 验证闭环（v1.6）
 - [x] judgment/config.py 集中生产配置（v1.6）
@@ -191,6 +225,24 @@ python cli.py benchmark      # Benchmark 测试
 ---
 
 ## 版本更新
+
+### v2.0 (2026-04-21) — 三途径信息层 + Life OS v3
+
+**三途径信息层：**
+- `judgment/biography.py`: 生平事实层，26条正则，8类（年龄/职业/家庭/财务/所在地/健康/价值观/学历）
+- `judgment/exiences.py`: 经历层，20条冷启动种子，sliding window 中文 bigram 关键词匹配
+- `judgment/behavior_logger.py`: 行为日志层，8个 ActionChannel，工具调用链脱敏
+
+**Life OS v3：**
+- `life_os.py` 完全重建：`_juhuo_rank()` 直接调用 MiniMax adapter（单 prompt，不走 10 维 pipeline）
+- verdict 解析：从 `排序:[1,2,...]` 提取排名，映射到置信度（第1名=100%，第2名=85%...）
+- API 超载 fallback：返回 60% 均分
+
+**关键修复：**
+- MiniMax `<think>` 块太长导致正文为空 → 手动 `re.sub(r"<think>.*?</think>","",...)`
+- `judgment/router.py` 删除影子 `_answer_questions`（委托 `llm_calls.py`）
+
+---
 
 ### v1.8 (2026-04-21) — Self-Evolver 闭环全通 + P0 死锁修复
 
