@@ -26,31 +26,38 @@ def _values_risk(m): return m.group(1)
 def _values_pursue(m): return "追求" + m.group(1)
 def _edu_deg(m): return m.group(1) + "学历"
 def _edu_grad(m): return "毕业于" + m.group(1)
+def _age_gen(m): return m.group(1)     # 三十多岁/90后
+def _age_infer(m): return "大概" + m.group(1) + "岁"  # 快30了
 
 _BIO_PATTERNS = [
-    ("age", r"(\d{2,3})\s*岁", _age),
+    ("age", r"(\d{2})\s*岁", _age),
     ("age", r"(\d{4})\s*年\s*生", _age_born),
+    ("age", r"(三十多岁|四十多岁|五十多岁|二十多岁|六十多岁)", _age_gen, 0.7),
+    ("age", r"(三十岁|四十岁|五十岁|二十岁|六十岁)", _age_gen, 0.7),
+    ("age", r"(90后|95后|00后|80后|85后)", _age_gen, 0.5),
+    ("age", r"快\s*(\d{2})\s*了", _age_infer, 0.4),
     ("career", r"(程序员|产品经理|设计师|销售|市场|运营|HR|老师|医生|律师|公务员)", _career_job),
-    ("career", r"在([\w公司]{2,10})(?:工作|上班|任职)", _career_where),
+    ("career", r"在([\w公司]{2,10})(?:工作|上班|任职)", _career_where, 0.8),
     ("career", r"(打工|自由职业|创业)", _career_type),
-    ("family", r"(已婚|单身|离婚|二婚)", _family_status),
-    ("family", r"(有|没有)孩子", _family_child),
-    ("family", r"(老公|老婆|丈夫|妻子)", _family_partner),
-    ("finance", r"(年薪|年收入|月收入)(?:大概|大约|大|约)(\d+万?)", _fin_income),
+    ("career", r"(高级|资深|初级|中级)(程序员|工程师|设计师|产品经理)", lambda m: m.group(1)+m.group(2), 0.9),
+    ("family", r"(已婚|单身|离婚|二婚|订婚)", _family_status),
+    ("family", r"(有|没有|一个|两个)孩子", _family_child),
+    ("family", r"(老公|老婆|丈夫|妻子|女朋友|男朋友|伴侣)", _family_partner, 0.7),
+    ("family", r"(还没结婚|已经结婚了)", lambda m: m.group(1)),
+    ("finance", r"(年薪|年收入|月收入)(?:大概|大约|大|约)?(\d+万?)", _fin_income, 0.9),
     ("finance", r"(有|没有)房子", _fin_house),
     ("finance", r"(有|没有)车", _fin_car),
-    ("finance", r"(存款|积蓄)(?:大概|大约|大|约)(\d+万?)", _fin_savings),
-    ("finance", r"(存款|积蓄)(\d+万)", _fin_savings),
-    ("location", r"在([^，。,.]{2,6})(?:工作|生活|居住)", _loc_in),
-    ("location", r"(北京|上海|深圳|广州|杭州|成都|武汉|南京|西安)", _loc_city),
-    ("location", r"老家在([^，。,.]{2,6})", _loc_hometown),
+    ("finance", r"(存款|积蓄)(?:大概|大约|大|约)?(\d+万?)", _fin_savings),
+    ("location", r"在([^，。,.]{2,6})(?:工作|生活|居住)", _loc_in, 0.8),
+    ("location", r"(北京|上海|深圳|广州|杭州|成都|武汉|南京|西安|苏州|东莞|佛山)", _loc_city),
+    ("location", r"老家在([^，。,.]{2,6})", _loc_hometown, 0.8),
     ("health", r"(身体|健康)不太好", _health_poor),
     ("values", r"性格(比较?|较)?(内向|外向|理性|感性|保守|激进)", _values_pers),
     ("values", r"(风险厌恶|风险偏好|保守型|激进型)", _values_risk),
     ("values", r"追求(自由|稳定|财富|成长)", _values_pursue),
     ("education", r"(本科|硕士|博士|大专|高中|初中)学历?", _edu_deg),
-    ("education", r"毕业于([\u4e00-\u9fa5]{2,10})(?:大学|学院|学校|)", _edu_grad),
-    ("education", r"毕业于?([^，。,.]{2,15})(?:大学|学校)", _edu_grad),
+    ("education", r"毕业于([\u4e00-\u9fa5]{2,10})(?:大学|学院|学校)", _edu_grad, 0.9),
+    ("education", r"毕业于?([\u4e00-\u9fa5]{2,6})(?:大学|学院|学校)?", _edu_grad, 0.7),
 ]
 _CAT_DISPLAY = {"age":"年龄","career":"职业","family":"家庭","finance":"财务","location":"所在地","health":"健康","values":"性格/价值观","education":"学历"}
 def _ensure_table():
@@ -63,6 +70,7 @@ def _ensure_table():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 category TEXT,
                 fact TEXT NOT NULL,
+                confidence REAL DEFAULT 1.0,
                 importance INTEGER DEFAULT 1,
                 source TEXT DEFAULT 'user',
                 tags TEXT,
@@ -72,22 +80,38 @@ def _ensure_table():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bio_cat ON biographical_facts(category)")
+        # 补充旧表可能缺的 confidence 列
+        try:
+            conn.execute("ALTER TABLE biographical_facts ADD COLUMN confidence REAL DEFAULT 1.0")
+        except Exception:
+            pass
     finally:
         conn.close()
 
-def extract_from_text(text: str) -> list:
+def extract_from_text(text: str, min_confidence: float = 0.4) -> list:
+    """
+    从文本提取生平事实，返回带置信度的字典列表。
+
+    confidence: 1.0=精确匹配, 0.7~0.9=近似表达, 0.4~0.6=推断表达
+    min_confidence: 过滤阈值，默认0.4（推断级也保留）
+    """
     facts = []
     seen = set()
-    for cat, regex, fn in _BIO_PATTERNS:
+    for entry in _BIO_PATTERNS:
+        cat, regex, fn = entry[0], entry[1], entry[2]
+        confidence = entry[3] if len(entry) > 3 else 1.0
+        if confidence < min_confidence:
+            continue
         for m in re.finditer(regex, text):
             d = fn(m)
             if d and (cat, d) not in seen:
                 seen.add((cat, d))
-                facts.append({"category": cat, "fact": d})
+                facts.append({"category": cat, "fact": d, "confidence": confidence})
     return facts
 
 def log(fact: str, category: str, importance: int = 1,
-        source: str = "user", tags: list = None) -> int:
+        source: str = "user", tags: list = None,
+        confidence: float = 1.0) -> int:
     _ensure_table()
     import sqlite3
     conn = sqlite3.connect(str(_DB_PATH))
@@ -97,10 +121,10 @@ def log(fact: str, category: str, importance: int = 1,
             "WHERE category=? AND fact=?", (category, fact)).rowcount
         if n == 0:
             cur = conn.execute(
-                "INSERT INTO biographical_facts (category,fact,importance,source,tags) "
-                "VALUES (?,?,?,?,?)",
+                "INSERT INTO biographical_facts (category,fact,importance,source,tags,confidence) "
+                "VALUES (?,?,?,?,?,?)",
                 (category, fact, importance, source,
-                 json.dumps(tags or [], ensure_ascii=False)))
+                 json.dumps(tags or [], ensure_ascii=False), confidence))
             conn.commit()
             return cur.lastrowid
         else:
@@ -112,7 +136,8 @@ def log(fact: str, category: str, importance: int = 1,
 def log_batch(facts: list, source: str = "auto") -> int:
     added = 0
     for item in facts:
-        r = log(item["fact"], item["category"], source=source)
+        r = log(item["fact"], item["category"], source=source,
+                confidence=item.get("confidence", 1.0))
         if r > 0:
             added += 1
     return added
@@ -124,9 +149,9 @@ def get_all() -> list:
     conn.row_factory = sqlite3.Row
     try:
         return [dict(r) for r in conn.execute(
-            "SELECT category,fact,importance,mentions,source "
+            "SELECT category,fact,importance,mentions,source,confidence "
             "FROM biographical_facts "
-            "ORDER BY importance*mentions DESC").fetchall()]
+            "ORDER BY importance*mentions*confidence DESC").fetchall()]
     finally:
         conn.close()
 
