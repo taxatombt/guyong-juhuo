@@ -24,6 +24,7 @@ P2 目标：途径3 = "juhuo 帮用户做事（查资料/执行任务），积�
 """
 
 import json
+import sqlite3
 import time
 import uuid
 from datetime import datetime

@@ -7,6 +7,7 @@
 - CLI/benchmark: user_id="default"（单用户模式）
 """
 import re
+import sqlite3
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -94,30 +95,44 @@ def _get_conn():
 
 
 def init():
-    conn = _get_conn()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS experiences (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            situation_type TEXT,
-            task_hash TEXT NOT NULL,
-            task_text TEXT,
-            context TEXT,
-            conclusion TEXT NOT NULL,
-            confidence REAL,
-            matched_keywords TEXT,
-            outcome TEXT,
-            outcome_notes TEXT,
-            outcome_score REAL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id, task_hash)
-        )
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_user ON experiences(user_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_type ON experiences(user_id, situation_type)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_kw ON experiences(user_id, matched_keywords)")
-    conn.commit()
-    # P0-1: 不关闭 per-thread 连接
+    """
+    初始化 experiences 表（P1-4：统一使用 _schema_tables.py 中的完整 schema）。
+
+    流程：
+    1. 用 _schema_tables._TABLE_DEFS 中的 unified schema 创建 experiences 表
+       （行为列：action_channel / tool_calls / execution_result / perception_summary / behavior_id
+        由 _schema_tables 统一管理，不再由 behavior_logger._migrate() 兜底）
+    2. 如旧表缺少行为列，走 _rebuild_table 迁移（保留现有数据）
+
+    注意：不使用 _schema._get_db_conn()（它会被同一线程的后续操作复用），
+    而是创建独立连接，完成后关闭（init 只在启动时运行一次）。
+    """
+    from ._schema_tables import _TABLE_DEFS, _rebuild_table
+    from pathlib import Path as _Path
+
+    # 使用独立连接（init 只在 _ensure_started 时调用一次）
+    db_path = _Path(__file__).parent.parent / "data" / "juhuo.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    try:
+        exp_def = dict(_TABLE_DEFS)["experiences"]
+        # 尝试用 CREATE TABLE IF NOT EXISTS 建表
+        conn.execute(f"CREATE TABLE IF NOT EXISTS experiences ({exp_def})")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_user ON experiences(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_type ON experiences(user_id, situation_type)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_kw ON experiences(user_id, matched_keywords)")
+        conn.commit()
+
+        # 如果旧表缺少行为列，走 _rebuild_table 迁移（保留现有数据）
+        existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(experiences)").fetchall()]
+        behavior_cols = ["action_channel", "tool_calls", "execution_result",
+                         "perception_summary", "behavior_id", "source"]
+        missing = [c for c in behavior_cols if c not in existing_cols]
+        if missing:
+            print(f"[experiences.init] 迁移 experiences 表，补充列: {missing}")
+            _rebuild_table(conn, "experiences", exp_def)
+    finally:
+        conn.close()
 
 
 def save_experience(task_text: str, conclusion: str, confidence: float,
