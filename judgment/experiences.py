@@ -6,9 +6,11 @@
 - find_similar: 只匹配同一用户的经历
 - CLI/benchmark: user_id="default"（单用户模式）
 """
+import json as _json
 import re
 import sqlite3
 import hashlib
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
@@ -123,10 +125,10 @@ def init():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_kw ON experiences(user_id, matched_keywords)")
         conn.commit()
 
-        # 如果旧表缺少行为列，走 _rebuild_table 迁移（保留现有数据）
+        # 如果旧表缺少列，走 _rebuild_table 迁移（保留现有数据）
         existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(experiences)").fetchall()]
         behavior_cols = ["action_channel", "tool_calls", "execution_result",
-                         "perception_summary", "behavior_id", "source"]
+                         "perception_summary", "behavior_id", "source", "task_embedding"]
         missing = [c for c in behavior_cols if c not in existing_cols]
         if missing:
             print(f"[experiences.init] 迁移 experiences 表，补充列: {missing}")
@@ -135,28 +137,43 @@ def init():
         conn.close()
 
 
+def _get_embedding(text: str) -> str:
+    """生成文本 embedding，失败返回空字符串。"""
+    try:
+        from adapters.llm.minimax import get_adapter
+        adapter = get_adapter()
+        vec = adapter.embed(text)
+        if vec:
+            import json as _json
+            return _json.dumps(vec)
+    except Exception:
+        pass
+    return ""
+
+
 def save_experience(task_text: str, conclusion: str, confidence: float,
                    context: str = "", user_id: str = "default") -> int:
     th = _task_hash(user_id, task_text)
     stype = _classify(task_text)
     keywords = _extract_keywords(task_text)
+    embedding = _get_embedding(task_text)
     conn = _get_conn()
     try:
         cur = conn.execute("""
             INSERT INTO experiences
             (user_id, situation_type, task_hash, task_text, context, conclusion,
-             confidence, matched_keywords, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?)
+             confidence, matched_keywords, created_at, task_embedding)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
         """, (user_id, stype, th, task_text, context, conclusion,
-              confidence, keywords, datetime.now().isoformat()))
+              confidence, keywords, datetime.now().isoformat(), embedding))
         eid = cur.lastrowid
         conn.commit()
     except sqlite3.IntegrityError:
         conn.execute("""
             UPDATE experiences
-            SET conclusion=?, confidence=?, context=?
+            SET conclusion=?, confidence=?, context=?, task_embedding=COALESCE(task_embedding, ?)
             WHERE user_id=? AND task_hash=?
-        """, (conclusion, confidence, context, user_id, th))
+        """, (conclusion, confidence, context, embedding, user_id, th))
         eid = -1
     finally:
         pass  # P0-1: 不关闭 per-thread 连接
@@ -188,20 +205,64 @@ def _keyword_overlap(kw1: str, kw2: str) -> float:
     union = len(set1 | set2)
     return inter / union if union > 0 else 0.0
 
+def _cosine_sim(a: List[float], b: List[float]) -> float:
+    """纯 Python cosine similarity（无 numpy 依赖）。"""
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
 def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_id: str = "default") -> list:
     stype = _classify(task_text)
     keywords = _extract_keywords(task_text)
+    # P3-11: 生成 query embedding（所有行共用同一个 query embedding）
+    query_emb = _get_embedding(task_text)
+    query_vec = _json.loads(query_emb) if query_emb else []
+
     conn = _get_conn()
-    rows = conn.execute("SELECT id, situation_type, task_text, conclusion, confidence, matched_keywords, outcome, outcome_score FROM experiences WHERE user_id = ? ORDER BY CASE WHEN situation_type = ? THEN 1 ELSE 0 END DESC, outcome_score DESC, created_at DESC LIMIT 100", (user_id, stype)).fetchall()
+    rows = conn.execute(
+        "SELECT id, situation_type, task_text, conclusion, confidence, "
+        "matched_keywords, outcome, outcome_score, task_embedding "
+        "FROM experiences WHERE user_id = ? "
+        "ORDER BY CASE WHEN situation_type = ? THEN 1 ELSE 0 END DESC, "
+        "outcome_score DESC, created_at DESC LIMIT 100",
+        (user_id, stype)).fetchall()
     # P0-1: 不关闭 per-thread 连接
+
     scored = []
     for r in rows:
-        eid, rtype, rtext, rconclusion, rconf, rkw, routcome, rscore = r
+        eid, rtype, rtext, rconclusion, rconf, rkw, routcome, rscore, r_emb = r
         kw_sim = _keyword_overlap(keywords, rkw or "")
         type_bonus = 0.15 if rtype == stype else 0.0
-        score = kw_sim * 0.7 + type_bonus
+
+        # P3-11: cosine similarity（仅当双方都有 embedding 时）
+        emb_sim = 0.0
+        if query_vec and r_emb:
+            try:
+                stored_vec = _json.loads(r_emb)
+                emb_sim = _cosine_sim(query_vec, stored_vec)
+            except Exception:
+                emb_sim = 0.0
+
+        # 混合评分：embedding 0.5 + keyword 0.3 + type 0.15
+        if emb_sim > 0:
+            score = emb_sim * 0.5 + kw_sim * 0.3 + type_bonus
+        else:
+            # 无 embedding 时回退到纯 keyword + type
+            score = kw_sim * 0.7 + type_bonus
+
         if score >= min_score:
-            scored.append({"experience_id": eid, "situation_type": rtype, "task_text": rtext, "conclusion": rconclusion, "confidence": rconf, "matched_keywords": rkw, "similarity": round(score, 3), "outcome": routcome, "outcome_score": rscore})
+            scored.append({
+                "experience_id": eid, "situation_type": rtype,
+                "task_text": rtext, "conclusion": rconclusion,
+                "confidence": rconf, "matched_keywords": rkw,
+                "similarity": round(score, 3),
+                "emb_similarity": round(emb_sim, 3) if emb_sim > 0 else None,
+                "outcome": routcome, "outcome_score": rscore,
+            })
     scored.sort(key=lambda x: -x["similarity"])
     return scored[:limit]
 

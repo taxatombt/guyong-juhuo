@@ -12,7 +12,7 @@ API文档: https://platform.minimaxi.com/document/Guides/-text-to-text
 
 import os
 import json
-from typing import Optional
+from typing import List, Optional
 import requests
 
 from .base import LLMAdapter, LLMResponse, CompletionRequest
@@ -131,6 +131,50 @@ class MiniMaxAdapter(LLMAdapter):
                 content="",
                 error=f"Request failed: {str(e)}",
             )
+
+    # ── 文本向量化（用于 experiences 语义检索）──────────────────────────────
+    def embed(self, text: str) -> Optional[List[float]]:
+        """
+        调用 MiniMax embedding 接口，返回 1024 维向量。
+
+        API: POST /v1/embeddings
+        模型: embo-01（MiniMax 文本嵌入模型）
+
+        Returns:
+            List[float]: 1024维向量，失败返回 None
+        """
+        if not self.is_configured():
+            return None
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": "embo-01",
+            "input": text[:8192],  # MiniMax 单次最大 8192 tokens
+        }
+
+        try:
+            # 用 _make_url() 相同的 base，替换 endpoint
+            base = self._make_url().replace("/chat/completions", "")
+            response = requests.post(
+                f"{base}/embeddings",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            embedding = data.get("data", [{}])[0].get("embedding")
+            return embedding  # List[float] or None
+        except Exception:
+            return None
+
+    def embed_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
+        """批量向量化（每条独立调用，返回列表）"""
+        return [self.embed(t) for t in texts]
 
 
 # ---------------------------------------------------------------------------
