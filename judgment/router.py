@@ -45,6 +45,7 @@ from judgment.llm_calls import (
     _keyword_match,
     _synthesize_verdict,
 )
+from judgment.pipeline import run_pipeline, JudgmentContext
 
 # 懒启动标记（避免 import 时执行副作用，测试可正常 mock）
 _STARTED = False
@@ -236,36 +237,31 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     """
     # 懒启动（初始化 experiences 表等）
     _ensure_started()
-    # Hermes启发：prefetch_all - 每轮前背景召回
-    hook_context = prefetch_all(task_text)
-    fenced_context = hook_context.get("fenced_context", "")
-    
-    # 情绪系统：第一步就检测情绪信号，需要重视就注入上下文
-    original_task = task_text
-    emotion_signal = inject_emotion_signal(original_task)
-    if emotion_signal:
-        task_text = original_task + "\n" + emotion_signal
 
-    # Emotion × Judgment 集成：PAD状态调制（核心集成点）
-    emotion_modulation = None
-    if emotion_state is not None:
-        emotion_modulation = get_emotion_modulation(emotion_state)
-        # 情绪提示词注入任务上下文
-        if emotion_modulation.prompt_hint:
-            task_text = task_text + "\n\n" + emotion_modulation.prompt_hint
-        # 将调制信息存储到结果（供 downstream 使用）
-    else:
-        # 无 PAD 输入时回退：使用 EmotionSystem 检测情绪
-        _es = EmotionSystem()
-        emotion_detection = _es.detect_emotion(original_task, {})
+    # ── P0-3 Pipeline 编排（链式注入）──────────────────────────────
+    # 每个注入器独立函数，顺序执行，结果写入 ctx
+    ctx = JudgmentContext(
+        task_text=task_text,
+        original_task=task_text,
+        agent_profile=agent_profile,
+        complexity=complexity,
+        emotion_state=emotion_state,
+        user_id=user_id,
+    )
+    ctx = run_pipeline(ctx)
     
-    # 因果记忆：召回相似历史，注入上下文
-    causal_result = causal_memory.recall_causal_history(task_text)
-    if causal_result["summary"]:
-        task_text = causal_memory.inject_to_judgment_input(task_text)
+    # Pipeline 输出回写局部变量（兼容后续逻辑）
+    task_text = ctx.merge_prompt_context()     # 合并后的 prompt
+    emotion_modulation = ctx.emotion_modulation
+    emotion_detection = ctx.emotion_detection
+    causal_result = ctx.causal_result
+    
+    # Hook 上下文（Hermes 启发）
+    hook_context = {}
+    fenced_context = ""
     
     # P3改进：规则预检 - 先用规则快速判断，降低LLM调用
-    rule_precheck = rule_based_precheck(original_task)
+    rule_precheck = rule_based_precheck(ctx.original_task)
     rule_scores = rule_precheck["rule_scores"]
     
     if complexity == "auto":
@@ -319,37 +315,35 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     if avg_confidence < 0.5 and avg_confidence > 0:
         from ..curiosity.curiosity_engine import trigger_from_low_confidence
         curiosity_item = trigger_from_low_confidence({
-            "original_task": original_task,
+            "original_task": ctx.original_task,
             "average_confidence": avg_confidence,
             "dim_confidence": dim_confidence if 'dim_confidence' in locals() else {},
-        }, current_task=original_task[:60])
+        }, current_task=ctx.original_task[:60])
 
-    # 拿到完整情绪检测结果（仅当没有PAD输入时回退）
-    emotion_system = EmotionSystem()
-    emotion_detection = emotion_system.detect_emotion(original_task, {})
+    # 情绪检测已在 pipeline.inject_emotion() 中完成（fallback 也已处理）
 
     # LLM接入：MiniMax回答所有维度问题
-    prior_adj = {}
-    try:
-        prior_adj = get_prior_adjustments()
-    except Exception:
-        pass
-    # 经历层：历史相似判断
-    _hist_ctx = get_context_for_judgment(task_text, user_id)
-    # 途径1：自动抽取生平事实
-    _bio_facts = extract_bio(task_text)
-    if _bio_facts:
-        log_bio_batch(_bio_facts, source="auto")
-    _bio_ctx = get_bio_context()
-    answers = _answer_questions(task_text, questions, agent_profile, prior_adj, _hist_ctx, _bio_ctx)
+    prior_adj = ctx.prior_adjustments
+    answers = _answer_questions(
+        ctx.merge_prompt_context(), # pipeline 合并后的 prompt（含情绪/因果/经历/生平）
+        questions,
+        agent_profile,
+        prior_adj,
+        ctx.history_context,    # 途径2：历史相似（来自 pipeline）
+        ctx.bio_context,        # 途径1：生平事实（来自 pipeline）
+    )
 
     _ret = {
-        "task": task_text,
-        "original_task": original_task,
+        "task": ctx.task_text,
+        "original_task": ctx.original_task,
         "complexity": complexity,
         "must_check": must,
         "important": important,
         "skipped": skipped,
+        # Pipeline 上下文（供 check10d_run 等下游使用）
+        "history_context": ctx.history_context,
+        "bio_context": ctx.bio_context,
+        "causal_context": ctx.causal_context,
         "questions": questions,
         "answers": answers,
         "agent_profile": agent_profile,
@@ -413,7 +407,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         _dims_chosen = [d.id for d in DIMENSIONS if d.id not in skipped]
         _weights = {d: prior_adj.get(d, 1.0) for d in _dims_chosen}
         _chain_id = record_judgment(
-            task_text=original_task[:300],
+            task_text=ctx.original_task[:300],
             dimensions=_dims_chosen,
             weights=_weights,
             reasoning={},
@@ -424,7 +418,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         # source="auto" 表示系统自动记录，待用户反馈 verdict
         _auto_record = VerdictRecord(
             chain_id=_chain_id,
-            task_text=original_task[:300],
+            task_text=ctx.original_task[:300],
             timestamp=datetime.now().isoformat(),
             verdict="pending",  # 待用户反馈
             source="auto",
@@ -439,7 +433,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         
         # Stop Hook: 捕获judgment行为
         capture_judgment(
-            task=original_task,
+            task=ctx.original_task,
             dimensions=_dims_chosen,
             result={"decision": _ret.get("decision"), "scores": _ret.get("scores")},
             rule_precheck=rule_precheck
@@ -454,7 +448,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
             # P0改进：因果推断 - 给判断提供推理底座
             inference_engine = CausalInferenceEngine()
             causal_infer = inference_engine.infer(
-                situation=original_task,
+                situation=ctx.original_task,
                 judgment_dimensions=must + important
             )
             _ret["causal_memory"]["causal_inference"] = {
@@ -468,16 +462,16 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         pass
 
     # ── Verdict 合成：从维度答案生成最终判断 ─────────────────────────
-    verdict_str, confidence = _synthesize_verdict(original_task, _ret.get("answers", {}))
+    verdict_str, confidence = _synthesize_verdict(ctx.original_task, _ret.get("answers", {}))
     _ret["verdict"] = verdict_str
     _ret["confidence"] = confidence
 
     # 经历层：存为历史记忆
     try:
-        save_experience(original_task, verdict_str, confidence, context=_hist_ctx, user_id=user_id)
+        save_experience(ctx.original_task, verdict_str, confidence, context=ctx.history_context, user_id=user_id)
         # 途径3：行为日志（judgment 通道，无工具调用）
         log_agent_behavior(
-            task_text=original_task,
+            task_text=ctx.original_task,
             channel=ActionChannel.JUDGMENT,
             verdict=verdict_str,
             confidence=confidence,
@@ -536,15 +530,12 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     for dim in dims_to_analyze:
         dim_result = _analyze_dim_sync(dim, task_text, agent_profile)
         all_questions.update(dim_result)
-    # LLM回答
+    # Pipeline 编排（同步版，复用 check10d 已构建的 ctx）
     _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
-    # 经历层：先获取历史相似判断作为上下文
-    _history_ctx = get_context_for_judgment(task_text, user_id)
-    # 生平事实层
-    _bio_facts = extract_bio(task_text)
-    if _bio_facts:
-        log_bio_batch(_bio_facts, source="auto")
-    _bio_ctx = get_bio_context()
+    # inject_experiences / inject_biography 已在 check10d 中执行，
+    # base_result["history_context"] / base_result["bio_context"] 可直接读
+    _history_ctx = base_result.get("history_context", "")
+    _bio_ctx = base_result.get("bio_context", "")
     answers = _answer_questions(task_text, all_questions, agent_profile, _prior_adj, _history_ctx, _bio_ctx)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
