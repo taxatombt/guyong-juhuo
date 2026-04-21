@@ -169,13 +169,13 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
         for dim_id in dims_data.get("dims",[]):
 
-            row=c.execute("SELECT belief,hit_count,miss_count FROM dimension_beliefs WHERE dim_id=?",(dim_id,)).fetchone()
+            row=c.execute("SELECT belief,hit_count,miss_count FROM dimension_beliefs WHERE dimension=?",(dim_id,)).fetchone()
 
             if not row: continue
 
             b,h,m=row;delta=max(-MAX_DELTA,min(MAX_DELTA,BELIEF_DECAY*correction));nb=max(SAT_LOW,min(SAT_HIGH,b+delta))
 
-            c.execute("UPDATE dimension_beliefs SET belief=?,hit_count=?,miss_count=?,last_id=? WHERE dim_id=?",(nb,h+(1 if correct else 0),m+(0 if correct else 1),chain_id,dim_id))
+            c.execute("UPDATE dimension_beliefs SET belief=?,hit_count=?,miss_count=?,last_id=? WHERE dimension=?",(nb,h+(1 if correct else 0),m+(0 if correct else 1),chain_id,dim_id))
 
             changes[dim_id]={"belief_before":round(b,4),"belief_after":round(nb,4),"delta":round(delta,4)}
 
@@ -474,7 +474,7 @@ def get_prior_adjustments()->Dict[str,float]:
 
     c=_get_db_conn()
 
-    try:return {r[0]:r[1] for r in c.execute("SELECT dim_id,belief FROM dimension_beliefs")}
+    try:return {r[0]:r[1] for r in c.execute("SELECT dimension,belief FROM dimension_beliefs")}
 
     finally:pass  # P0-1: 不关闭 per-thread 连接
 
@@ -494,7 +494,7 @@ def get_dimension_beliefs()->Dict[str,Dict[str,Any]]:
 
     c=_get_db_conn()
 
-    try:return {r[0]:{"belief":r[1],"hit":r[2],"miss":r[3]} for r in c.execute("SELECT dim_id,belief,hit_count,miss_count FROM dimension_beliefs")}
+    try:return {r[0]:{"belief":r[1],"hit":r[2],"miss":r[3]} for r in c.execute("SELECT dimension,belief,hit_count,miss_count FROM dimension_beliefs")}
 
     finally:pass  # P0-1: 不关闭 per-thread 连接
 

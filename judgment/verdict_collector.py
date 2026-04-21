@@ -36,6 +36,19 @@ def mark_verdict_wrong(chain_id: str, notes: str = "") -> bool:
     return receive_verdict(chain_id=chain_id, correct=False, notes=notes)
 
 
+def remove_verdict(chain_id: str) -> bool:
+    """删除 verdict 记录（清除 outcome_auto = NULL）"""
+    from subsystems.judgment.judgment_db import _get_db_conn
+    conn = _get_db_conn()
+    try:
+        conn.execute("UPDATE judgment_snapshots SET outcome_auto=NULL,corrected=0 WHERE chain_id=?", (chain_id,))
+        conn.execute("DELETE FROM verdict_outcomes WHERE chain_id=?", (chain_id,))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+
+
 # ── 以下为 verdict_collector 原有接口的空壳（CLI 不直接用）─────────────────
 def VerdictRecord(*args, **kwargs):
     from dataclasses import dataclass, field

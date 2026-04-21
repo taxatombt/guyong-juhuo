@@ -10,7 +10,7 @@ MCP (Model Context Protocol) 客户端实现，支持：
 
 快速开始：
 ```python
-from juhuo.mcp import MCPClient, MCPServerConfig, get_mcp_hub
+from .mcp_client import MCPClient, MCPServerConfig, get_mcp_hub
 
 # 单服务器使用
 config = MCPServerConfig(
@@ -69,3 +69,6 @@ __all__ = [
     "get_mcp_hub",
     "setup_mcp_from_config",
 ]
+
+# 注意：不要在模块级调用 get_mcp_hub()，避免启动时创建连接池
+# 使用时再调用：from mcp_protocol import get_mcp_hub

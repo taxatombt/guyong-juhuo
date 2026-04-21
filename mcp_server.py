@@ -1,162 +1,168 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-mcp_server.py — MCP Server
+mcp_server.py — Juhuo MCP Server (FastMCP)
 
-提供 MCP 工具：
-- judgment_10d — 十维判断
+提供 4 个 MCP 工具：
+- judgment_10d   — 十维判断
 - judgment_verdict — 标记 verdict
-- judgment_status — 查看状态
-- benchmark_run — 运行测试
+- judgment_status — 系统状态
+- benchmark_run   — GDPVal 测试
+
+使用方式：
+  # 直接运行（stdio 传输）
+  python mcp_server.py
+
+  # 或在 Claude Code / OpenClaw 中配置 MCP server
+  {
+    "mcpServers": {
+      "juhuo": {
+        "command": "python",
+        "args": ["E:/juhuo/mcp_server.py"]
+      }
+    }
+  }
 """
-
-import json
 import sys
-from pathlib import Path
+import os
 
-# MCP Protocol
-def mcp_request(method: str, params: dict = None):
-    """发送 MCP 请求"""
-    request = {"jsonrpc": "2.0", "method": method, "id": 1}
-    if params:
-        request["params"] = params
-    return json.dumps(request)
+# 确保从 juhuo 目录运行
+_juhuo_dir = os.path.dirname(os.path.abspath(__file__))
+if _juhuo_dir not in sys.path:
+    sys.path.insert(0, _juhuo_dir)
 
-def mcp_response(result):
-    """发送 MCP 响应"""
-    return json.dumps({"jsonrpc": "2.0", "id": 1, "result": result})
+print("[juhuo-mcp] Starting...", file=sys.stderr)
+sys.stderr.flush()
 
-def mcp_error(code: int, message: str):
-    """发送 MCP 错误"""
-    return json.dumps({"jsonrpc": "2.0", "id": 1, "error": {"code": code, "message": message}})
+try:
+    from fastmcp import FastMCP
+except ImportError:
+    print("[juhuo-mcp] ERROR: fastmcp not installed. Run: pip install fastmcp", file=sys.stderr)
+    sys.exit(1)
+
+# ── 创建 FastMCP 服务器 ────────────────────────────────────────────────────────
+mcp = FastMCP(
+    "juhuo",
+    instructions="Juhuo 十维判断系统。提供判断、反馈、状态查询、Benchmark 测试工具。",
+)
 
 
-# Tools
-TOOLS = [
-    {
-        "name": "judgment_10d",
-        "description": "十维判断分析",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "task": {"type": "string", "description": "判断问题"},
-                "profile": {"type": "string", "description": "Persona 名称"}
-            },
-            "required": ["task"]
-        }
-    },
-    {
-        "name": "judgment_verdict",
-        "description": "标记判断结果",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "chain_id": {"type": "string"},
-                "correct": {"type": "boolean"}
-            },
-            "required": ["chain_id"]
-        }
-    },
-    {
-        "name": "judgment_status",
-        "description": "查看系统状态"
-    },
-    {
-        "name": "benchmark_run",
-        "description": "运行 Benchmark",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "cases": {"type": "array", "items": {"type": "string"}}
+# ── 工具 1: 十维判断 ──────────────────────────────────────────────────────────
+@mcp.tool()
+def judgment_10d(task: str, profile: str = None) -> dict:
+    """
+    对用户输入的决策困境进行十维判断分析。
+
+    Args:
+        task:    判断问题（如"要不要辞职创业？"）
+        profile: 可选 Persona 名称
+
+    Returns:
+        verdict (str):       判断结论
+        confidence (float):  置信度 0-1
+        chain_id (str):     判断链 ID
+        dimensions (dict):   各维度 {name: {score, reasoning}}
+    """
+    from subsystems.judgment.pipeline import check10d_full
+    result = check10d_full(task)
+    return {
+        "verdict": result.get("verdict", ""),
+        "confidence": round(result.get("confidence", 0), 3),
+        "chain_id": result.get("chain_id", ""),
+        "dimensions": {
+            d.get("name", ""): {
+                "score": round(d.get("score", 0), 3),
+                "reasoning": d.get("reasoning", ""),
             }
-        }
-    },
-]
+            for d in result.get("dimensions", [])
+        },
+    }
 
 
-def handle_tool_call(tool_name: str, arguments: dict) -> dict:
-    """处理工具调用"""
-    if tool_name == "judgment_10d":
-        from judgment.pipeline import check10d_full
-        result = check10d_full(arguments.get("task", ""))
-        return {
-            "verdict": result.get("verdict", ""),
-            "confidence": result.get("confidence", 0),
-            "chain_id": result.get("chain_id", ""),
-            "dimensions": {
-                d.get("name", ""): {"score": d.get("score", 0), "reasoning": d.get("reasoning", "")}
-                for d in result.get("dimensions", [])
-            }
-        }
-    
-    elif tool_name == "judgment_verdict":
-        from judgment.verdict_collector import mark_verdict_correct, mark_verdict_wrong
-        if arguments.get("correct"):
-            mark_verdict_correct(arguments["chain_id"])
-        else:
-            mark_verdict_wrong(arguments["chain_id"])
-        return {"status": "ok", "chain_id": arguments["chain_id"]}
-    
-    elif tool_name == "judgment_status":
-        from judgment.self_model.belief import get_belief_status
-        from judgment.verdict_collector import get_verdict_stats
-        return {
-            "belief": get_belief_status(),
-            "stats": get_verdict_stats()
-        }
-    
-    elif tool_name == "benchmark_run":
-        from judgment.benchmark import Benchmark
-        bench = Benchmark()
+# ── 工具 2: 标记判断结果 ──────────────────────────────────────────────────────
+@mcp.tool()
+def judgment_verdict(chain_id: str, correct: bool = None) -> dict:
+    """
+    标记某次判断的对错，让系统自我进化。
+
+    Args:
+        chain_id: 判断链 ID（来自 judgment_10d 的返回）
+        correct:  True=正确，False=错误，None=删除记录
+
+    Returns:
+        {"status": "...", "chain_id": "...", "message": "..."}
+    """
+    from judgment.verdict_collector import (
+        mark_verdict_correct,
+        mark_verdict_wrong,
+        remove_verdict,
+    )
+
+    if correct is None:
+        remove_verdict(chain_id)
+        return {"status": "removed", "chain_id": chain_id, "message": "已删除 verdict 记录"}
+
+    if correct:
+        mark_verdict_correct(chain_id)
+        return {"status": "correct", "chain_id": chain_id, "message": "标记为正确，已进入进化反馈"}
+
+    mark_verdict_wrong(chain_id)
+    return {"status": "wrong", "chain_id": chain_id, "message": "标记为错误，已进入进化反馈"}
+
+
+# ── 工具 3: 系统状态 ───────────────────────────────────────────────────────────
+@mcp.tool()
+def judgment_status() -> dict:
+    """
+    查看系统当前状态：维度信念 + verdict 统计。
+    """
+    from judgment.self_model.belief import get_belief_status
+    from judgment.verdict_collector import get_verdict_stats
+
+    beliefs = get_belief_status()
+    verdicts = get_verdict_stats()
+
+    return {
+        "beliefs": beliefs,
+        "verdicts": verdicts,
+        "system": "juhuo v2.1",
+    }
+
+
+# ── 工具 4: GDPVal Benchmark ──────────────────────────────────────────────────
+@mcp.tool()
+def benchmark_run(cases: list = None) -> dict:
+    """
+    运行 GDPVal Benchmark 评估判断质量。
+
+    Args:
+        cases: 可选，要测试的案例 ID 列表（如 ["b001", "b002"]）
+               None=运行全部 22 个案例
+
+    Returns:
+        accuracy, passed, failed, avg_confidence, gdval_grade
+    """
+    from subsystems.judgment.benchmark import Benchmark
+
+    bench = Benchmark()
+    if cases:
+        report = bench.run_cases(cases)
+    else:
         report = bench.run_all()
-        return {
-            "accuracy": report.accuracy,
-            "passed": report.passed,
-            "failed": report.failed,
-            "avg_confidence": report.avg_confidence
-        }
-    
-    return {"error": "Unknown tool"}
+
+    return {
+        "total_cases": report.total_cases,
+        "passed": report.passed,
+        "failed": report.failed,
+        "accuracy": round(report.accuracy, 3),
+        "avg_confidence": round(report.avg_confidence, 3),
+        "gdval_grade": report.gdval_grade,
+        "gdval_score": round(report.gdval_score, 1),
+        "avg_time_ms": round(report.avg_time_ms, 0),
+    }
 
 
-def main():
-    """MCP Server 入口"""
-    print("Juhuo MCP Server starting...", file=sys.stderr)
-    
-    # 读取初始化请求
-    init_request = json.loads(sys.stdin.readline())
-    print(json.dumps({"jsonrpc": "2.0", "id": init_request.get("id"), "result": {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {"tools": {}},
-        "serverInfo": {"name": "juhuo", "version": "1.5"}
-    }}), flush=True)
-    
-    while True:
-        line = sys.stdin.readline()
-        if not line:
-            break
-        
-        request = json.loads(line)
-        method = request.get("method", "")
-        tool_call = request.get("params", {}).get("name")
-        arguments = request.get("params", {}).get("arguments", {})
-        
-        if method == "tools/list":
-            print(json.dumps({"jsonrpc": "2.0", "id": request.get("id"), "result": {"tools": TOOLS}}), flush=True)
-        
-        elif method == "tools/call":
-            try:
-                result = handle_tool_call(tool_call, arguments)
-                print(json.dumps({
-                    "jsonrpc": "2.0", "id": request.get("id"),
-                    "result": {"content": [{"type": "text", "text": json.dumps(result)}]}
-                }), flush=True)
-            except Exception as e:
-                print(json.dumps({
-                    "jsonrpc": "2.0", "id": request.get("id"),
-                    "error": {"code": -32603, "message": str(e)}
-                }), flush=True)
-
-
+# ── 启动 ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    main()
+    # stdio 传输（MCP 标准，Claude Code/OpenClaw 均支持）
+    mcp.run(transport="stdio")

@@ -288,6 +288,20 @@ class Benchmark:
         total = direction_score + actionable_score + topic_score
         return min(round(total, 3), 1.0)
 
+    def run_cases(self, case_ids: List[str]) -> BenchmarkReport:
+        """运行指定 ID 的案例"""
+        self.results = []
+        for cid in case_ids:
+            case = self._case_by_id.get(cid)
+            if case:
+                try:
+                    self.results.append(self.run_case(case))
+                except Exception as e:
+                    log.error(f"[Benchmark] Case {cid} failed: {e}")
+            else:
+                log.warning(f"[Benchmark] Case not found: {cid}")
+        return self._generate_report()
+
     def run_all(self) -> BenchmarkReport:
         self.results = []
         for case in self.cases:

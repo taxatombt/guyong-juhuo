@@ -155,6 +155,37 @@ def prefetch(task_text: str) -> Dict[str, Any]:
 # Pipeline 编排入口
 # ════════════════════════════════════════════════════════════════════════════
 
+def check10d_full(task_text: str, config: dict = None) -> dict:
+    """
+    全量 pipeline 判断（供 MCP server 等外部调用）。
+
+    流程：
+        1. prefetch() — 预取 biography/experiences/emotion/self_model
+        2. run_pipeline() — 注入全部上下文
+        3. 返回完整结果（verdict + dimensions + confidence + chain_id）
+
+    Args:
+        task_text: 判断问题
+        config: 可选配置（目前未使用，保留接口兼容）
+
+    Returns:
+        dict，含 verdict/confidence/chain_id/dimensions
+    """
+    from judgment.router import check10d_run
+    return check10d_run(task_text)
+
+
+def PipelineConfig(**kwargs):
+    """占位配置类（MCP 调用用）"""
+    return kwargs
+
+
+def format_full_report(result: dict) -> str:
+    """格式化完整报告"""
+    from judgment.router import format_report
+    return format_report(result)
+
+
 def run_pipeline(ctx: JudgmentContext) -> JudgmentContext:
     """
     完整编排：按顺序执行所有注入器。
