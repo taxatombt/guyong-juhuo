@@ -192,6 +192,59 @@ def cmd_bio(args):
             print(f"  [{cat}] {f['fact']} (命中:{f['mentions']})")
 
 
+def cmd_behavior(args):
+    """途径3：juhuo agent 行为日志"""
+    from judgment.behavior_logger import (
+        get_behavior_stats, get_recent_behaviors, get_behavior,
+        ActionChannel,
+    )
+    if args.action == "stats":
+        stats = get_behavior_stats()
+        print("\n[*] Agent 行为统计")
+        print(f"  总行为数：{stats['total_behaviors']}")
+        for ch, info in stats["channel_breakdown"].items():
+            avg = info["avg_outcome"]
+            avg_str = f"{avg:.2f}" if avg is not None else "未验证"
+            print(f"  [{ch}] {info['count']}次 | avg_outcome={avg_str} | verified={info['verified']}")
+
+    elif args.action == "list":
+        ch = ActionChannel(args.channel) if args.channel else None
+        behaviors = get_recent_behaviors(channel=ch, limit=args.limit)
+        if not behaviors:
+            print("(暂无行为记录，先做判断：juhuo judge \"要不要 all in 炒股？\")")
+            return
+        print(f"\n[*] Agent 行为记录（共 {len(behaviors)} 条）：")
+        for b in behaviors:
+            v = (b.get("conclusion") or "(无)")[:35]
+            tc = b.get("tool_calls", "[]")
+            tc_cnt = len(eval(tc)) if isinstance(tc, str) else 0
+            score = b.get("outcome_score")
+            print(f"  [{b['action_channel']}] verdict={v} | tools={tc_cnt} | outcome={score}")
+
+    elif args.action == "show":
+        if not args.behavior_id:
+            print("用法: juhuo behavior show <behavior_id>")
+            return
+        b = get_behavior(args.behavior_id)
+        if not b:
+            print(f"未找到：{args.behavior_id}")
+            return
+        print(f"\n[*] 行为 [{b['behavior_id']}]")
+        print(f"  通道={b['action_channel']} | outcome={b.get('outcome_score','未验证')}")
+        print(f"  结论：{b.get('conclusion','')}")
+        if b.get('tool_calls'):
+            import json
+            try:
+                tcs = json.loads(b['tool_calls'])
+                for tc in tcs:
+                    print(f"  - {tc['tool_name']} ({tc['duration_ms']:.0f}ms) [{tc['status']}]")
+                    print(f"    → {tc.get('result_summary','')[:100]}")
+            except Exception:
+                pass
+        if b.get('perception_summary'):
+            print(f"  感知：{b['perception_summary'][:200]}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="⚖️ Juhuo - Judgment System",
@@ -233,7 +286,14 @@ def main():
     # benchmark
     bench_parser = subparsers.add_parser("benchmark", help="运行 Benchmark")
     bench_parser.add_argument("-n", "--num", type=int, default=8, help="案例数量")
-    
+
+    # behavior（途径3：agent 行为日志）
+    beh_parser = subparsers.add_parser("behavior", help="Agent 行为日志")
+    beh_parser.add_argument("action", choices=["list", "stats", "show"], help="操作")
+    beh_parser.add_argument("-c", "--channel", help="过滤通道（如：judgment/web_search）")
+    beh_parser.add_argument("-n", "--limit", type=int, default=10, help="列表数量")
+    beh_parser.add_argument("behavior_id", nargs="?", help="行为ID（show时用）")
+
     args = parser.parse_args()
     
     if args.cmd == "judge":
@@ -255,6 +315,8 @@ def main():
     elif args.cmd == "benchmark":
         report = run_benchmark()
         print(f"\n✅ Benchmark 完成")
+    elif args.cmd == "behavior":
+        cmd_behavior(args)
     else:
         # 无参数时进入交互模式
         cmd_shell()

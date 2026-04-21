@@ -175,6 +175,104 @@ def judge():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/execute", methods=["POST"])
+def execute_task():
+    """
+    途径3：执行用户任务，积累行为数据
+
+    流程：
+    1. 获取任务描述
+    2. 先做判断（check10d_full）
+    3. 执行感知工具（web_search / web_analyze）
+    4. 记录 agent 行为日志
+    5. 返回判断 + 执行结果
+
+    Body:
+        {"task": "帮我调研新能源行业", "execute": true, "channel": "web_search"}
+    """
+    data = request.get_json()
+    task = data.get("task", "")
+    do_execute = data.get("execute", False)
+    channel = data.get("channel", "web_search")
+
+    if not task:
+        return jsonify({"error": "任务不能为空"}), 400
+
+    try:
+        # Step 1: 判断
+        judgment = check10d_full(task)
+
+        behavior_id = ""
+        execution_result = ""
+        perception_summary = ""
+        tool_calls = []
+
+        # Step 2: 执行（若请求）
+        if do_execute:
+            import time
+            from judgment.behavior_logger import (
+                log_agent_behavior, ActionChannel, ToolCall
+            )
+            from perception.web_adapter import WebExtractorAdapter
+
+            exec_start = time.time()
+            adapter = WebExtractorAdapter()
+
+            # Web search channel
+            if channel == "web_search":
+                try:
+                    extracted = adapter.extract_from_url(task)
+                    perception_summary = f"提取自 {extracted.url}，标题：{extracted.title}"
+                    for block in extracted.blocks[:5]:
+                        perception_summary += f"\n{block.content[:200]}"
+                    execution_result = f"找到 {len(extracted.blocks)} 个内容块"
+                    tc = ToolCall(
+                        tool_name="WebExtractorAdapter.extract_from_url",
+                        arguments={"url": task},
+                        result_summary=execution_result[:200],
+                        duration_ms=(time.time() - exec_start) * 1000,
+                        status="success",
+                    )
+                    tool_calls = [tc]
+                except Exception as ex:
+                    execution_result = f"Web extraction failed: {ex}"
+                    tool_calls = []
+
+            # 记录行为
+            from judgment.behavior_logger import ActionChannel as BLChannel
+            channel_map = {"web_search": BLChannel.WEB_SEARCH, "web_analyze": BLChannel.WEB_ANALYZE}
+            act_ch = channel_map.get(channel, AC.WEB_SEARCH)
+            behavior_id = log_agent_behavior(
+                task_text=task,
+                channel=act_ch,
+                verdict=judgment.get("verdict", ""),
+                confidence=judgment.get("confidence", 0.0),
+                chain_id=judgment.get("chain_id", ""),
+                tool_calls=tool_calls,
+                execution_result=execution_result,
+                perception_summary=perception_summary,
+                outcome_score=-1.0,
+                user_id="default",
+            )
+
+        return jsonify({
+            "success": True,
+            "verdict": judgment.get("verdict", ""),
+            "confidence": judgment.get("confidence", 0.0),
+            "chain_id": judgment.get("chain_id", ""),
+            "behavior_id": behavior_id,
+            "execution": {
+                "channel": channel if do_execute else None,
+                "perception_summary": perception_summary,
+                "tool_calls_count": len(tool_calls),
+            } if do_execute else None,
+        })
+
+    except Exception as e:
+        log.error(f"Execute error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 def run(port: int = 18768):
     """启动 Web Console"""
     log.info(f"Starting Juhuo Web Console on port {port}...")

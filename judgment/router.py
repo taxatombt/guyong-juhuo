@@ -87,6 +87,7 @@ from llm_adapter.base import CompletionRequest
 
 # 经历层：历史判断记忆
 from judgment.experiences import get_context_for_judgment, save_experience, record_outcome as _rec_outcome_exp, init as _init_exp
+from judgment.behavior_logger import log_agent_behavior, ActionChannel
 
 # 途径1：生平事实层
 from judgment.biography import get_context as get_bio_context, extract_from_text as extract_bio, log_batch as log_bio_batch
@@ -577,6 +578,17 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     # 经历层：存为历史记忆
     try:
         save_experience(original_task, verdict_str, confidence, context=_hist_ctx, user_id=user_id)
+        # 途径3：行为日志（judgment 通道，无工具调用）
+        log_agent_behavior(
+            task_text=original_task,
+            channel=ActionChannel.JUDGMENT,
+            verdict=verdict_str,
+            confidence=confidence,
+            chain_id=_ret.get("meta", {}).get("chain_id", ""),
+            tool_calls=[],  # router.py 仅做判断，无工具调用
+            execution_result="",
+            user_id=user_id,
+        )
     except Exception:
         pass
 
@@ -646,6 +658,17 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     # 经历层：判断完成后自动存为经历
     try:
         save_experience(task_text, verdict_str, confidence, context=_history_ctx, user_id=user_id)
+        # 途径3：行为日志（judgment 通道，无工具调用）
+        log_agent_behavior(
+            task_text=task_text,
+            channel=ActionChannel.JUDGMENT,
+            verdict=verdict_str,
+            confidence=confidence,
+            chain_id=base_result.get("meta", {}).get("chain_id", ""),
+            tool_calls=[],
+            execution_result="",
+            user_id=user_id,
+        )
     except Exception:
         pass  # 不阻断判断主流程
 
