@@ -17,7 +17,6 @@ import sqlite3, json
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
-from contextlib import contextmanager
 from threading import RLock as _Lock  # RLock = 可重入锁，防止嵌套调用死锁
 
 _JD = Path(__file__).parent.parent.parent / "data" / "judgment_data"
@@ -27,15 +26,10 @@ _JD.mkdir(parents=True, exist_ok=True)
 _lock = _Lock()  # RLock 替代 Lock，防止嵌套调用死锁
 
 
-@contextmanager
 def get_conn():
-    with _lock:
-        conn = sqlite3.connect(_DB, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
+    # P0-1: 统一用 judgment._schema._get_db_conn()（per-thread 连接，永不 close）
+    from judgment._schema import _get_db_conn
+    return _get_db_conn()
 
 
 def init_db():

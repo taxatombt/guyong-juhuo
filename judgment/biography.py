@@ -168,3 +168,8 @@ def format_profile() -> str:
         for item in items:
             lines.append(f"  · {item['fact']} (来源:{item['source']}, 命中:{item['mentions']})")
     return "\n".join(lines)
+
+# 别名（供 pipeline.py 使用）
+extract_bio = extract_from_text
+log_bio_batch = log_batch
+get_bio_context = get_context

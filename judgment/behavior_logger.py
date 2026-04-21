@@ -25,7 +25,6 @@ P2 目标：途径3 = "juhuo 帮用户做事（查资料/执行任务），积�
 
 import json
 import time
-import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -33,9 +32,8 @@ from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 
-# ── 路径配置 ────────────────────────────────────────────────────────────────
-_ROOT = Path(__file__).parent.parent
-_DB = _ROOT / "data" / "judgment_data" / "juhuo_judgment.db"
+from judgment._schema import _get_db_conn
+
 
 
 # ── 执行通道枚举 ────────────────────────────────────────────────────────────
@@ -101,11 +99,8 @@ def _sanitize_args(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ── DB 操作 ─────────────────────────────────────────────────────────────────
-def _get_conn() -> sqlite3.Connection:
-    _DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(_DB)
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+def _get_conn():
+    return _get_db_conn()
 
 
 def _migrate():
@@ -123,7 +118,7 @@ def _migrate():
         except sqlite3.OperationalError:
             pass  # 列已存在
     conn.commit()
-    conn.close()
+    # P0-1: 不关闭 per-thread 连接
 
 
 # ── 核心 API ────────────────────────────────────────────────────────────────
@@ -221,7 +216,7 @@ def log_agent_behavior(
             ))
         conn.commit()
     finally:
-        conn.close()
+        pass  # P0-1: 不关闭 per-thread 连接
 
     return behavior_id
 
@@ -234,10 +229,10 @@ def get_behavior(behavior_id: str) -> Optional[Dict[str, Any]]:
         (behavior_id,)
     ).fetchone()
     if not row:
-        conn.close()
+        # P0-1: 不关闭 per-thread 连接
         return None
     cols = [d[0] for d in conn.execute("SELECT * FROM experiences LIMIT 0").description]
-    conn.close()
+    # P0-1: 不关闭 per-thread 连接
     return dict(zip(cols, row))
 
 
@@ -266,7 +261,7 @@ def get_recent_behaviors(
             WHERE user_id=? AND behavior_id IS NOT NULL
             ORDER BY created_at DESC LIMIT ?
         """, (user_id, limit)).fetchall()
-    conn.close()
+    # P0-1: 不关闭 per-thread 连接
     cols = ["behavior_id", "action_channel", "conclusion",
             "tool_calls", "execution_result", "perception_summary",
             "outcome_score", "created_at"]
@@ -284,7 +279,7 @@ def get_behavior_stats(user_id: str = "default") -> Dict[str, Any]:
         WHERE user_id=? AND action_channel IS NOT NULL
         GROUP BY action_channel
     """, (user_id,)).fetchall()
-    conn.close()
+    # P0-1: 不关闭 per-thread 连接
     return {
         "total_behaviors": sum(r[1] for r in rows),
         "channel_breakdown": {

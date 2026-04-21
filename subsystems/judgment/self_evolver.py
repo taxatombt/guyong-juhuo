@@ -16,7 +16,6 @@ self_evolver.py — Juhuo Self-Evolver 自动闭环引擎
 """
 
 import json
-import sqlite3
 import time
 import logging
 from datetime import datetime, timedelta
@@ -42,26 +41,14 @@ except ImportError:
     COOLDOWN_HOURS = 24
     VALIDATION_WINDOW = 10
 
-# 数据库
-DB_PATH = Path(__file__).parent.parent / "data" / "judgment_data" / "juhuo_judgment.db"
+# P0-1: 统一用 judgment._schema._get_db_conn()
+from judgment._schema import _get_db_conn
+from judgment._schema_tables import init_schema
 
 def get_conn():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS evolution_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trigger_type TEXT, trigger_reason TEXT,
-            old_rules TEXT, new_rules TEXT,
-            comparison_result TEXT, winner TEXT, improvement REAL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    return conn
+    """P0-1: 委托给 judgment._schema._get_db_conn()"""
+    return _get_db_conn()
 
-# 1. 同步到self_model
 def sync_to_self_model(chain_id: str) -> Optional[Dict]:
     """Hook捕获的判断数据写入self_model（可选，跳过不影响主流程）"""
     # self_model 写入已降级为可选，核心功能由 receive_verdict → record_outcome 承担
@@ -272,8 +259,7 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
                     (dim_id, belief, dim_id, dim_id)
                 )
             conn.commit()
-            conn.close()
-            log.info(f"[Self-Evolver] dimension_beliefs 已同步: {new_weights}")
+            log.info(f"[Self-Evolver] dimension_beliefs 已同步: {new_weights}")  # P0-1: 不关闭 per-thread 连接
         except Exception as e:
             log.warning(f"[Self-Evolver] dimension_beliefs 同步失败: {e}")
     except Exception as e:
@@ -590,8 +576,7 @@ class EvolverScheduler:
                         (dim_id, belief, dim_id, dim_id)
                     )
                 conn.commit()
-                conn.close()
-                log.info(f"[Self-Evolver] dimension_beliefs 已回滚: {old_weights}")
+                log.info(f"[Self-Evolver] dimension_beliefs 已回滚: {old_weights}")  # P0-1: 不关闭 per-thread 连接
             except Exception as e:
                 log.warning(f"[Self-Evolver] dimension_beliefs 回滚失败: {e}")
 

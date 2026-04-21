@@ -6,16 +6,14 @@
 - find_similar: 只匹配同一用户的经历
 - CLI/benchmark: user_id="default"（单用户模式）
 """
-import sqlite3
 import re
 import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
 
-_ROOT = Path(__file__).parent.parent
-_DB = _ROOT / "data" / "judgment_data" / "juhuo_judgment.db"
 
+from judgment._schema import _get_db_conn
 SITUATION_TYPES = {
     "career":       ["辞职", "跳槽", "创业", "工作", "offer", "裁员", "加薪"],
     "investment":   ["买房", "投资", "理财", "炒股", "基金", "存款", "保险", "股市", "全仓"],
@@ -91,11 +89,8 @@ def _task_hash(user_id: str, task_text: str) -> str:
     return hashlib.md5(f"{user_id}::{task_text}".encode()).hexdigest()[:24]
 
 
-def _get_conn() -> sqlite3.Connection:
-    _DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(_DB)
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+def _get_conn():
+    return _get_db_conn()
 
 
 def init():
@@ -122,7 +117,7 @@ def init():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_type ON experiences(user_id, situation_type)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_kw ON experiences(user_id, matched_keywords)")
     conn.commit()
-    conn.close()
+    # P0-1: 不关闭 per-thread 连接
 
 
 def save_experience(task_text: str, conclusion: str, confidence: float,
@@ -149,7 +144,7 @@ def save_experience(task_text: str, conclusion: str, confidence: float,
         """, (conclusion, confidence, context, user_id, th))
         eid = -1
     finally:
-        conn.close()
+        pass  # P0-1: 不关闭 per-thread 连接
     return eid
 
 
@@ -162,8 +157,7 @@ def record_outcome(task_text: str, outcome: str, outcome_score: float = 1.0,
         'WHERE user_id=? AND task_hash=?',
         (outcome, outcome_score, notes, user_id, th)).rowcount
     conn.commit()
-    conn.close()
-    return n > 0
+    return n > 0  # P0-1: 不关闭 per-thread 连接
 
 def _keyword_overlap(kw1: str, kw2: str) -> float:
     set1 = set(kw1.split("|")) if kw1 else set()
@@ -184,7 +178,7 @@ def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_i
     keywords = _extract_keywords(task_text)
     conn = _get_conn()
     rows = conn.execute("SELECT id, situation_type, task_text, conclusion, confidence, matched_keywords, outcome, outcome_score FROM experiences WHERE user_id = ? ORDER BY CASE WHEN situation_type = ? THEN 1 ELSE 0 END DESC, outcome_score DESC, created_at DESC LIMIT 100", (user_id, stype)).fetchall()
-    conn.close()
+    # P0-1: 不关闭 per-thread 连接
     scored = []
     for r in rows:
         eid, rtype, rtext, rconclusion, rconf, rkw, routcome, rscore = r
@@ -201,7 +195,7 @@ def get_context_for_judgment(task_text: str, user_id: str = "default") -> str:
     if not similar: return ""
     lines = ["\n【历史参考】这个用户（你）遇到过类似情况："]
     for i, s in enumerate(similar, 1):
-        lines.append(str(i) + ". 情况：" + s["task_text"][:40] + "...")
+        lines.append(str(i) + ". 情况：" + (s["task_text"] or s.get("conclusion") or "类似经历")[:40] + "...")
         lines.append("   判断：" + s["conclusion"])
         if s.get("outcome"):
             ok = "对" if s.get("outcome_score", 0) >= 0.6 else "待验证"
