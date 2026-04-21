@@ -13,6 +13,8 @@
 from __future__ import annotations
 import re
 from typing import Dict, List, Optional
+from llm_adapter import get_adapter, CompletionRequest
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 # 由 router.py 注入
 global_emotion_system = None
@@ -99,11 +101,18 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
         prompt = prompt[:6000] + "\n[内容过长已截断]"
 
     try:
-        response = adapter.complete(CompletionRequest(
-            prompt=prompt,
-            max_tokens=2048,
-            temperature=0.7,
-        ))
+        # 15秒超时，防止MiniMax API无响应时永久阻塞
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(adapter.complete, CompletionRequest(
+                prompt=prompt,
+                max_tokens=2048,
+                temperature=0.7,
+            ))
+            try:
+                response = future.result(timeout=15)
+            except FuturesTimeoutError:
+                print("[LLM] API调用超时（15秒），跳过answer生成")
+                return {}
 
         # ── InsightTracker: 记录 token 消耗 ─────────────────────────
         try:

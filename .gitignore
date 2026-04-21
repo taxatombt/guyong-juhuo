@@ -79,3 +79,13 @@ causal_memory/
 emotions.json
 self_model.json
 subsystems/data/
+
+# Dev scratch files
+_check_syntax.py
+_fin_*.py
+_finalize.py
+_g3*.py
+_gen*.py
+_make_life_os.py
+_test*.py
+_testga.py
