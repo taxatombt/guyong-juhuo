@@ -27,6 +27,7 @@ from judgment.verdict_collector import get_verdict_stats, mark_verdict_correct, 
 from causal_memory.causal_chain import get_recent_chains, get_chain_detail
 from config.env_loader import EnvVarLoader, create_env_template, JUHuo_USER_DIR, JUHuo_USER_ENV
 from judgment.benchmark import Benchmark, run_benchmark
+from judgment.biography import log, format_profile, get_all
 
 log = get_logger("juhuo.cli")
 
@@ -160,6 +161,37 @@ def cmd_config(args):
             print("配置文件不存在，先运行: juhuo config init")
 
 
+def cmd_bio(args):
+    """生平事实管理"""
+    if args.action == "show":
+        print(format_profile())
+    
+    elif args.action == "add":
+        if not args.fact:
+            print("用法: juhuo bio add \"我30岁程序员\"")
+            return
+        # 自动抽取
+        from judgment.biography import extract_from_text, log_batch
+        facts = extract_from_text(args.fact)
+        if not facts:
+            print("未识别到生平信息，请手动指定类别：juhuo bio add \"...\" -c 职业")
+            return
+        added = log_batch(facts, source="user")
+        print(f"[OK] 已添加 {added} 条生平信息：")
+        for f in facts:
+            print(f"   [{f['category']}] {f['fact']}")
+    
+    elif args.action == "list":
+        facts = get_all()
+        if not facts:
+            print("(暂无生平信息)")
+            return
+        from judgment.biography import _CAT_DISPLAY
+        for f in facts:
+            cat = _CAT_DISPLAY.get(f["category"], f["category"])
+            print(f"  [{cat}] {f['fact']} (命中:{f['mentions']})")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="⚖️ Juhuo - Judgment System",
@@ -188,6 +220,11 @@ def main():
     verdict_parser.add_argument("action", choices=["list", "correct", "wrong", "detail"], help="操作")
     verdict_parser.add_argument("chain_id", nargs="?", help="Chain ID")
     verdict_parser.add_argument("-n", "--limit", type=int, default=20, help="列表数量")
+
+    # bio
+    bio_parser = subparsers.add_parser("bio", help="生平事实管理")
+    bio_parser.add_argument("action", choices=["show", "add", "list"], help="操作")
+    bio_parser.add_argument("fact", nargs="?", help="事实文本（如：我30岁程序员）")
     
     # config
     config_parser = subparsers.add_parser("config", help="配置管理")
@@ -210,6 +247,8 @@ def main():
         cmd_status()
     elif args.cmd == "verdict":
         cmd_verdict(args)
+    elif args.cmd == "bio":
+        cmd_bio(args)
     elif args.cmd == "config":
         cmd_config(args)
     

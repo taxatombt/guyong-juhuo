@@ -88,6 +88,9 @@ from llm_adapter.base import CompletionRequest
 # 经历层：历史判断记忆
 from judgment.experiences import get_context_for_judgment, save_experience, record_outcome as _rec_outcome_exp, init as _init_exp
 
+# 途径1：生平事实层
+from judgment.biography import get_context as get_bio_context, extract_from_text as extract_bio, log_batch as log_bio_batch
+
 # P0改进：因果推断引擎 - 给judgment提供推理底座
 from causal_memory.causal_inference import CausalInferenceEngine, infer_causal_chain
 
@@ -435,7 +438,12 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         pass
     # 经历层：历史相似判断
     _hist_ctx = get_context_for_judgment(task_text, user_id)
-    answers = _answer_questions(task_text, questions, agent_profile, prior_adj, _hist_ctx)
+    # 途径1：自动抽取生平事实
+    _bio_facts = extract_bio(task_text)
+    if _bio_facts:
+        log_bio_batch(_bio_facts, source="auto")
+    _bio_ctx = get_bio_context()
+    answers = _answer_questions(task_text, questions, agent_profile, prior_adj, _hist_ctx, _bio_ctx)
 
     _ret = {
         "task": task_text,
