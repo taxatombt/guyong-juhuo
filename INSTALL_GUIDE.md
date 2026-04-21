@@ -1,104 +1,103 @@
-# guyong-juhuo 使用指南
+# guyong-juhuo 安装指南
 
-> 下载 → 双击 → 开始用。就这么简单。
+> 下载 → 安装 → 开始用。就这么简单。
 
 ---
 
-## 方式一：直接运行（推荐，最快）
-
-### 1. 下载
+## 下载
 
 👉 https://github.com/taxatombt/guyong-juhuo/releases/latest
 
-下载 `guyong-juhuo.exe`（约 103 MB）
-
-### 2. 双击运行
-
-就一个 exe，双击直接启动。关闭即退出，无需安装。
+下载 `guyong-juhuo-2.0.0-setup.exe`（约 50 MB）
 
 ---
 
-## 方式二：源码运行
+## 安装
 
-### 1. 下载代码
+1. 双击 `guyong-juhuo-2.0.0-setup.exe`
+2. 选择安装位置（默认 `C:\Program Files\guyong-juhuo`）
+3. 点击"安装"，等待完成
+4. 点击"完成"启动程序
 
-```bash
-git clone https://github.com/taxatombt/guyong-juhuo.git
-cd guyong-juhuo
-```
-
-### 2. 运行
-
-```bash
-python cli.py status          # 查看状态
-python cli.py "要不要辞职创业"  # 判断一个问题
-python cli.py web             # 打开网页控制台（默认 port 18768）
-```
+安装完成后桌面上会有快捷方式。
 
 ---
 
-## 常见用法
+## 卸载
 
-### 判断一个问题
-```
-python cli.py "要不要辞职创业"
-```
+- **方式一**：开始菜单 → guyong-juhuo → 卸载
+- **方式二**：控制面板 → 程序和功能 → guyong-juhuo → 卸载
+- **方式三**：运行安装程序 → 选择"卸载"
 
-### 查看判断历史
-```
-python cli.py verdict list
-```
+---
 
-### 查看状态
-```
-python cli.py status
-```
+## 安装后完全独立运行
 
-### 查看用户画像（需要先添加）
-```
-python cli.py bio add "我30岁程序员已婚"
-python cli.py bio show
-```
+安装版**不依赖**任何项目文件或下载包。安装目录包含全部内容，可直接运行：
 
-### 查看行为统计
 ```
-python cli.py behavior stats
-```
+# 安装目录结构（示例）
+C:\Program Files\guyong-juhuo\
+├── guyong-juhuo.exe      ← 主程序，双击运行
+├── uninstall.exe         ← 卸载程序
+├── README.md
+└── ...
 
-### 网页控制台
-```
-python cli.py web
-# 浏览器打开 http://localhost:18768
+# 数据文件（用户数据，不在安装包里）
+C:\Users\<用户名>\.juhuo\
+├── .env                  ← API Key 配置（需手动创建）
+├── config.json
+└── data\
 ```
 
 ---
 
 ## 首次使用
 
-**需要配置 MiniMax API Key（才能获得完整判断结果）：**
+### 配置 API Key（可选，获得完整功能）
 
-1. 打开 `cli.py web` 网页控制台
-2. 或手动创建 `~/.juhuo/.env` 文件，写入：
-   ```
-   MINIMAX_API_KEY=你的API密钥
-   ```
+安装后运行程序会自动打开网页控制台。如需完整判断能力，创建配置文件：
+
+在 `C:\Users\<用户名>\.juhuo\.env`（新建文件）写入：
+```
+MINIMAX_API_KEY=你的API密钥
+```
 
 不配置也能用，但只能返回 fallback 回答。
 
----
+### 查看帮助
 
-## Life OS 任务排序（独立功能，不需要 API Key）
-
-```bash
-python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D=0.7
+```
+安装目录\guyong-juhuo.exe --help
 ```
 
+### 网页控制台
+
+安装后自动打开 http://localhost:18768
+
 ---
 
-## 卸载
+## 常见问题
 
-- **方式一**：直接删除 `guyong-juhuo.exe`
-- **方式二**（安装版）：控制面板 → 程序和功能 → 卸载
+**Q: 安装后打不开？**
+检查控制面板 → 程序和功能，确认安装成功。如有问题，先卸载再重装。
+
+**Q: 端口 18768 被占用？**
+程序端口可在 `C:\Users\<用户名>\.juhuo\config.json` 中修改。
+
+**Q: 如何更新？**
+下载新版安装程序，运行后会自动升级或提示卸载旧版。
+
+---
+
+## 源码运行（开发者）
+
+```bash
+git clone https://github.com/taxatombt/guyong-juhuo.git
+cd guyong-juhuo
+pip install -r requirements.txt
+python cli.py status
+```
 
 ---
 

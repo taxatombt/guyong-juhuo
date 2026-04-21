@@ -125,7 +125,7 @@ Perception  →  Attention Filter  →  Judgment (10D)
 
 👉 https://github.com/taxatombt/guyong-juhuo/releases/latest
 
-下载 `guyong-juhuo.exe`（约 103 MB），双击直接运行。
+下载 `guyong-juhuo-2.0.0-setup.exe`（约 50 MB），双击安装。
 
 详细说明：[INSTALL_GUIDE.md](https://github.com/taxatombt/guyong-juhuo/blob/main/INSTALL_GUIDE.md)
 

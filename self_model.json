@@ -15,11 +15,17 @@
     }
   },
   "weights": {
-    "cognitive": 0.75,
-    "game_theory": 0.75,
-    "安全性": 0.75,
-    "效率": 0.75
+    "cognitive": 0.9,
+    "game_theory": 0.6,
+    "economic": 0.5,
+    "dialectical": 0.5,
+    "emotional": 0.5,
+    "intuitive": 0.4,
+    "moral": 0.4,
+    "social": 0.4,
+    "temporal": 0.4,
+    "metacognitive": 0.4
   },
   "total_decisions": 2,
-  "updated_at": "2026-04-17T00:00:12.916559"
+  "updated_at": "2026-04-20T11:54:40.616807"
 }

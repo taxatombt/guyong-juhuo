@@ -1,18 +1,30 @@
 {
   "current": {
-    "cognitive": 0.75,
-    "game_theory": 0.75,
-    "安全性": 0.75,
-    "效率": 0.75
+    "cognitive": 0.9,
+    "dialectical": 0.5,
+    "economic": 0.5,
+    "emotional": 0.5,
+    "game_theory": 0.6,
+    "intuitive": 0.4,
+    "metacognitive": 0.4,
+    "moral": 0.4,
+    "social": 0.4,
+    "temporal": 0.4
   },
   "history": [
     {
-      "timestamp": "2026-04-17T00:00:12.919560",
+      "timestamp": "2026-04-21_init",
       "weights": {
-        "cognitive": 0.75,
-        "game_theory": 0.75,
-        "安全性": 0.75,
-        "效率": 0.75
+        "cognitive": 0.9,
+        "dialectical": 0.5,
+        "economic": 0.5,
+        "emotional": 0.5,
+        "game_theory": 0.6,
+        "intuitive": 0.4,
+        "metacognitive": 0.4,
+        "moral": 0.4,
+        "social": 0.4,
+        "temporal": 0.4
       }
     }
   ]
