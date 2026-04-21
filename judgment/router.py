@@ -86,7 +86,7 @@ from llm_adapter.minimax import get_adapter
 from llm_adapter.base import CompletionRequest
 
 # 经历层：历史判断记忆
-from judgment.experiences import get_context_for_judgment, save_experience, init as _init_exp
+from judgment.experiences import get_context_for_judgment, save_experience, record_outcome as _rec_outcome_exp, init as _init_exp
 
 # P0改进：因果推断引擎 - 给judgment提供推理底座
 from causal_memory.causal_inference import CausalInferenceEngine, infer_causal_chain
@@ -308,7 +308,7 @@ def route(text):
     return {"matched": False, "sample_text": text}
 
 
-def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=None):
+def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=None, user_id: str = "default"):
     """
     标准化接口：十维检视
     因果记忆：自动注入相关历史判断到任务上下文
@@ -335,30 +335,6 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     """
     # 懒启动（初始化 experiences 表等）
     _ensure_started()
-        当提供 emotion_state 时，情绪状态将直接影响：
-        - 各维度问题权重（调制prompt）
-        - 信心度（confidence_adjustment）
-        - 元认知提示（prompt_hint 注入）
-
-    返回:
-        {
-            "task": str,
-            "original_task": str,
-            "complexity": str,
-            "must_check": [dim_id, ...],
-            "important": [dim_id, ...],
-            "skipped": [dim_id, ...],
-            "questions": {dim_id: [str, ...], ...},
-            "answers": {},
-            "agent_profile": agent_profile,
-            "causal_memory": causal_result,
-            "meta": {
-                "total_dims": 10,
-                "checked": int,
-                "skipped_count": int,
-            }
-        }
-    """
     # Hermes启发：prefetch_all - 每轮前背景召回
     hook_context = prefetch_all(task_text)
     fenced_context = hook_context.get("fenced_context", "")
@@ -458,7 +434,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     except Exception:
         pass
     # 经历层：历史相似判断
-    _hist_ctx = get_context_for_judgment(task_text)
+    _hist_ctx = get_context_for_judgment(task_text, user_id)
     answers = _answer_questions(task_text, questions, agent_profile, prior_adj, _hist_ctx)
 
     _ret = {
@@ -592,7 +568,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
 
     # 经历层：存为历史记忆
     try:
-        save_experience(original_task, verdict_str, confidence, context=_hist_ctx)
+        save_experience(original_task, verdict_str, confidence, context=_hist_ctx, user_id=user_id)
     except Exception:
         pass
 
@@ -625,7 +601,7 @@ def _analyze_dim_sync(dim, task_text, agent_profile):
     return {dim.id: questions}
 
 
-def check10d_run(task_text, agent_profile=None, emotion_state=None):
+def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str = "default"):
     """
     同步检视接口：直接调用 check10d，critical 复杂度。
     
@@ -633,7 +609,7 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None):
     所以这里直接同步调用 check10d，不做嵌套异步。
     """
     _ensure_started()
-    base_result = check10d(task_text, agent_profile, complexity="critical", emotion_state=emotion_state)
+    base_result = check10d(task_text, agent_profile, complexity="critical", emotion_state=emotion_state, user_id=user_id)
     # 同步构建所有维度问题
     must = base_result["must_check"]
     important = base_result["important"]
@@ -646,7 +622,7 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None):
     # LLM回答
     _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
     # 经历层：先获取历史相似判断作为上下文
-    _history_ctx = get_context_for_judgment(task_text)
+    _history_ctx = get_context_for_judgment(task_text, user_id)
     answers = _answer_questions(task_text, all_questions, agent_profile, _prior_adj, _history_ctx)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
@@ -661,7 +637,7 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None):
 
     # 经历层：判断完成后自动存为经历
     try:
-        save_experience(task_text, verdict_str, confidence, context=_history_ctx)
+        save_experience(task_text, verdict_str, confidence, context=_history_ctx, user_id=user_id)
     except Exception:
         pass  # 不阻断判断主流程
 

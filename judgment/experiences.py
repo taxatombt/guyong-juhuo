@@ -1,42 +1,24 @@
-# experiences.py — 经历层：让每次判断成为可复用的记忆
+# experiences.py — 经历层：每个使用者独立的历史记忆
 """
-核心思想：
-- 每次判断存为一个"经历"：情况类型 + 结论 + 上下文
-- 新判断来 → 匹配最像的历史经历 → 给出判断时优先参考
-- 结论 = 真实选择，不是分析
-
-数据模型：
-experiences 表：
-  id, situation_type, context, conclusion, confidence,
-  matched_keywords, outcome, outcome_notes, created_at
-
-situation_type: 情况分类（从task_text提取）
-  - career: 职业/辞职/跳槽
-  - investment: 投资/买房/理财
-  - relationship: 人际关系/感情
-  - family: 家庭/婚姻/孩子
-  - migration: 移民/留学/搬家
-  - health: 健康/医疗
-  - education: 教育/考证/读研
-  - other: 其他
-
-matched_keywords: 从task_text提取的关键词（用于快速匹配）
+多用户设计：
+- user_id: 使用者唯一标识（CoPaw session_id / channel+user_id / "default"）
+- task_hash: (user_id, task_text) 组合哈希，同一用户同问题去重
+- find_similar: 只匹配同一用户的经历
+- CLI/benchmark: user_id="default"（单用户模式）
 """
 import sqlite3
 import re
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import List, Dict
 
-_ROOT = Path(__file__).parent.parent  # E:/juhuo
+_ROOT = Path(__file__).parent.parent
 _DB = _ROOT / "data" / "judgment_data" / "juhuo_judgment.db"
-
-# ── 情况分类 ──────────────────────────────────────────────────
 
 SITUATION_TYPES = {
     "career":       ["辞职", "跳槽", "创业", "工作", "offer", "裁员", "加薪"],
-    "investment":   ["买房", "投资", "理财", "炒股", "基金", "存款", "保险"],
+    "investment":   ["买房", "投资", "理财", "炒股", "基金", "存款", "保险", "股市", "全仓"],
     "relationship": ["分手", "复合", "追求", "约会", "恋爱", "暧昧", "前任"],
     "family":       ["结婚", "离婚", "孩子", "父母", "亲戚", "彩礼", "房产证"],
     "migration":    ["移民", "留学", "搬家", "换城市", "回老家", "出国"],
@@ -45,191 +27,6 @@ SITUATION_TYPES = {
     "finance":      ["借钱", "贷款", "负债", "债务", "信用", "房贷"],
     "other":        [],
 }
-
-
-def _classify(task_text: str) -> str:
-    """从 task_text 推断情况类型"""
-    text = task_text.lower()
-    for stype, keywords in SITUATION_TYPES.items():
-        if stype == "other":
-            continue
-        for kw in keywords:
-            if kw in text:
-                return stype
-    return "other"
-
-
-def _extract_keywords(task_text: str, max_kw: int = 8) -> str:
-    """从 task_text 提取关键词（用于匹配）"""
-    # 去停用词
-    stop = {"我", "你", "他", "她", "它", "的", "了", "是", "在", "和",
-            "要", "吗", "呢", "该", "怎么", "如何", "要不要", "要不要"}
-    words = re.findall(r'[\w]{2,}', task_text)
-    words = [w for w in words if w not in stop and not w.isdigit()]
-    # 取高频词
-    freq = {}
-    for w in words:
-        freq[w] = freq.get(w, 0) + 1
-    top = sorted(freq.items(), key=lambda x: -x[1])[:max_kw]
-    return "|".join(w for w, _ in top)
-
-
-# ── 存储 ──────────────────────────────────────────────────────
-
-def _get_conn() -> sqlite3.Connection:
-    _DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(_DB)
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
-
-
-def init():
-    """建表"""
-    conn = _get_conn()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS experiences (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            situation_type TEXT,
-            task_hash TEXT UNIQUE,
-            task_text TEXT,
-            context TEXT,
-            conclusion TEXT NOT NULL,
-            confidence REAL,
-            matched_keywords TEXT,
-            outcome TEXT,
-            outcome_notes TEXT,
-            outcome_score REAL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    # 索引：加速关键词匹配
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_type ON experiences(situation_type)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_keywords ON experiences(matched_keywords)")
-    conn.commit()
-    conn.close()
-
-
-def save_experience(
-    task_text: str,
-    conclusion: str,
-    confidence: float,
-    context: str = "",
-) -> int:
-    """
-    存一次判断经历。
-    返回 experience id。
-    """
-    task_hash = hashlib.md5(task_text.encode()).hexdigest()[:16]
-    stype = _classify(task_text)
-    keywords = _extract_keywords(task_text)
-
-    conn = _get_conn()
-    try:
-        cur = conn.execute("""
-            INSERT INTO experiences
-            (situation_type, task_hash, task_text, context, conclusion,
-             confidence, matched_keywords, created_at)
-            VALUES (?,?,?,?,?,?,?,?)
-        """, (stype, task_hash, task_text, context, conclusion,
-              confidence, keywords, datetime.now().isoformat()))
-        eid = cur.lastrowid
-        conn.commit()
-    except sqlite3.IntegrityError:
-        # 已存在，更新
-        conn.execute("""
-            UPDATE experiences
-            SET conclusion=?, confidence=?, context=?
-            WHERE task_hash=?
-        """, (conclusion, confidence, context, task_hash))
-        eid = -1  # 表示更新而非新增
-    finally:
-        conn.close()
-    return eid
-
-
-def record_outcome(
-    task_text: str,
-    outcome: str,
-    outcome_score: float = 1.0,
-    notes: str = "",
-) -> bool:
-    """事后记录结果"""
-    task_hash = hashlib.md5(task_text.encode()).hexdigest()[:16]
-    conn = _get_conn()
-    n = conn.execute("""
-        UPDATE experiences
-        SET outcome=?, outcome_score=?, outcome_notes=?
-        WHERE task_hash=?
-    """, (outcome, outcome_score, notes, task_hash)).rowcount
-    conn.commit()
-    conn.close()
-    return n > 0
-
-
-# ── 相似匹配 ──────────────────────────────────────────────────
-
-def _keyword_overlap(kw1: str, kw2: str) -> float:
-    """计算两个关键词集合的重叠度"""
-    set1 = set(kw1.split("|")) if kw1 else set()
-    set2 = set(kw2.split("|")) if kw2 else set()
-    if not set1 or not set2:
-        return 0.0
-    inter = len(set1 & set2)
-    union = len(set1 | set2)
-    return inter / union if union > 0 else 0.0
-
-
-def find_similar(
-    task_text: str,
-    limit: int = 3,
-    min_score: float = 0.15,
-) -> List[Dict]:
-    """
-    找最像的历史经历。
-    返回: [{"experience_id", "situation_type", "conclusion",
-            "confidence", "matched_keywords", "similarity", "outcome"}, ...]
-    """
-    stype = _classify(task_text)
-    keywords = _extract_keywords(task_text)
-
-    conn = _get_conn()
-    rows = conn.execute("""
-        SELECT id, situation_type, task_text, conclusion, confidence,
-               matched_keywords, outcome, outcome_score
-        FROM experiences
-        ORDER BY
-          CASE WHEN situation_type = ? THEN 1 ELSE 0 END DESC,
-          outcome_score DESC NULLS LAST,
-          created_at DESC
-        LIMIT 100
-    """, (stype,)).fetchall()
-    conn.close()
-
-    scored = []
-    for r in rows:
-        eid, rtype, rtext, rconclusion, rconf, rkw, routcome, rscore = r
-        kw_sim = _keyword_overlap(keywords, rkw or "")
-        type_bonus = 0.15 if rtype == stype else 0.0
-        score = kw_sim * 0.7 + type_bonus
-
-        if score >= min_score:
-            scored.append({
-                "experience_id": eid,
-                "situation_type": rtype,
-                "task_text": rtext,
-                "conclusion": rconclusion,
-                "confidence": rconf,
-                "matched_keywords": rkw,
-                "similarity": round(score, 3),
-                "outcome": routcome,
-                "outcome_score": rscore,
-            })
-
-    scored.sort(key=lambda x: -x["similarity"])
-    return scored[:limit]
-
-
-# ── 冷启动种子 ────────────────────────────────────────────────
 
 EXPERIENCE_SEEDS = [
     {"task": "有一笔50万存款，3%年利率，另一投资机会50%概率翻倍，50%概率亏损30%，怎么选？", "verdict": "选分散配置，不要全押高风险", "confidence": 0.80},
@@ -255,34 +52,167 @@ EXPERIENCE_SEEDS = [
 ]
 
 
-def seed_initial_experiences():
-    """用初始种子数据填充 experiences 表（冷启动，只运行一次）"""
+def _classify(task_text: str) -> str:
+    # 移除停用词短语（与 _extract_keywords 保持一致）
+    for ph in ["要不要", "该不该"]:
+        task_text = task_text.replace(ph, "")
+    text = task_text.lower()
+    for stype, keywords in SITUATION_TYPES.items():
+        if stype == "other":
+            continue
+        for kw in keywords:
+            if kw in text:
+                return stype
+    return "other"
+
+
+def _extract_keywords(task_text: str, max_kw: int = 8) -> str:
+    # 移除停用词短语
+    for ph in ["要不要", "该不该"]:
+        task_text = task_text.replace(ph, "")
+    candidates = set()
+    # 英文单词
+    for w in re.findall(r'[a-zA-Z0-9]{2,6}', task_text):
+        if not w.isdigit():
+            candidates.add(w.lower())
+    # 中文字符 bigram/trigram（在连续中文字符串上滑动）
+    chinese_chars = [c for c in task_text if '一' <= c <= '鿿']
+    for i in range(len(chinese_chars)):
+        for length in [2, 3]:  # 2字词和3字词
+            if i + length <= len(chinese_chars):
+                kw = ''.join(chinese_chars[i:i + length])
+                candidates.add(kw)
+    # 频率统计（这里简化为直接用集合去重）
+    top = sorted(candidates, key=lambda x: -len(x))[:max_kw]
+    return "|".join(top)
+
+
+def _task_hash(user_id: str, task_text: str) -> str:
+    return hashlib.md5(f"{user_id}::{task_text}".encode()).hexdigest()[:24]
+
+
+def _get_conn() -> sqlite3.Connection:
+    _DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_DB)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def init():
+    conn = _get_conn()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS experiences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            situation_type TEXT,
+            task_hash TEXT NOT NULL,
+            task_text TEXT,
+            context TEXT,
+            conclusion TEXT NOT NULL,
+            confidence REAL,
+            matched_keywords TEXT,
+            outcome TEXT,
+            outcome_notes TEXT,
+            outcome_score REAL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, task_hash)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_user ON experiences(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_type ON experiences(user_id, situation_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_kw ON experiences(user_id, matched_keywords)")
+    conn.commit()
+    conn.close()
+
+
+def save_experience(task_text: str, conclusion: str, confidence: float,
+                   context: str = "", user_id: str = "default") -> int:
+    th = _task_hash(user_id, task_text)
+    stype = _classify(task_text)
+    keywords = _extract_keywords(task_text)
+    conn = _get_conn()
+    try:
+        cur = conn.execute("""
+            INSERT INTO experiences
+            (user_id, situation_type, task_hash, task_text, context, conclusion,
+             confidence, matched_keywords, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        """, (user_id, stype, th, task_text, context, conclusion,
+              confidence, keywords, datetime.now().isoformat()))
+        eid = cur.lastrowid
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.execute("""
+            UPDATE experiences
+            SET conclusion=?, confidence=?, context=?
+            WHERE user_id=? AND task_hash=?
+        """, (conclusion, confidence, context, user_id, th))
+        eid = -1
+    finally:
+        conn.close()
+    return eid
+
+
+def record_outcome(task_text: str, outcome: str, outcome_score: float = 1.0,
+                   notes: str = "", user_id: str = "default") -> bool:
+    th = _task_hash(user_id, task_text)
+    conn = _get_conn()
+    n = conn.execute(
+        'UPDATE experiences SET outcome=?, outcome_score=?, outcome_notes=? '
+        'WHERE user_id=? AND task_hash=?',
+        (outcome, outcome_score, notes, user_id, th)).rowcount
+    conn.commit()
+    conn.close()
+    return n > 0
+
+def _keyword_overlap(kw1: str, kw2: str) -> float:
+    set1 = set(kw1.split("|")) if kw1 else set()
+    set2 = set(kw2.split("|")) if kw2 else set()
+    if not set1 or not set2: return 0.0
+    inter = len(set1 & set2)
+    # 子串匹配加分："股市" 覆盖 "进股市"，"all" 覆盖 "allin"
+    for s in list(set1):
+        for t in list(set2):
+            if s in t or t in s:
+                inter += 0.5
+    inter = min(inter, len(set1) + len(set2))
+    union = len(set1 | set2)
+    return inter / union if union > 0 else 0.0
+
+def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_id: str = "default") -> list:
+    stype = _classify(task_text)
+    keywords = _extract_keywords(task_text)
+    conn = _get_conn()
+    rows = conn.execute("SELECT id, situation_type, task_text, conclusion, confidence, matched_keywords, outcome, outcome_score FROM experiences WHERE user_id = ? ORDER BY CASE WHEN situation_type = ? THEN 1 ELSE 0 END DESC, outcome_score DESC, created_at DESC LIMIT 100", (user_id, stype)).fetchall()
+    conn.close()
+    scored = []
+    for r in rows:
+        eid, rtype, rtext, rconclusion, rconf, rkw, routcome, rscore = r
+        kw_sim = _keyword_overlap(keywords, rkw or "")
+        type_bonus = 0.15 if rtype == stype else 0.0
+        score = kw_sim * 0.7 + type_bonus
+        if score >= min_score:
+            scored.append({"experience_id": eid, "situation_type": rtype, "task_text": rtext, "conclusion": rconclusion, "confidence": rconf, "matched_keywords": rkw, "similarity": round(score, 3), "outcome": routcome, "outcome_score": rscore})
+    scored.sort(key=lambda x: -x["similarity"])
+    return scored[:limit]
+
+def get_context_for_judgment(task_text: str, user_id: str = "default") -> str:
+    similar = find_similar(task_text, limit=3, user_id=user_id)
+    if not similar: return ""
+    lines = ["\n【历史参考】这个用户（你）遇到过类似情况："]
+    for i, s in enumerate(similar, 1):
+        lines.append(str(i) + ". 情况：" + s["task_text"][:40] + "...")
+        lines.append("   判断：" + s["conclusion"])
+        if s.get("outcome"):
+            ok = "对" if s.get("outcome_score", 0) >= 0.6 else "待验证"
+            lines.append("   结果：" + s["outcome"] + "（" + ok + "）")
+        lines.append("   相似度：" + str(round(s["similarity"] * 100)) + "%")
+    return "\n".join(lines)
+
+def seed_initial_experiences(user_id: str = "default") -> int:
     init()
     added = 0
     for case in EXPERIENCE_SEEDS:
-        eid = save_experience(case["task"], case["verdict"], case["confidence"])
-        if eid != -1:
-            added += 1
+        eid = save_experience(case["task"], case["verdict"], case["confidence"], user_id=user_id)
+        if eid != -1: added += 1
     return added
-
-
-def get_context_for_judgment(task_text: str) -> str:
-    """
-    为判断生成历史参考上下文。
-    拼成一段 prompt-friendly 的文字。
-    """
-    similar = find_similar(task_text, limit=3)
-    if not similar:
-        return ""
-
-    lines = ["\n【历史参考】顾庸x 遇到过类似情况："]
-    for i, s in enumerate(similar, 1):
-        lines.append(f"{i}. 情况：{s['task_text'][:40]}...")
-        lines.append(f"   判断：{s['conclusion']}")
-        if s.get("outcome"):
-            lines.append(f"   结果：{s['outcome']}（{'对' if s.get('outcome_score',0)>=0.6 else '待验证'}）")
-        lines.append(f"   相似度：{s['similarity']:.0%}")
-    return "\n".join(lines)
-
-
-#
