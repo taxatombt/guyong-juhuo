@@ -30,7 +30,7 @@ except ImportError:
 from judgment.dimensions import DIMENSIONS
 from causal_memory import recall_causal_history, inject_to_judgment_input, find_similar_events, init
 from judgment.closed_loop import start_verdict_listener
-from judgment.self_evolover import start_evolver_scheduler
+from judgment.self_evolver import start_evolver_scheduler
 
 # Verdict 自动积累
 from evolver.verdict_collector import save_verdict as _save_auto_verdict, VerdictRecord

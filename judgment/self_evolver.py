@@ -1,7 +1,7 @@
 # Shim: re-export from canonical new location
 # Migration: 2026-04-18
-# OLD: judgment/self_evolover.py  →  NEW: subsystems/judgment/self_evolover.py
-from subsystems.judgment.self_evolover import (
+# OLD: judgment/self_evolver.py  →  NEW: subsystems/judgment/self_evolver.py
+from subsystems.judgment.self_evolver import (
     sync_to_self_model, check_trigger,
     get_cases, compute_new_weights, compare, apply_evolved_weights,
     run_evolution_cycle,

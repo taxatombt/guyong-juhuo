@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-self_evolover.py — Juhuo Self-Evolver 自动闭环引擎
+self_evolver.py — Juhuo Self-Evolver 自动闭环引擎
 
 核心闭环：
 1. Hook捕获判断数据 → self_model更新
@@ -12,7 +12,7 @@ self_evolover.py — Juhuo Self-Evolver 自动闭环引擎
 触发方式：
 - 自动：EvolverScheduler (定时检查)
 - 手动：run_evolution_cycle()
-- CLI: python -m judgment.self_evolover
+- CLI: python -m judgment.self_evolver
 """
 
 import json

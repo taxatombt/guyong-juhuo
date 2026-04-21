@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-test_self_evolover.py — Self-Evolver 闭环测试
+test_self_evolver.py — Self-Evolver 闭环测试
 """
 
 import sys
@@ -51,7 +51,7 @@ def init_test_db():
 
 def test_sync_to_self_model():
     """测试1: Hook数据同步到self_model"""
-    from judgment.self_evolover import sync_to_self_model
+    from judgment.self_evolver import sync_to_self_model
     from judgment.judgment_db import get_conn
     from datetime import datetime
     
@@ -75,7 +75,7 @@ def test_sync_to_self_model():
 
 def test_evolution_trigger():
     """测试2: 检查触发条件"""
-    from judgment.self_evolover import check_trigger
+    from judgment.self_evolver import check_trigger
     
     result = check_trigger()
     print(f"[测试2] 触发检查: {result}")
@@ -85,7 +85,7 @@ def test_evolution_trigger():
 
 def test_rule_training():
     """测试3: 规则训练"""
-    from judgment.self_evolover import get_cases, compute_new_weights
+    from judgment.self_evolver import get_cases, compute_new_weights
     
     cases = get_cases()
     print(f"[测试3] 获取案例: {len(cases)} 条")
@@ -99,7 +99,7 @@ def test_rule_training():
 
 def test_evolution_cycle():
     """测试4: 完整闭环"""
-    from judgment.self_evolover import run_evolution_cycle
+    from judgment.self_evolver import run_evolution_cycle
     
     result = run_evolution_cycle()
     print(f"[测试4] 闭环结果: {result['status']}")
