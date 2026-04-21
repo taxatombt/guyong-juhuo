@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0] - 2026-04-21
+
+### Added
+- **三途径信息层** — 真正的判断依据是价值观+经历+直觉
+  - `judgment/biography.py`: 生平事实层（P1），26条正则，8类：年龄/职业/家庭/财务/所在地/健康/价值观/学历
+  - `judgment/exiences.py`: 经历层（v1），20条冷启动种子，判断偏好历史
+  - `judgment/behavior_logger.py`: 行为日志层（P2），8个 ActionChannel，工具调用链
+  - router.py 集成：biography 自动抽取+注入，experiences 查询+存储，behavior 记录
+  - cli.py 新增：`bio show/add/list`、`behavior stats/list/show` 命令
+
+- **Life OS v3** — 精力/情绪驱动的任务调度
+  - `life_os.py` 完全重建：`_juhuo_rank()` 直接调用 MiniMax adapter（单 prompt，绕过 10 维 pipeline 超时）
+  - 两模式：`--juhuo` 调用 LLM 排序，`--juhuo` 时 API 超载 fallback 到 60% 均分
+  - verdict 解析：从 `排序:[1,2,...]` 提取排名映射置信度（第1名=100%，第2名=85%...）
+  - MiniMax `<think>` 块太长导致正文为空：手动 `re.sub(r"<think>.*?</think>","",...)` 提取
+
+- **experiences layer v1** — 判断偏好历史存储
+  - `experiences` 表：`user_id` 隔离，`situation_type` 9类，`task_hash` 防重复
+  - `find_similar()`: sliding window 中文 bigram 关键词提取 + substring 匹配
+  - `get_context_for_judgment()`: 历史相似判断作为 prompt 上下文注入
+  - 20 条 EXPERIENCE_SEEDS 冷启动数据
+
+### Fixed
+- `judgment/router.py`: 删除本地影子 `_answer_questions`（与 `llm_calls.py` 不同步），委托 canonical 版本
+- `judgment/llm_calls.py`: 补全缺失 `get_adapter`/`CompletionRequest` import
+- experiences bug：`全仓进股市` 被贪心切词切断 → sliding window 方案
+- experiences bug：`type_bonus=0` → 加 `["股市","全仓"]` 到 investment 类型
+
+### Changed
+- `_answer_questions` 超时问题：轻量化绕道——`_juhuo_rank()` 直接 adapter call，不走完整 check10d pipeline
+- MiniMax `disable_thinking=True` 无效：prompt 很长时 `<reasoning>` 块占满 output token，正文为空 → 手动后处理
+
+---
+
 ## [1.9] - 2026-04-18
 
 ### Added
@@ -176,4 +210,4 @@ juhuo/
 
 ---
 
-_Last updated: 2026-04-17_
+_Last updated: 2026-04-21_
