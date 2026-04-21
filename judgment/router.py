@@ -187,109 +187,6 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
     return "\n".join(parts)
 
 
-def _answer_questions(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None, history_context: str = "") -> dict:
-    """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
-    adapter = get_adapter()
-
-    # 如果没有配置api_key（环境变量也没有），返回空
-    if not adapter.is_configured():
-        print("[LLM] MiniMax未配置 api_key，跳过answer生成")
-        return {}
-
-    prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj, history_context)
-
-    # 截断prompt（LLM context limit）
-    if len(prompt) > 6000:
-        prompt = prompt[:6000] + "\n[内容过长已截断]"
-
-    try:
-        response = adapter.complete(CompletionRequest(
-            prompt=prompt,
-            max_tokens=2048,
-            temperature=0.7,
-        ))
-
-        # ── InsightTracker: 记录 token 消耗 ─────────────────────────
-        try:
-            from judgment.insight_tracker import insight_tracker
-            _t = insight_tracker()
-            _t.record_input(response.usage_input if hasattr(response, 'usage_input') and response.usage_input else len(prompt) // 4)
-            _t.record_output(response.usage_output if hasattr(response, 'usage_output') and response.usage_output else len(response.content) // 4)
-            if hasattr(response, 'cost') and response.cost:
-                _t.record_cost(response.cost)
-        except Exception:
-            pass
-
-        if not response.success:
-            print(f"[LLM] 调用失败: {response.error}")
-            return {}
-
-        # 简单按行解析：格式为 "【维度名】回答内容"
-        answers = {}
-        current_dim = None
-        current_content = []
-
-        dim_labels_inv = {
-            "认知维度": "cognitive",
-            "博弈维度": "game_theory",
-            "经济维度": "economic",
-            "辩证维度": "dialectical",
-            "情绪维度": "emotional",
-            "直觉维度": "intuitive",
-            "道德维度": "moral",
-            "社会维度": "social",
-            "时间维度": "temporal",
-            "元认知维度": "metacognitive",
-        }
-
-        for line in response.content.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-
-            # 检测维度标题行
-            matched_dim = None
-            for label, dim_id in dim_labels_inv.items():
-                if label in line:
-                    matched_dim = dim_id
-                    break
-
-            if matched_dim:
-                # 保存上一维度的答案
-                if current_dim and current_content:
-                    answers[current_dim] = " ".join(current_content).strip()
-                current_dim = matched_dim
-                current_content = []
-                # 去除标题，只保留后面的内容
-                rest = line.split("】", 1)
-                if len(rest) > 1:
-                    content = rest[1].strip()
-                    if content:
-                        current_content.append(content)
-            elif current_dim and line:
-                # 普通内容行，拼接到当前维度
-                current_content.append(line)
-
-        # 保存最后一个维度
-        if current_dim and current_content:
-            answers[current_dim] = " ".join(current_content).strip()
-
-        return answers
-
-    except Exception as e:
-        print(f"[LLM] 回答生成异常: {e}")
-        return {}
-
-
-# 维度优先级分类
-# 优先级原则（聚活项目设计）：
-# - game_theory / emotional 永远必检（人类最常踩这俩坑）
-# - economic / cognitive 基础维度
-MUST_CHECK = ["game_theory", "emotional", "cognitive", "economic"]
-IMPORTANT = ["dialectical", "intuitive", "moral", "social"]
-NICE_TO_HAVE = ["temporal", "metacognitive"]
-
-
 def _keyword_match(text, keywords):
     text_lower = text.lower()
     for kw in keywords:
@@ -643,7 +540,12 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
     # 经历层：先获取历史相似判断作为上下文
     _history_ctx = get_context_for_judgment(task_text, user_id)
-    answers = _answer_questions(task_text, all_questions, agent_profile, _prior_adj, _history_ctx)
+    # 生平事实层
+    _bio_facts = extract_bio(task_text)
+    if _bio_facts:
+        log_bio_batch(_bio_facts, source="auto")
+    _bio_ctx = get_bio_context()
+    answers = _answer_questions(task_text, all_questions, agent_profile, _prior_adj, _history_ctx, _bio_ctx)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
