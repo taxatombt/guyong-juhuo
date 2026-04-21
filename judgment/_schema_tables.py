@@ -23,7 +23,7 @@ _TABLE_DEFS = [
      "created_at TEXT DEFAULT (datetime('now')), PRIMARY KEY(id,chain_id)"),
     ("verdict_outcomes",
      "id INTEGER PRIMARY KEY, chain_id TEXT, task_text TEXT, correct INTEGER, "
-     "notes TEXT, created_at TEXT DEFAULT (datetime('now'))"),
+     "notes TEXT, outcome_score REAL, created_at TEXT DEFAULT (datetime('now'))"),
     ("experiences",
      "id INTEGER PRIMARY KEY, user_id TEXT DEFAULT 'default', situation_type TEXT, "
      "task_hash TEXT, task_text TEXT, context TEXT, conclusion TEXT, confidence REAL, "

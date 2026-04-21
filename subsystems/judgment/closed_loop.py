@@ -185,24 +185,21 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
         c.commit()
 
-        _trigger_fitness(chain_id,task_text,correct,changes)
+        _trigger_fitness(chain_id,task_text,correct,changes,outcome_score)
 
         _trigger_curiosity(chain_id,task_text,correct,changes)
 
         
 
         # 【闭环Step3】Self-Evolver 验证闭环 — 记录每次判决结果
-
+        # outcome_score → correct_for_belief（outcome_score>=0.5为正确）
+        _score = outcome_score if outcome_score is not None else (1.0 if correct else 0.0)
+        _correct_for_belief = (1 if _score >= 0.5 else 0)
         try:
-
             from .self_evolver import EvolverScheduler
-
             _sch = EvolverScheduler()
-
-            _sch.record_outcome(1 if correct else 0)
-
-            _logger.debug(f"[self_evolver] recorded outcome: correct={correct}")
-
+            _sch.record_outcome(_correct_for_belief)
+            _logger.debug(f"[self_evolver] recorded outcome: correct={_correct_for_belief} (score={_score:.2f})")
         except Exception as e:
 
             _logger.debug(f"[self_evolver] record_outcome skip: {e}")
@@ -327,42 +324,28 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
 
 
-def _trigger_fitness(chain_id,task_text,correct,changes):
-
+def _trigger_fitness(chain_id,task_text,correct,changes,outcome_score=None):
+    # outcome_score → correct 信号映射（0.0=灾难性失败，0.2=判断有偏差，≥0.5=正确）
+    _score = outcome_score if outcome_score is not None else (1.0 if correct else 0.0)
+    _correct_for_belief = (_score >= 0.5)
     try:
-
         from .fitness_baseline import FitnessBaseline
-
-        FitnessBaseline().record(chain_id,task_text,correct,changes)
-
+        FitnessBaseline().record(chain_id,task_text,_correct_for_belief,changes)
     except Exception as e:_logger.debug(f"fitness trigger skip: {e}")
-
     # P1改进: fitness_evolution反馈循环
-
     try:
-
         from .fitness_evolution import record_judgment_outcome
-
         dims = list(changes.keys()) if changes else []
-
         weights = {dim: changes[dim].get("belief_after", 0.5) for dim in dims} if changes else {}
-
         if dims:
-
             record_judgment_outcome(
-
                 chain_id=chain_id,
-
                 task_text=task_text or "",
-
                 dimensions=dims,
-
                 weights=weights,
-
-                correct=correct,
-
+                correct=_correct_for_belief,
+                outcome_score=_score,
             )
-
     except Exception as e2:_logger.debug(f"fitness_evolution trigger skip: {e2}")
 
 

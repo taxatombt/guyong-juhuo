@@ -263,17 +263,50 @@ def _score_verdict_candidate(sent: str, position_boost: float = 0.0) -> float:
 
 
 
+def _extract_sentences(text: str) -> list:
+    """将文本切分为句子列表（句号/感叹号/问号分隔）"""
+    # 用省略号分隔防止"综合以上分析，建议..."被当作一句
+    text2 = text.replace('...', '<<<SEP>>>').replace('……', '<<<SEP>>>')
+    parts = re.split(r'([。！？])', text2)
+    sentences = []
+    for i in range(0, len(parts) - 1, 2):
+        sent = parts[i].strip()
+        punct = parts[i + 1]
+        combined = sent + punct if punct else sent
+        if sent:
+            sentences.append(combined)
+    if len(parts) % 2 == 1 and parts[-1].strip():
+        sentences.append(parts[-1].strip())
+    return sentences
+
+
+def _clean_thinking_blocks(text: str) -> str:
+    """
+    清理 XML thinking/reasoning 标签块，同时保留正文内容。
+    MiniMax 的 <reasoning>...</reasoning> 块里往往有大量思考过程，
+    但有时也会包含具体的维度和结论，需要从末尾提取。
+    """
+    # 策略：把 <reasoning>...</reasoning> 整体当作正文末尾的候选区
+    # 但先提取所有正文部分
+    cleaned = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL)
+    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<[^>]+>', '', cleaned)  # 去掉其余 XML 标签
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
+
+
 def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
     """
-    从 LLM 直接输出的结论行提取 verdict：
-    1. 优先取 ## 最终结论 行
-    2. 其次取 => 结论行（取最后一个）
-    3. 最后 fallback
+    从 LLM 输出合成 verdict（句子级评分版）：
+    1. 优先取 ## 最终结论 / ## 最终判断 格式结构
+    2. 正文句子级评分（行动词+结论词加权，模糊词/犹豫扣分）
+    3. thinking block 末尾加权（+0.15 位置加成）
+    4. 取最高分句子，阈值 0.08
     """
     if not answers:
         return ("需要更多信息才能判断", 0.3)
 
-    # 合并所有维度的 content
+    # 1. 合并所有维度的 content
     raw = ""
     for dim, ans in answers.items():
         if isinstance(ans, dict) and "content" in ans:
@@ -284,23 +317,63 @@ def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
     if not raw:
         return ("需要更多信息才能判断", 0.3)
 
-    # Step 1: 优先取 ## 最终结论 行
-    # 格式：## 最终结论[：:\s]+结论内容
-    m_final = re.search(r'##\s*最终结论[：:\s]+(.+)', raw)
-    if m_final:
-        verdict = m_final.group(1).strip()
-        if 5 <= len(verdict) <= 60:
-            confidence = min(0.90, 0.50 + len(answers) * 0.05)
-            return (verdict[:60], confidence)
+    # 2. 清理 XML 标签
+    after = _clean_thinking_blocks(raw)
 
-    # Step 2: 取最后一个 => 结论行
+    # 3. Step 0: 优先取 ## 最终结论 / ## 最终判断
+    m_final = re.search(
+        r'##\s*最终(结论|判断|建议)[：:\s]+(.+)', after, re.DOTALL)
+    if m_final:
+        verdict = m_final.group(2).strip()[:60]
+        if len(verdict) >= 4:
+            confidence = min(0.90, 0.50 + len(answers) * 0.05)
+            return (verdict, confidence)
+
+    # 4. Step 1: 正文（非 thinking block）句子级评分选最佳
+    best_score = 0.0
+    best_sent = ""
+    for sent in _extract_sentences(after):
+        s = _score_verdict_candidate(sent)
+        if s > best_score:
+            best_score = s
+            best_sent = sent[:60]
+    if best_score >= 0.08 and best_sent:
+        confidence = min(0.88, 0.42 + best_score * 0.3 + len(answers) * 0.03)
+        return (best_sent, confidence)
+
+    # 5. Step 2: 从 thinking blocks 提取（MiniMax 主要内容在 <reasoning> 里）
+    thinking_blocks = re.findall(
+        r'<reasoning>(.*?)</reasoning>', raw, re.DOTALL)
+    if not thinking_blocks:
+        # fallback: 也找 <think>
+        thinking_blocks = re.findall(
+            r'<think>(.*?)</think>', raw, re.DOTALL)
+
+    best_score2 = 0.0
+    best_sent2 = ""
+    for idx, block in enumerate(thinking_blocks):
+        block_clean = re.sub(r'<[^>]+>', '', block).strip()
+        position_boost = 0.15 * (idx + 1) / max(len(thinking_blocks), 1)
+        for sent in _extract_sentences(block_clean):
+            s = _score_verdict_candidate(sent, position_boost=position_boost)
+            if s > best_score2:
+                best_score2 = s
+                best_sent2 = sent[:60]
+
+    if best_score2 >= 0.08 and best_sent2:
+        confidence = min(0.85, 0.40 + best_score2 * 0.3 + len(answers) * 0.03)
+        return (best_sent2, confidence)
+
+    # 6. Step 3: 取最后一个 => 结论行（降级兜底）
     conclusion_lines = re.findall(r'=>\s*(.+)', raw)
     if conclusion_lines:
-        verdict = conclusion_lines[-1].strip()
-        if 5 <= len(verdict) <= 60:
-            confidence = min(0.88, 0.45 + len(answers) * 0.05)
-            return (verdict[:60], confidence)
+        verdict = conclusion_lines[-1].strip()[:60]
+        if len(verdict) >= 4:
+            return (verdict, 0.42 + len(answers) * 0.04)
 
-    # Step 3: fallback
+    # 7. Fallback: 最高分正文句子
+    if best_sent:
+        return (best_sent, 0.38 + len(answers) * 0.03)
+
     confidence = 0.38 + len(answers) * 0.04
     return ("需要更多信息才能判断", confidence)

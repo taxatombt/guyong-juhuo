@@ -137,15 +137,27 @@ def save_judgment(
 
 
 # ── 写入Verdict ────────────────────────────────────────────────────
-def save_verdict(chain_id: str, task_text: str, correct: bool, notes: str = "") -> bool:
-    """保存判断结果反馈"""
+def save_verdict(chain_id: str, task_text: str, correct: bool, notes: str = "",
+                  outcome_score: float = None) -> bool:
+    """保存判断结果反馈（outcome_score 非空则存储到 verdict_outcomes 表）"""
     now = datetime.now().isoformat()
+    # outcome_score 非空时用它覆盖 correct（更精确的连续分数）
+    _correct = 1 if correct else 0
+    _score = outcome_score  # 可能为 None
     try:
         with get_conn() as c:
-            c.execute("""
-                INSERT INTO verdict_outcomes (chain_id, task_text, correct, notes, created_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, (chain_id, task_text or "", 1 if correct else 0, notes[:200], now))
+            # 尝试写入带 outcome_score 的列（表可能已升级）
+            try:
+                c.execute("""
+                    INSERT INTO verdict_outcomes (chain_id, task_text, correct, notes, outcome_score, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (chain_id, task_text or "", _correct, notes[:200], _score, now))
+            except Exception:
+                # 表无 outcome_score 列，降级写入
+                c.execute("""
+                    INSERT INTO verdict_outcomes (chain_id, task_text, correct, notes, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (chain_id, task_text or "", _correct, notes[:200], now))
             c.commit()
         return True
     except Exception as e:
