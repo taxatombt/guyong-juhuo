@@ -89,3 +89,5 @@ _gen*.py
 _make_life_os.py
 _test*.py
 _testga.py
+data/evolutions/evolved_weights.json
+data/evolutions/*.json
