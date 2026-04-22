@@ -120,6 +120,20 @@ def receive_actual_choice(chain_id, actual_action):
     n_exp = c.rowcount
     conn.commit()
     conn.close()
+
+    # Trigger belief update via receive_verdict (uses outcome_score to drive dimension beliefs)
+    # receive_verdict is already imported at module top
+    try:
+        _correct = bool(score >= 0.5)
+        receive_verdict(
+            chain_id=chain_id,
+            correct=_correct,
+            outcome_score=score,
+            notes=f"actual_choice: predicted={predicted_action[:50]} actual={actual_action[:50]}"
+        )
+    except Exception as _e:
+        import sys; print(f"receive_verdict call failed: {_e}", file=sys.stderr)
+
     return {
         "ok": True,
         "chain_id": chain_id,

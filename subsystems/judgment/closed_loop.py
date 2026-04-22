@@ -177,7 +177,13 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
         if not target: return {"updated":False,"reason":"no_record_found"}
 
-        rec_id,dims_json=target;dims_data=json.loads(dims_json);correction=1.0 if correct else -1.0;changes={}
+        rec_id,dims_json=target;dims_data=json.loads(dims_json)
+        _score = outcome_score if outcome_score is not None else (1.0 if correct else 0.0)
+        # [P0 Fix] outcome_score drives belief update: direction by score>=0.5, magnitude by |score-0.5|*2
+        _correct_for_belief = (_score >= 0.5)
+        _magnitude = abs(_score - 0.5) * 2  # 0.0->-1.0, 0.5->0.0, 1.0->+1.0
+        _sign = 1.0 if _correct_for_belief else -1.0
+        changes={}
 
         for dim_id in dims_data.get("dims",[]):
 
@@ -185,9 +191,10 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
             if not row: continue
 
-            b,h,m=row;delta=max(-MAX_DELTA,min(MAX_DELTA,BELIEF_DECAY*correction));nb=max(SAT_LOW,min(SAT_HIGH,b+delta))
-
-            c.execute("UPDATE dimension_beliefs SET belief=?,hit_count=?,miss_count=?,last_updated=datetime('now') WHERE dimension=?",(nb,h+(1 if correct else 0),m+(0 if correct else 1),dim_id))
+            b,h,m=row
+            delta=max(-MAX_DELTA,min(MAX_DELTA,BELIEF_DECAY*_magnitude*_sign))
+            nb=max(SAT_LOW,min(SAT_HIGH,b+delta))
+            c.execute("UPDATE dimension_beliefs SET belief=?,hit_count=?,miss_count=?,last_updated=datetime('now') WHERE dimension=?",(nb,h+(1 if _correct_for_belief else 0),m+(0 if _correct_for_belief else 1),dim_id))
 
             changes[dim_id]={"belief_before":round(b,4),"belief_after":round(nb,4),"delta":round(delta,4)}
 

@@ -15,17 +15,17 @@
     }
   },
   "weights": {
-    "cognitive": 0.9,
-    "game_theory": 0.6,
-    "economic": 0.5,
-    "dialectical": 0.5,
-    "emotional": 0.5,
-    "intuitive": 0.4,
-    "moral": 0.4,
-    "social": 0.4,
-    "temporal": 0.4,
-    "metacognitive": 0.4
+    "cognitive": 0.75,
+    "game_theory": 0.75,
+    "economic": 0.75,
+    "dialectical": 0.75,
+    "emotional": 0.75,
+    "intuitive": 0.75,
+    "moral": 0.75,
+    "social": 0.75,
+    "temporal": 0.75,
+    "metacognitive": 0.75
   },
   "total_decisions": 2,
-  "updated_at": "2026-04-20T11:54:40.616807"
+  "updated_at": "2026-04-23T02:15:41.628117"
 }
