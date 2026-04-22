@@ -112,29 +112,63 @@ class UnifiedContext:
 
 # 语义维度配置
 _SEMANTIC_DIMENSIONS = {
+    # ── 已有4维 ──────────────────────────────────────────────
     "risk_tolerance": {
         "l1_claims": ["保守", "稳健", "风险厌恶", "不冒险", "怕亏", "谨慎投资", "稳健型", "低风险"],
         "l2_patterns": ["all in", "全仓", "高杠杆", "炒股", "投机", "赌博", "激进", "加杠杆", "追涨"],
-        "severity": "high",
-        "penalty": 0.4,
+        "severity": "high", "penalty": 0.4,
     },
     "career_ambition": {
         "l1_claims": ["稳定就好", "不卷", "躺平", "安稳", "保守", "不想冒险"],
         "l2_patterns": ["创业", "跳槽", "辞职", "all in", "转型", "裸辞", "拼命工作", "高强度"],
-        "severity": "high",
-        "penalty": 0.4,
+        "severity": "high", "penalty": 0.4,
     },
     "financial_habit": {
         "l1_claims": ["量入为出", "存钱", "节俭", "不乱花钱", "储蓄", "理性消费"],
         "l2_patterns": ["高消费", "贷款消费", "超前消费", "奢侈品", "冲动购物"],
-        "severity": "medium",
-        "penalty": 0.3,
+        "severity": "medium", "penalty": 0.3,
     },
     "relationship_style": {
         "l1_claims": ["独立", "不依赖", "理性", "不感情用事"],
         "l2_patterns": ["闪婚", "闪离", "异地恋", "网恋", "情感用事", "为爱放弃"],
-        "severity": "low",
-        "penalty": 0.2,
+        "severity": "low", "penalty": 0.2,
+    },
+    # ── 新增6维 ──────────────────────────────────────────────
+    # 时间偏好 → temporal 维度
+    "time_preference": {
+        "l1_claims": ["不急", "慢慢来", "长期持有", "有耐心", "不急于", "观望", "延迟满足"],
+        "l2_patterns": ["all in", "短期", "追热点", "快进快出", "炒短线", "赚快钱", "速战速决"],
+        "severity": "medium", "penalty": 0.3,
+    },
+    # 社会影响 → social 维度
+    "social_influence": {
+        "l1_claims": ["不听建议", "自己判断", "独立思考", "不跟风", "我有主见"],
+        "l2_patterns": ["跟朋友", "听专家", "看新闻买", "跟大V", "朋友推荐", "亲戚说", "从众"],
+        "severity": "medium", "penalty": 0.3,
+    },
+    # 学习风格 → metacognitive 维度
+    "learning_style": {
+        "l1_claims": ["研究透了", "分析清楚", "搞明白了", "充分调研", "调查过", "做过功课"],
+        "l2_patterns": ["冲动决定", "凭感觉", "没了解", "凭直觉", "拍脑袋", "没想清楚"],
+        "severity": "medium", "penalty": 0.3,
+    },
+    # 情绪调节 → emotional 维度
+    "emotional_regulation": {
+        "l1_claims": ["冷静", "理性", "不受情绪影响", "淡定", "沉稳", "稳住"],
+        "l2_patterns": ["后悔", "焦虑", "恐慌", "上头", "兴奋", "FOMO", "害怕错过", "贪婪", "恐惧"],
+        "severity": "medium", "penalty": 0.3,
+    },
+    # 健康习惯 → cognitive 维度（影响精力/判断力）
+    "health_habit": {
+        "l1_claims": ["注重健康", "坚持运动", "作息规律", "养生", "锻炼身体"],
+        "l2_patterns": ["熬夜", "久坐", "不运动", "透支", "疲劳", "精力差", "亚健康"],
+        "severity": "low", "penalty": 0.2,
+    },
+    # 人生目标 → dialectical 维度（辩证分析的核心参照）
+    "life_goal": {
+        "l1_claims": ["财务自由", "提前退休", "安定生活", "事业有成", "家庭幸福", "自我实现"],
+        "l2_patterns": ["为钱冒险", "牺牲家庭", "不顾健康", "all in事业", "放弃生活"],
+        "severity": "high", "penalty": 0.4,
     },
 }
 
