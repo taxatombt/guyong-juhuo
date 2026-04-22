@@ -17,7 +17,7 @@ class JudgmentConfig:
         self.lesson_recording = True
         self.llm_provider = "minimax"
         self.llm_api_key = os.environ.get("MINIMAX_API_KEY", "")
-        self.llm_model = "MiniMax-M2"
+        self.llm_model = "MiniMax-M2.7"
         self.max_token = 4096
         self.temperature = 0.7
 
