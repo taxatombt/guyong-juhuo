@@ -159,6 +159,22 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
             if _snap and _snap[0]:
                 task_text = _snap[0]  # 覆盖 None，确保后续 record_outcome 能触发
 
+            # 【P0核心修复】causal_chain 里 corrected=1（已被处理），
+            # fallback 到 judgment_snapshots.dimensions（judgment_snapshots 才是真实数据源）
+            if not target:
+                _snap_dims = c.execute("""
+                    SELECT dimensions, corrected FROM judgment_snapshots
+                    WHERE chain_id=? AND dimensions IS NOT NULL AND dimensions != '[]'
+                    LIMIT 1
+                """, (chain_id,)).fetchone()
+                if _snap_dims:
+                    dims_json, _corrected = _snap_dims
+                    # judgment_snapshots.dimensions 是 JSON list: ["cognitive", "game_theory", ...]
+                    # 转为 causal_chain 兼容的 {"dims": [...]} 格式
+                    dims_list = json.loads(dims_json) if dims_json else []
+                    if dims_list:
+                        target = (-1, json.dumps({"dims": dims_list}))
+
         elif task_text:
 
             r=c.execute("""

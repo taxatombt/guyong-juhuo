@@ -111,29 +111,32 @@ def cmd_status():
 
 
 
-def cmd_actual(args):
-    """Record actual choice and compute outcome_score"""
-    chain_id = getattr(args, 'chain_id', None)
-    actual = getattr(args, 'actual', None)
-    if not chain_id or not actual:
-        print("Usage: verdict --actual -c <chain_id> -a \"actual choice\"")
-        return
+def _find_latest_pending_judgment():
+    """找到最近一条还没反馈的判断"""
+    import sqlite3
+    db = r"E:\juhuo\data\juhuo.db"
+    conn = sqlite3.connect(db)
     try:
-        from judgment.verdict_collector import receive_actual_choice
-        result = receive_actual_choice(chain_id, actual)
-        if result.get("ok"):
-            pred = result.get("predicted_action", "")
-            score = result.get("outcome_score", 0)
-            hit = result.get("hit", False)
-            hit_str = "\u2713 \u547d\u4e2d" if hit else "\u2717 \u672a\u547d\u4e2d"
-            print(f"\u673a\u5236\u9884\u6d4b: {pred}")
-            print(f"\u7528\u6237\u5b9e\u9645: {actual}")
-            print(f"\u547d\u4e2d\u72b6\u6001: {hit_str}")
-            print(f"outcome_score: {score:.2f}")
-        else:
-            print(f"\u9519\u8bef: {result.get('error', 'unknown')}")
-    except Exception as e:
-        print(f"ERROR: {e}")
+        row = conn.execute("""
+            SELECT chain_id, task_text, verdict, predicted_action, confidence, outcome_auto
+            FROM judgment_snapshots
+            WHERE task_text IS NOT NULL AND task_text != ''
+            ORDER BY created_at DESC
+            LIMIT 5
+        """).fetchone()
+        if row:
+            return {
+                "chain_id": row[0],
+                "task_text": row[1],
+                "verdict": row[2],
+                "predicted_action": row[3],
+                "confidence": row[4],
+                "outcome_auto": row[5],
+            }
+    finally:
+        conn.close()
+    return None
+
 
 def cmd_verdict(args):
     """Verdict 管理"""
@@ -167,9 +170,43 @@ def cmd_verdict(args):
     elif args.action == "actual":
         chain_id = args.chain_id_arg or args.chain_id
         actual = args.actual_arg
-        if not chain_id or not actual:
-            print("Usage: verdict actual -c <chain_id> -a \"用户实际\u9009\u62e9\"")
+
+        # P0: 无 chain_id → 自动找最新判断并交互输入
+        if not chain_id:
+            pending = _find_latest_pending_judgment()
+            if not pending:
+                print("没有找到待反馈的判断记录")
+                return
+            chain_id = pending["chain_id"]
+            task = pending["task_text"]
+            verdict = pending["verdict"] or ""
+            predicted = pending["predicted_action"] or ""
+            has_feedback = pending["outcome_auto"] is not None
+
+            print(f"\n最近判断: {chain_id}")
+            print(f"  问题: {task}")
+            if verdict:
+                print(f"  建议: {verdict[:80]}")
+            if predicted:
+                print(f"  预测你会选: {predicted[:60]}")
+            if has_feedback:
+                print(f"  ⚠️ 已有反馈 (outcome={pending['outcome_auto']})")
+            print(f"\n→ 输入实际选择，回车确认")
+            print(f"→ 或按 Ctrl+C 取消")
+            try:
+                actual = input("实际选择> ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\n已取消")
+                return
+            if not actual:
+                print("已取消")
+                return
+
+        if not actual:
+            print("Usage: juhuo verdict actual \"你的实际选择\"  （自动匹配最近判断）")
+            print("       juhuo verdict actual -c <chain_id> -a \"实际选择\"  （指定判断）")
             return
+
         try:
             from judgment.verdict_collector import receive_actual_choice
             result = receive_actual_choice(chain_id, actual)
