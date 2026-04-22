@@ -252,7 +252,9 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     ctx = run_pipeline(ctx)
     
     # Pipeline 输出回写局部变量（兼容后续逻辑）
-    task_text = ctx.merge_prompt_context()     # 合并后的 prompt
+    # 注意：不再用 merge_prompt_context() 拼接文本
+    # 三路数据统一通过 inject_unified_profile → _profile_entries → _answer_questions
+    task_text = ctx.task_text                   # 原始任务，不含拼接上下文
     emotion_modulation = ctx.emotion_modulation
     emotion_detection = ctx.emotion_detection
     causal_result = ctx.causal_result
@@ -327,6 +329,8 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     prior_adj = ctx.prior_adjustments
     # P0 FIX: ctx.unified_context 已在 merge_prompt_context() 里（inject_user_model 生成）
     # 不再单独传 history_context / bio_context（避免重复注入 prompt）
+    # UnifiedProfile entries：ctx._profile_entries 由 inject_user_model 填充
+    _profile_entries = getattr(ctx, '_profile_entries', None) or []
     answers = _answer_questions(
         ctx.merge_prompt_context(),  # unified_context 优先 + 三路已合并
         questions,
@@ -334,6 +338,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         prior_adj,
         "",  # 不再单独传 history_context（已合并到 unified_context）
         "",  # 不再单独传 bio_context（已合并到 unified_context）
+        _profile_entries,  # UnifiedProfile.to_prompt() 标注注入
     )
 
     _ret = {
@@ -496,6 +501,9 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
             "to": _ret["confidence"],
         }
 
+    # UnifiedProfile entries 透传给外部（供 check10d_run / API 使用）
+    _ret["_profile_entries"] = _profile_entries
+
     return _ret
 
 
@@ -536,9 +544,12 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     # Pipeline 编排（同步版，复用 check10d 已构建的 ctx）
     _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
     # P0 FIX: base_result["task"] 是 merge_prompt_context() 的结果（含 unified_context）
-    # 不再单独传 history_context / bio_context（已合并到 base_result["task"]）
-    _merged_prompt = base_result.get("task", task_text)
-    answers = _answer_questions(_merged_prompt, all_questions, agent_profile, _prior_adj, "", "")
+    # 不再传 merge_prompt_context() 的拼接结果
+    # 三路数据统一通过 inject_unified_profile → _profile_entries
+    _merged_prompt = task_text  # 原始任务，profile 由 _answer_questions 注入
+    _profile_entries = base_result.get("_profile_entries", []) or []
+    answers = _answer_questions(_merged_prompt, all_questions, agent_profile,
+                                _prior_adj, "", "", _profile_entries)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])

@@ -35,6 +35,7 @@ class Fact:
     tags: List[str]
     time_weight: float = 1.0
     contradiction_flag: bool = False
+    half_life_days: int = 365  # P1: 分级半衰期，0=永不过期
 
 
 @dataclass
@@ -56,6 +57,36 @@ class Intent:
     source: str
     relevance: float = 0.5
     recency: str = ""
+
+@dataclass
+class BehaviorEntry:
+    behavior_id: str
+    channel: str
+    conclusion: str
+    tool_calls: List[str]
+    outcome_score: Optional[float]
+    created_at: str
+
+
+
+@dataclass
+class ProfileEntry:
+    """
+    统一条目：三条通路的数据统一成同一个结构。
+    
+    source:   "fact" / "pattern" / "signal"
+    priority: 1 (L1 主动确认) / 2 (L2 行为推断) / 3 (L3 被动信号)
+    dimension: 关联的判断维度
+    """
+    source: str          # "fact" | "pattern" | "signal"
+    priority: int         # 1 > 2 > 3
+    dimension: str       # 判断维度 id
+    claim: str            # 主张内容
+    evidence: str         # 原始证据（来源文本）
+    confidence: float     # 原始置信度
+    recency_score: float  # 时间衰减后的权重
+    contradiction_flag: bool = False
+    profile_id: str = ""  # 关联的 DB row id ("fact:{id}" / "pattern:{id}")
 
 
 @dataclass
@@ -126,13 +157,23 @@ class UserModel:
         self.user_id = user_id
         self._bio_db = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
         self._juhuo_db = Path(__file__).parent.parent / "data" / "juhuo.db"
-        self._pi_db = self._juhuo_db  # perception_intents 表，与 juhuo.db 同库
+        self._pi_db = self._juhuo_db
+        self._profile_entries: List[ProfileEntry] = []
 
     def get_context_for_task(self, task_text: str, user_id: Optional[str] = None) -> UnifiedContext:
         uid = user_id or self.user_id
         facts = self._get_l1_facts(uid)
-        patterns = self._get_l2_patterns(uid)
-        intents = self._get_l3_intents(task_text)
+        patterns = self._get_l2_patterns(task_text, uid)
+        behaviors = self._get_l3_behaviors(uid)
+        intents = self._get_l3_intents(task_text, uid)
+        for b in behaviors:
+            intents.append(Intent(
+                topic="[agent:{}] {}".format(b.channel, b.conclusion[:40]),
+                summary=b.conclusion[:100],
+                source="behavior:{}".format(b.channel),
+                relevance=b.outcome_score or 0.5,
+                recency=b.created_at,
+            ))
         facts = self._apply_time_decay(facts, self.FACT_HALF_LIFE)
         patterns = self._apply_time_decay(patterns, self.PATTERN_HALF_LIFE)
         contradictions = self._detect_contradictions(facts, patterns)
@@ -144,8 +185,19 @@ class UserModel:
         facts = self._filter_by_task_relevance(facts, task_text)[:self.MAX_FACTS]
         patterns = self._filter_by_task_relevance(patterns, task_text)[:self.MAX_PATTERNS]
         time_summary = self._time_summary(facts, patterns)
-        return UnifiedContext(facts=facts, patterns=patterns, intents=intents,
+        ctx = UnifiedContext(facts=facts, patterns=patterns, intents=intents,
                              contradictions=contradictions, **time_summary)
+        self._profile_entries = UnifiedProfile().generate(ctx, task_text)
+        for c_ in contradictions:
+            update_profile_on_contradiction(c_, ctx)
+        return ctx
+
+    def generate_profile(self, ctx: UnifiedContext, task_text: str) -> List[ProfileEntry]:
+        self._profile_entries = UnifiedProfile().generate(ctx, task_text)
+        return self._profile_entries
+
+    def get_profile(self) -> List[ProfileEntry]:
+        return self._profile_entries
 
     def synthesize(self, ctx: UnifiedContext, task_text: str) -> str:
         parts = []
@@ -181,7 +233,7 @@ class UserModel:
         conn.row_factory = sqlite3.Row
         try:
             rows = conn.execute(
-                "SELECT category, fact, confidence, importance, created_at, last_seen, mentions, tags "
+                "SELECT category, fact, confidence, importance, created_at, last_seen, mentions, tags, half_life_days "
                 "FROM biographical_facts ORDER BY importance DESC, mentions DESC LIMIT 50").fetchall()
         finally:
             conn.close()
@@ -200,43 +252,59 @@ class UserModel:
                 last_seen=r["last_seen"] or r["created_at"] or "",
                 mentions=int(r["mentions"] or 1),
                 tags=tags,
+                half_life_days=r["half_life_days"] if r["half_life_days"] is not None else 365,
             ))
         return facts
 
-    # L2: Experience patterns
-    def _get_l2_patterns(self, user_id: str) -> List[Pattern]:
-        db = self._juhuo_db
-        if not db.exists():
-            return []
-        conn = sqlite3.connect(str(db))
-        conn.row_factory = sqlite3.Row
+    # L2: Experience patterns - find_similar_structured
+    # 铁律: experiences > biography > behavior
+    def _get_l2_patterns(self, task_text: str, user_id: str = "default") -> List[Pattern]:
         try:
-            rows = conn.execute(
-                "SELECT situation_type, task_text, conclusion, outcome_score, outcome, "
-                "matched_keywords, created_at FROM experiences WHERE user_id = ? "
-                "ORDER BY created_at DESC LIMIT 50",
-                (user_id,)).fetchall()
-        finally:
-            conn.close()
+            from judgment.experiences import find_similar_structured
+            rows = find_similar_structured(task_text, user_id=user_id, limit=10)
+        except Exception:
+            return []
         patterns = []
         for r in rows:
-            kws = []
-            if r["matched_keywords"]:
-                try: kws = json.loads(r["matched_keywords"])
-                except: pass
-            patterns.append(Pattern(
-                situation_type=r["situation_type"] or "other",
-                task_text=r["task_text"] or "",
-                conclusion=r["conclusion"] or "",
-                outcome_score=float(r["outcome_score"]) if r["outcome_score"] is not None else None,
-                outcome=r["outcome"],
-                keywords=kws,
-                created_at=r["created_at"] or "",
-            ))
+            p = Pattern(
+                situation_type=r.get("situation_type","other"),
+                task_text=r.get("task_text",""),
+                conclusion=r.get("conclusion",""),
+                outcome_score=r.get("outcome_score"),
+                outcome=r.get("outcome"),
+                keywords=r.get("keywords",[]),
+                created_at=r.get("created_at",""),
+            )
+            p.recency_score = r.get("similarity",0.5)
+            patterns.append(p)
         return patterns
 
     # L3: Perception intents — 从三个来源汇聚
-    def _get_l3_intents(self, task_text: str) -> List[Intent]:
+    def _get_l3_behaviors(self, user_id: str = "default", limit: int = 10) -> List[BehaviorEntry]:
+        try:
+            from judgment.behavior_logger import get_recent_behaviors
+            rows = get_recent_behaviors(user_id=user_id, limit=limit)
+        except Exception:
+            return []
+        entries = []
+        for r in rows:
+            tc = []
+            if r.get("tool_calls"):
+                try:
+                    tc = json.loads(r["tool_calls"]) if isinstance(r["tool_calls"], str) else list(r["tool_calls"])
+                except: pass
+            entries.append(BehaviorEntry(
+                behavior_id=str(r.get("behavior_id","")),
+                channel=r.get("action_channel","JUDGMENT"),
+                conclusion=r.get("conclusion",""),
+                tool_calls=tc,
+                outcome_score=r.get("outcome_score"),
+                created_at=r.get("created_at",""),
+            ))
+        return entries
+
+
+    def _get_l3_intents(self, task_text: str, user_id: str = "default") -> List[Intent]:
         intents = []
         seen_topics = set()
 
@@ -368,7 +436,11 @@ class UserModel:
                     weight = 0.5
                 else:
                     days = max(0, (now - dt).total_seconds() / 86400)
-                    weight = math.pow(0.5, days / half_life)
+                    item_hl = getattr(item, "half_life_days", None)
+                    if item_hl is None or item_hl == 0:
+                        weight = 1.0  # 永不过期
+                    else:
+                        weight = math.pow(0.5, days / item_hl)
             item.recency_score = weight
             if hasattr(item, "time_weight"):
                 item.time_weight = weight
@@ -492,3 +564,142 @@ def _cleanup_expired():
         conn.close()
     except Exception:
         pass
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# UnifiedProfile — 三路 Profile 统一结构 + Self-Evolver 进化反馈
+# ════════════════════════════════════════════════════════════════════════════
+
+class UnifiedProfile:
+    """三路 Profile 统一结构。priority: 1(L1主动确认)>2(L2行为推断)>3(L3被动信号)"""
+    DIMENSION_KEYWORDS = {
+        "cognitive":     ["思考","分析","信息","认知","判断","学习"],
+        "game_theory":   ["博弈","对方","竞争","合作","谈判"],
+        "economic":      ["成本","收益","金钱","财务","经济","收入","划算"],
+        "dialectical":   ["矛盾","对立","两面","辩证","利弊","权衡"],
+        "emotional":     ["情绪","感受","心情","焦虑","兴奋","恐惧","喜悦"],
+        "intuitive":     ["直觉","第六感","感觉","本能"],
+        "moral":         ["道德","责任","义务","对错","伦理"],
+        "social":        ["人际","关系","社交","朋友","家人","同事"],
+        "temporal":      ["时间","时机","长期","短期","未来","过去"],
+        "metacognitive": ["反思","自我","元认知"],
+    }
+
+    def generate(self, ctx, task_text: str = "") -> List[ProfileEntry]:
+        entries = []
+        task_lower = task_text.lower()
+        for f in (ctx.facts or []):
+            dim = self._match_dimension(f.fact + f.category, task_lower)
+            entries.append(ProfileEntry(
+                source="fact", priority=1, dimension=dim, claim=f.fact,
+                evidence="bio:{} conf={} imp={}".format(f.category, f.confidence, f.importance),
+                confidence=f.confidence, recency_score=getattr(f, "time_weight", 1.0),
+                contradiction_flag=getattr(f, "contradiction_flag", False),
+                profile_id="fact:{}:{}".format(f.category, hash(f.fact) % 999999)))
+        for p in (ctx.patterns or []):
+            text = (p.conclusion or "") + " " + (p.task_text or "")
+            dim = self._match_dimension(text, task_lower)
+            out_str = " -> {}".format(p.outcome) if p.outcome else ""
+            entries.append(ProfileEntry(
+                source="pattern", priority=2, dimension=dim,
+                claim="{}{}".format(p.conclusion, out_str),
+                evidence="exp:{} kw={}".format(p.situation_type, ",".join(p.keywords[:5])),
+                confidence=p.outcome_score or 0.6,
+                recency_score=getattr(p, "recency_score", 1.0),
+                contradiction_flag=False,
+                profile_id="pattern:{}:{}".format(p.situation_type, hash(p.conclusion or '') % 999999)))
+        for i in (ctx.intents or []):
+            dim = self._match_dimension(i.summary + i.topic, task_lower)
+            entries.append(ProfileEntry(
+                source="signal", priority=3, dimension=dim,
+                claim="{}: {}".format(i.topic, i.summary[:60]),
+                evidence="perc:{} rel={}".format(i.source, i.relevance),
+                confidence=i.relevance, recency_score=1.0,
+                contradiction_flag=False,
+                profile_id="signal:{}:{}".format(i.topic[:20], hash(i.summary) % 999999)))
+        for c_ in (ctx.contradictions or []):
+            for e in entries:
+                if e.source == "fact" and c_.l1_claim[:20] in e.claim:
+                    e.priority = 3
+                    e.contradiction_flag = True
+        entries.sort(key=lambda x: (x.priority, -x.recency_score))
+        return entries
+
+    def get_for_task(self, entries: List[ProfileEntry], dimension: str = "") -> List[ProfileEntry]:
+        filtered = [e for e in entries if e.dimension == dimension] if dimension else list(entries)
+        filtered.sort(key=lambda x: (x.priority if not x.contradiction_flag else 99, -x.recency_score))
+        return filtered
+
+    def _match_dimension(self, text: str, task_lower: str = "") -> str:
+        text_lower = text.lower()
+        best, score = "cognitive", 0
+        for dim, kws in self.DIMENSION_KEYWORDS.items():
+            s = sum(1 for kw in kws if kw in text_lower)
+            if s > score:
+                score = s
+                best = dim
+        return best
+
+    def to_prompt(self, entries: List[ProfileEntry], dimension: str = "") -> str:
+        """ProfileEntry -> 带优先级标注的 prompt 文本"""
+        dim_entries = self.get_for_task(entries, dimension=dimension)
+        if not dim_entries:
+            return ""
+        parts = []
+        for src, lbl in [("fact","Fact-高可信"),("pattern","Pattern-行为"),("signal","Signal-被动")]:
+            for e in [x for x in dim_entries if x.source == src]:
+                flag = " [矛盾]" if e.contradiction_flag else ""
+                parts.append("[{}]{} {}".format(lbl, flag, e.claim))
+        return "\\n".join(parts)
+
+    def to_summary(self, entries: List[ProfileEntry]) -> str:
+        if not entries:
+            return "No profile data yet."
+        core = [e for e in entries if e.priority == 1 and not e.contradiction_flag]
+        patterns = [e for e in entries if e.source == "pattern"]
+        contradictions = [e for e in entries if e.contradiction_flag]
+        lines = []
+        if core:
+            lines.append("[User Profile]")
+            for e in core[:5]:
+                lines.append("  - {}".format(e.claim))
+        if patterns:
+            lines.append("[Behavior Patterns]")
+            for e in patterns[:3]:
+                lines.append("  - {}".format(e.claim))
+        if contradictions:
+            lines.append("[Behavioral Drift]")
+            for e in contradictions[:3]:
+                lines.append("  WARNING: {} (claimed vs acted)".format(e.claim))
+        return "\\n".join(lines) if lines else "No profile data yet."
+
+
+def update_profile_on_contradiction(contradiction: Contradiction, ctx: UnifiedContext) -> bool:
+    """L1 claim 和 L2 behavior 矛盾时 -> 降低 biography fact 的 importance"""
+    severity_map = {"high": 3, "medium": 2, "low": 1}
+    penalty = severity_map.get(contradiction.severity, 0)
+    if not penalty:
+        return False
+    bio_db = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+    if not bio_db.exists():
+        return False
+    conn = None
+    try:
+        conn = sqlite3.connect(str(bio_db), timeout=10)
+        conn.row_factory = sqlite3.Row
+        for fact in (ctx.facts or []):
+            if contradiction.l1_claim[:20] in fact.fact:
+                new_imp = max(1, (fact.importance or 1) - penalty)
+                tags = json.dumps(["contradiction_flagged",
+                                   "contradicted_by:" + contradiction.dimension], ensure_ascii=False)
+                conn.execute("UPDATE biographical_facts SET importance=?, tags=? WHERE fact=?",
+                           (new_imp, tags, fact.fact))
+                conn.commit()
+                return True
+    except Exception:
+        pass
+    finally:
+        if conn:
+            conn.close()
+    return False
+

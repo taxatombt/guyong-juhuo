@@ -67,6 +67,74 @@ def inject_experiences(ctx: JudgmentContext) -> JudgmentContext:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
+# Injector 3: UnifiedProfile — 单一汇聚点，三路合一
+# 替代 biography + experiences + causal_memory 三个独立inject
+# ════════════════════════════════════════════════════════════════════════════
+
+def inject_unified_profile(ctx: JudgmentContext) -> JudgmentContext:
+    """
+    单一汇聚层。三路都是它的输入，router 只读它的输出。
+
+    L1 biographical_facts（带时间衰减，半衰期 365d）
+    L2 experiences（带 outcome_score，半衰期 180d）
+    L3 perception_intents（带 relevance，半衰期 30d）
+
+    生成：
+      ctx._unified_context_obj: UnifiedContext（结构化）
+      ctx._profile_entries: List[ProfileEntry]（已排序、带矛盾flag）
+      ctx.unified_profile: UnifiedProfile 对象（to_prompt 按维度提取）
+      ctx.unified_context: str（供 merge_prompt_context 旧接口兼容）
+
+    矛盾处理：
+      L1 claim vs L2 behavior → priority=3，contradiction_flag=True
+      Self-report bias：Kahneman System 1/2 → 行为数据 > 自我报告
+    """
+    from judgment.user_model import UserModel, UnifiedProfile
+
+    # ① 传记抽取：从当前任务提取新 fact，写入 biography 表
+    # （inject_biography 的职责，已合并进本 injector）
+    try:
+        from .biography import extract_bio, log_bio_batch
+        new_facts = extract_bio(ctx.task_text)
+        if new_facts:
+            log_bio_batch(new_facts, source="auto")
+        ctx.bio_facts = new_facts or []
+    except Exception:
+        ctx.bio_facts = []
+
+    um = UserModel(user_id=ctx.user_id)
+
+    # ② 读取三路数据 → UnifiedContext（结构化）
+    ctx_uc = um.get_context_for_task(ctx.task_text, ctx.user_id)
+
+    # 生成 ProfileEntry 列表（已排序：L1>L2>L3，矛盾fact→priority=3）
+    entries = um.generate_profile(ctx_uc, ctx.task_text)
+
+    # 矛盾时自动回写 biography 表（Self-Evolver 反馈）
+    if ctx_uc.contradictions:
+        for contradiction in ctx_uc.contradictions:
+            try:
+                from judgment.user_model import update_profile_on_contradiction
+                update_profile_on_contradiction(contradiction, ctx_uc)
+            except Exception:
+                pass
+
+    ctx._unified_context_obj = ctx_uc
+    ctx._profile_entries = entries
+    ctx.unified_profile = UnifiedProfile()
+
+    # 兼容文本（merge_prompt_context 旧接口，降级用）
+    ctx.unified_context = um.synthesize(ctx_uc, ctx.task_text)
+
+    # 旧字段也设置（向后兼容）
+    ctx.bio_context = ""      # 不再单独注入，由 unified_profile 统一管理
+    ctx.history_context = ""  # 同上
+    ctx.causal_context = ""   # 同上
+
+    return ctx
+
+
 # Injector 3: Causal Memory — 途径3，因果记忆
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -140,31 +208,44 @@ def inject_self_model(ctx: JudgmentContext) -> JudgmentContext:
 
 def inject_user_model(ctx: JudgmentContext) -> JudgmentContext:
     """
-    UserModel 汇聚层注入：
-    1. 从 biography（L1）、experiences（L2）、causal_memory（L3）获取结构化数据
-    2. 时间衰减：fact 半衰期 365天，pattern 半衰期 180天
-    3. 矛盾检测：L1 claim vs L2 pattern 检测
-    4. 按任务相关性过滤
-    5. 合成 unified_context 覆盖旧三路上下文
+    补全 Self-Model 层。
 
-    运行在 L1/L2/L3 注入器之后。
+    inject_unified_profile 已完成三路汇聚（inject 3）。
+    本 injector 补充：
+      - 矛盾标记写入 skipped_dimensions
+      - 确保 unified_context 文本存在（向后兼容）
+
+    如果 inject_unified_profile 已设置 ctx._profile_entries，直接使用。
     """
+    if getattr(ctx, '_profile_entries', None):
+        # inject_unified_profile 已完成汇聚，直接补充 skipped_dimensions
+        ctx_uc = getattr(ctx, '_unified_context_obj', None)
+        if ctx_uc and ctx_uc.contradictions:
+            ctx.skipped_dimensions = getattr(ctx, 'skipped_dimensions', [])
+            for c_ in ctx_uc.contradictions:
+                ctx.skipped_dimensions.append(
+                    "contradiction:{} vs {}".format(c_.l1_claim[:30], c_.l2_behavior[:30])
+                )
+        # 确保 unified_context 文本存在
+        if not getattr(ctx, 'unified_context', ''):
+            ctx.unified_context = "[User Profile] data loaded"
+        return ctx
+
+    # 兜底：独立运行（正常不会走到这里）
     try:
         from .user_model import UserModel
-        um = UserModel()
-        unified_ctx = um.get_context_for_task(ctx.task_text, ctx.user_id)
-        unified_text = um.synthesize(unified_ctx, ctx.task_text)
-        ctx.unified_context = unified_text
-
-        # 矛盾标记存到 ctx（供 downstream 使用）
-        if unified_ctx.contradictions:
-            ctx.skipped_dimensions = getattr(ctx, 'skipped_dimensions', [])
-            for c in unified_ctx.contradictions:
-                ctx.skipped_dimensions.append(
-                    f"contradiction:{c.l1_claim[:30]} vs {c.l2_behavior[:30]}"
-                )
-    except Exception as e:
-        # 降级：不阻断判断流程
+        um = UserModel(user_id=ctx.user_id)
+        ctx_uc = um.get_context_for_task(ctx.task_text, ctx.user_id)
+        entries = um.generate_profile(ctx_uc, ctx.task_text)
+        ctx._profile_entries = entries
+        ctx._unified_context_obj = ctx_uc
+        ctx.unified_context = um.synthesize(ctx_uc, ctx.task_text)
+        ctx.skipped_dimensions = []
+        for c_ in ctx_uc.contradictions:
+            ctx.skipped_dimensions.append(
+                "contradiction:{} vs {}".format(c_.l1_claim[:30], c_.l2_behavior[:30])
+            )
+    except Exception:
         pass
 
     return ctx
@@ -226,11 +307,18 @@ def run_pipeline(ctx: JudgmentContext) -> JudgmentContext:
     """
     完整编排：按顺序执行所有注入器。
     router.py 的 check10d 只调用这一句。
+
+    注入顺序：
+      1. inject_emotion        — 情绪 PAD 调制
+      2. inject_unified_profile — 三路合一汇聚（L1+L2+L3+矛盾+时间衰减）
+      3. inject_self_model     — 动态权重 prior_adjustments
+      4. inject_user_model     — 补全矛盾标记 + 向后兼容
+
+    注意：inject_biography / inject_experiences / inject_causal_memory
+          已由 inject_unified_profile 替代，不再单独调用。
     """
     ctx = inject_emotion(ctx)
-    ctx = inject_biography(ctx)
-    ctx = inject_experiences(ctx)
-    ctx = inject_causal_memory(ctx)
+    ctx = inject_unified_profile(ctx)   # 单一汇聚：三路 + 矛盾 + 时间衰减
     ctx = inject_self_model(ctx)
-    ctx = inject_user_model(ctx)
+    ctx = inject_user_model(ctx)        # 补全：矛盾标记 + 向后兼容
     return ctx

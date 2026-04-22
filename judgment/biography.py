@@ -1,9 +1,44 @@
 # biography.py — 途径1：生平事实层（用户自述信息）
 # 位置：judgment/biography.py（与 experiences.py 同目录）
 # 数据：data/causal_memory/events.db
-import json, re
+import json, re, sqlite3
 from pathlib import Path
 _DB_PATH = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+
+# P1: 分级半衰期（天）— 永不过期用 0 表示
+CATEGORY_HALF_LIFE = {
+    "demographic":  0,     # 永不过期：性别/民族
+    "finance":      90,    # 收入/存款会变
+    "health":       180,   # 健康状态中等
+    "career":       180,   # 职业可能换
+    "family":       365,   # 家庭状态
+    "location":     365,   # 所在地
+    "education":    730,   # 学历基本不变
+    "values":       730,   # 价值观极慢变
+    "personality":  730,   # 性格几乎不变
+    "default":      365,
+}
+
+def _default_half_life(cat: str) -> int:
+    return CATEGORY_HALF_LIFE.get(cat, 365)
+
+# P1: biography 表迁移
+def _migrate_bio_table():
+    db = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db))
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(biographical_facts)")]
+        if "half_life_days" not in cols:
+            conn.execute("ALTER TABLE biographical_facts ADD COLUMN half_life_days INTEGER")
+            rows = conn.execute("SELECT rowid, category FROM biographical_facts WHERE half_life_days IS NULL").fetchall()
+            for rowid, cat in rows:
+                conn.execute("UPDATE biographical_facts SET half_life_days=? WHERE rowid=?",
+                             (_default_half_life(cat or "default"), rowid))
+            conn.commit()
+    finally:
+        conn.close()
+_migrate_bio_table()
 
 def _age(m): return m.group(1) + "岁"
 def _age_born(m): return m.group(1) + "年出生"
@@ -121,10 +156,11 @@ def log(fact: str, category: str, importance: int = 1,
             "WHERE category=? AND fact=?", (category, fact)).rowcount
         if n == 0:
             cur = conn.execute(
-                "INSERT INTO biographical_facts (category,fact,importance,source,tags,confidence) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO biographical_facts (category,fact,importance,source,tags,confidence,half_life_days) "
+                "VALUES (?,?,?,?,?,?,?)",
                 (category, fact, importance, source,
-                 json.dumps(tags or [], ensure_ascii=False), confidence))
+                 json.dumps(tags or [], ensure_ascii=False), confidence,
+                 _default_half_life(category)))
             conn.commit()
             return cur.lastrowid
         else:

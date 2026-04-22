@@ -285,6 +285,33 @@ def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_i
     scored.sort(key=lambda x: -x["similarity"])
     return scored[:limit]
 
+
+def find_similar_structured(task_text: str, user_id: str = "default", limit: int = 10) -> list:
+    """
+    P0 融合: similarity(0.6) + keyword_overlap(0.4)
+    返回比 find_similar 更完整的结构，含 keywords + created_at
+    """
+    results = find_similar(task_text, limit=limit, user_id=user_id)
+    for r in results:
+        # 解析 matched_keywords
+        kw_str = r.get("matched_keywords", "")
+        if kw_str:
+            try:
+                r["keywords"] = _json.loads(kw_str) if kw_str.startswith("[") else [kw_str]
+            except Exception:
+                r["keywords"] = [kw_str] if kw_str else []
+        else:
+            r["keywords"] = []
+        # 补充 created_at
+        eid = r.get("experience_id")
+        if eid:
+            row = _get_conn().execute(
+                "SELECT created_at FROM experiences WHERE id = ?", (eid,)
+            ).fetchone()
+            r["created_at"] = row["created_at"] if row else ""
+    return results
+
+
 def get_context_for_judgment(task_text: str, user_id: str = "default") -> str:
     similar = find_similar(task_text, limit=3, user_id=user_id)
     if not similar: return ""
