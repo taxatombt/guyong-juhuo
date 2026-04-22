@@ -388,7 +388,6 @@ def _trigger_fitness(chain_id,task_text,correct,changes,outcome_score=None):
                 outcome=_outcome_label,
                 outcome_score=_score,
                 notes="closed_loop trigger - outcome_score updated",
-                chain_id=chain_id or "",
             )
     except Exception as e3:_logger.debug(f"experiences outcome skip: {e3}")
 
