@@ -219,11 +219,15 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 
 > 方向收拢：因果记忆选型已完成，Self-Evolver 目标降级为「维度权重自动调整」。
 
-- [x] **Verdict 数据积累** — 49条 verdict_outcomes（2026-04-21 v1.8）
+- [x] **Verdict 数据积累** — 41条 verdict_outcomes（2026-04-22 v2.0）
 - [x] **维度权重闭环** — verdict → belief → prior_adj → LLM prompt 全通（2026-04-21 v1.8）
 - [x] **三途径信息层** — biography 生平 + experiences 经历 + behavior 行为日志（v2.0）
 - [x] **Life OS v3** — 精力/情绪驱动任务调度，rules + juhuo 双模式（v2.0）
-- [ ] **生产数据积累** — InsightTracker 读数达到可读报告（需要真实 verdicts 驱动）（JSONL主力，SQLite归档 __trash__/）（v1.7）
+- [x] **UnifiedProfile 单汇聚层** — inject_unified_profile 唯一入口，pipeline 325→265行（v2.0 2026-04-22）
+- [x] **三路优先级铁律** — experiences > biography > behavior，per-item half_life_days（v2.0 2026-04-22）
+- [x] **P1 矛盾双向检测** — L1 降 priority=3，L2 升 priority=1，to_prompt 结构化（v2.0 2026-04-22）
+- [x] **experiences embedding v1** — MiniMax ebo-01 向量 + cosine similarity 混合检索（v2.0 2026-04-22）
+- [ ] **生产数据积累** — 真实 verdicts 驱动（benchmark 22-case → 真实 outcome 积累中）（v2.0）
 - [x] Self-Evolver rollback 修复 + 验证闭环（v1.6）
 - [x] judgment/config.py 集中生产配置（v1.6）
 - [x] GDPVal Benchmark 22案例 + A/B/C/D 评分（v1.6）
