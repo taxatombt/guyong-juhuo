@@ -152,7 +152,8 @@ def _get_embedding(text: str) -> str:
 
 
 def save_experience(task_text: str, conclusion: str, confidence: float,
-                   context: str = "", user_id: str = "default") -> int:
+                   context: str = "", user_id: str = "default",
+                   perception_summary: str = "") -> int:
     th = _task_hash(user_id, task_text)
     stype = _classify(task_text)
     keywords = _extract_keywords(task_text)
@@ -162,21 +163,39 @@ def save_experience(task_text: str, conclusion: str, confidence: float,
         cur = conn.execute("""
             INSERT INTO experiences
             (user_id, situation_type, task_hash, task_text, context, conclusion,
-             confidence, matched_keywords, created_at, task_embedding)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+             confidence, matched_keywords, created_at, task_embedding,
+             perception_summary)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """, (user_id, stype, th, task_text, context, conclusion,
-              confidence, keywords, datetime.now().isoformat(), embedding))
+              confidence, keywords, datetime.now().isoformat(), embedding,
+              perception_summary))
         eid = cur.lastrowid
         conn.commit()
     except sqlite3.IntegrityError:
         conn.execute("""
             UPDATE experiences
-            SET conclusion=?, confidence=?, context=?, task_embedding=COALESCE(task_embedding, ?)
+            SET conclusion=?, confidence=?, context=?, task_embedding=COALESCE(task_embedding, ?),
+                perception_summary=COALESCE(?, perception_summary)
             WHERE user_id=? AND task_hash=?
-        """, (conclusion, confidence, context, embedding, user_id, th))
+        """, (conclusion, confidence, context, embedding, perception_summary, user_id, th))
         eid = -1
     finally:
         pass  # P0-1: 不关闭 per-thread 连接
+
+    # L3: 感知结果同步写入 perception_intents 表
+    if perception_summary:
+        try:
+            from judgment.user_model import save_perception_result
+            save_perception_result(
+                source="manual",
+                topic=stype or "perception",
+                content=perception_summary,
+                url="",
+                priority=3,
+            )
+        except Exception:
+            pass
+
     return eid
 
 

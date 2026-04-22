@@ -23,9 +23,10 @@ class JudgmentContext:
     user_id: str = "default"
     
     # 注入器填充的上下文
-    bio_context: str = ""           # 途径1：生平事实
-    history_context: str = ""       # 途径2：历史相似判断
-    causal_context: str = ""        # 途径3：因果记忆摘要
+    bio_context: str = ""           # 途径1：生平事实（已被 unified_context 替代）
+    history_context: str = ""       # 途径2：历史相似判断（已被 unified_context 替代）
+    causal_context: str = ""        # 途径3：因果记忆摘要（已被 unified_context 替代）
+    unified_context: str = ""       # UserModel 汇聚层（L1+L2+L3+矛盾检测+时间衰减）
     emotion_hint: str = ""          # 情绪调制提示
     hook_context: str = ""          # Hook召回上下文
     
@@ -52,7 +53,16 @@ class JudgmentContext:
             parts.append(f"\n{self.causal_context}")
         if self.history_context:
             parts.append(f"\n{self.history_context}")
-        if self.bio_context:
-            parts.append(f"\n{self.bio_context}")
-            
+        # 优先使用 UserModel 汇聚层
+        if self.unified_context:
+            parts.append(f"\n{self.unified_context}")
+        else:
+            # 旧模式：三个通道各自拼接（向后兼容）
+            if self.bio_context:
+                parts.append(f"\n{self.bio_context}")
+            if self.history_context:
+                parts.append(f"\n{self.history_context}")
+            if self.causal_context:
+                parts.append(f"\n{self.causal_context}")
+
         return "\n".join(parts)

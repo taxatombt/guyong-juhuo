@@ -135,6 +135,42 @@ def inject_self_model(ctx: JudgmentContext) -> JudgmentContext:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Injector 6: UserModel — 三路汇聚层（L1+L2+L3+矛盾检测+时间衰减）
+# ════════════════════════════════════════════════════════════════════════════
+
+def inject_user_model(ctx: JudgmentContext) -> JudgmentContext:
+    """
+    UserModel 汇聚层注入：
+    1. 从 biography（L1）、experiences（L2）、causal_memory（L3）获取结构化数据
+    2. 时间衰减：fact 半衰期 365天，pattern 半衰期 180天
+    3. 矛盾检测：L1 claim vs L2 pattern 检测
+    4. 按任务相关性过滤
+    5. 合成 unified_context 覆盖旧三路上下文
+
+    运行在 L1/L2/L3 注入器之后。
+    """
+    try:
+        from .user_model import UserModel
+        um = UserModel()
+        unified_ctx = um.get_context_for_task(ctx.task_text, ctx.user_id)
+        unified_text = um.synthesize(unified_ctx, ctx.task_text)
+        ctx.unified_context = unified_text
+
+        # 矛盾标记存到 ctx（供 downstream 使用）
+        if unified_ctx.contradictions:
+            ctx.skipped_dimensions = getattr(ctx, 'skipped_dimensions', [])
+            for c in unified_ctx.contradictions:
+                ctx.skipped_dimensions.append(
+                    f"contradiction:{c.l1_fact[:30]} vs {c.l2_pattern[:30]}"
+                )
+    except Exception as e:
+        # 降级：不阻断判断流程
+        pass
+
+    return ctx
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # Prefetch — 每轮前背景召回（Hermes 启发）
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -196,4 +232,5 @@ def run_pipeline(ctx: JudgmentContext) -> JudgmentContext:
     ctx = inject_experiences(ctx)
     ctx = inject_causal_memory(ctx)
     ctx = inject_self_model(ctx)
+    ctx = inject_user_model(ctx)
     return ctx
