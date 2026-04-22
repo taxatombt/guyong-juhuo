@@ -11,6 +11,7 @@
 # 测试：可直接 pytest mock _MOCK_ADAPTER，不依赖 router.py
 
 from __future__ import annotations
+import json
 import re
 from typing import Dict, List, Optional
 from llm_adapter import get_adapter, CompletionRequest
@@ -117,7 +118,7 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
         prompt = prompt[:6000] + "\n[内容过长已截断]"
 
     try:
-        # 15秒超时，防止MiniMax API无响应时永久阻塞
+        # 80秒超时，覆盖 retry 最大等待（5+15+30=50s + 读时间）
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(adapter.complete, CompletionRequest(
                 prompt=prompt,
@@ -125,9 +126,9 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
                 temperature=0.7,
             ))
             try:
-                response = future.result(timeout=15)
+                response = future.result(timeout=80)
             except FuturesTimeoutError:
-                print("[LLM] API调用超时（15秒），跳过answer生成")
+                print("[LLM] API调用超时（80秒），跳过answer生成")
                 return {}
 
         # ── InsightTracker: 记录 token 消耗 ─────────────────────────
@@ -145,25 +146,143 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
             print(f"[LLM] 调用失败: {response.error}")
             return {}
 
-        # 简单按行解析：格式为 "【维度名】回答内容"
+        raw = response.content.strip()
+
+        # ── 尝试 JSON 格式解析（MiniMax-M2 倾向返回 JSON）─────────────
         answers = {}
+        dim_name_to_id = {
+            "cognitive": "cognitive",
+            "game_theory": "game_theory",
+            "economic": "economic",
+            "dialectical": "dialectical",
+            "emotional": "emotional",
+            "intuitive": "intuitive",
+            "moral": "moral",
+            "social": "social",
+            "temporal": "temporal",
+            "metacognitive": "metacognitive",
+            # 中文别名
+            "认知": "cognitive",
+            "博弈": "game_theory",
+            "经济": "economic",
+            "辩证": "dialectical",
+            "情绪": "emotional",
+            "直觉": "intuitive",
+            "道德": "moral",
+            "社会": "social",
+            "时间": "temporal",
+            "元认知": "metacognitive",
+        }
+
+        # 1. 尝试 JSON array: [{"dimension": "...", "reason": "..."}, ...]
+        try:
+            # 找 JSON 数组
+            json_match = re.search(r'\[\s*\{', raw)
+            if json_match:
+                json_str = raw[json_match.start():]
+                # 补全可能的截断 JSON
+                items = json.loads(json_str)
+                for item in items:
+                    dim_raw = item.get("dimension", item.get("dim", ""))
+                    reason = item.get("reason", item.get("analysis", item.get("reasoning", "")))
+                    dim_id = dim_name_to_id.get(dim_raw.lower(), dim_name_to_id.get(dim_raw))
+                    if dim_id and reason:
+                        answers[dim_id] = reason
+        except Exception:
+            pass
+
+        # 2. 尝试单对象 JSON: {"dimension": "...", "reason": "..."}
+        if not answers:
+            try:
+                # 去掉 markdown code block
+                cleaned = re.sub(r'^```json\s*', '', raw)
+                cleaned = _re.sub(r'^```\s*', '', cleaned)
+                cleaned = cleaned.strip('` \n')
+                obj = json.loads(cleaned)
+                dim_raw = obj.get("dimension", obj.get("dim", ""))
+                reason = obj.get("reason", obj.get("analysis", obj.get("reasoning", "")))
+                dim_id = dim_name_to_id.get(dim_raw.lower(), dim_name_to_id.get(dim_raw))
+                if dim_id and reason:
+                    answers[dim_id] = reason
+            except Exception:
+                pass
+
+        # 3. 行解析（原有格式：【维度名】内容）
+        if not answers:
+            answers = {}
+            dim_labels_inv = {
+                "【认知维度】": "cognitive",
+                "【博弈维度】": "game_theory",
+                "【经济维度】": "economic",
+                "【辩证维度】": "dialectical",
+                "【情绪维度】": "emotional",
+                "【直觉维度】": "intuitive",
+                "【道德维度】": "moral",
+                "【社会维度】": "social",
+                "【时间维度】": "temporal",
+                "【元认知维度】": "metacognitive",
+                # ## 标题格式（无【】）
+                "## 认知": "cognitive",
+                "## 博弈": "game_theory",
+                "## 经济": "economic",
+                "## 辩证": "dialectical",
+                "## 情绪": "emotional",
+                "## 直觉": "intuitive",
+                "## 道德": "moral",
+                "## 社会": "social",
+                "## 时间": "temporal",
+                "## 元认知": "metacognitive",
+                # 中文维度名（无括号）
+                "认知维度": "cognitive",
+                "博弈维度": "game_theory",
+                "经济维度": "economic",
+                "辩证维度": "dialectical",
+                "情绪维度": "emotional",
+                "直觉维度": "intuitive",
+                "道德维度": "moral",
+                "社会维度": "social",
+                "时间维度": "temporal",
+                "元认知维度": "metacognitive",
+            }
+
+            current_dim = None
+            current_content = []
+
+            for line in raw.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+
+                # 检测维度标题行
+                matched_dim = None
+                for label, dim_id in dim_labels_inv.items():
+                    if label in line:
+                        matched_dim = dim_id
+                        break
+
+                if matched_dim:
+                    # 保存上一维度的答案
+                    if current_dim and current_content:
+                        answers[current_dim] = " ".join(current_content).strip()
+                    current_dim = matched_dim
+                    current_content = []
+                    # 去除标题，只保留后面的内容
+                    rest = line.split("】", 1)
+                    if len(rest) > 1:
+                        content = rest[1].strip()
+                        if content:
+                            current_content.append(content)
+                elif current_dim and line:
+                    # 普通内容行，拼接到当前维度
+                    current_content.append(line)
+
+            # 保存最后一个维度
+            if current_dim and current_content:
+                answers[current_dim] = " ".join(current_content).strip()
         current_dim = None
         current_content = []
 
-        dim_labels_inv = {
-            "认知维度": "cognitive",
-            "博弈维度": "game_theory",
-            "经济维度": "economic",
-            "辩证维度": "dialectical",
-            "情绪维度": "emotional",
-            "直觉维度": "intuitive",
-            "道德维度": "moral",
-            "社会维度": "social",
-            "时间维度": "temporal",
-            "元认知维度": "metacognitive",
-        }
-
-        for line in response.content.split("\n"):
+        for line in raw.split("\n"):
             line = line.strip()
             if not line:
                 continue
@@ -181,12 +300,14 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
                     answers[current_dim] = " ".join(current_content).strip()
                 current_dim = matched_dim
                 current_content = []
-                # 去除标题，只保留后面的内容
-                rest = line.split("】", 1)
-                if len(rest) > 1:
-                    content = rest[1].strip()
-                    if content:
-                        current_content.append(content)
+                # 去除【】标题，只保留后面的内容
+                for sep in ["】", "##", "：", "： "]:
+                    if sep in line:
+                        rest = line.split(sep, 1)
+                        content = rest[1].strip() if len(rest) > 1 else ""
+                        if content:
+                            current_content.append(content)
+                        break
             elif current_dim and line:
                 # 普通内容行，拼接到当前维度
                 current_content.append(line)

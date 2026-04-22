@@ -12,6 +12,7 @@ API文档: https://platform.minimaxi.com/document/Guides/-text-to-text
 
 import os
 import json
+import time
 from typing import List, Optional
 import requests
 
@@ -21,7 +22,7 @@ from .base import LLMAdapter, LLMResponse, CompletionRequest
 class MiniMaxAdapter(LLMAdapter):
     """
     MiniMax 大模型适配（OpenAI兼容格式）
-    支持 MiniMax-M2.7 / MiniMax-M2.5 等模型
+    支持 MiniMax-M2 / MiniMax-M2.5 / MiniMax-M2.7 等模型
     """
 
     # OpenAI兼容端点（中国版）
@@ -30,7 +31,7 @@ class MiniMaxAdapter(LLMAdapter):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "MiniMax-M2.7",
+        model_name: str = "MiniMax-M2",
         api_base: Optional[str] = None,
     ):
         super().__init__()  # 必须调用父类，初始化 _rate_limiter
@@ -84,52 +85,63 @@ class MiniMaxAdapter(LLMAdapter):
         if request.stop:
             payload["stop"] = request.stop
 
+        # Retry on overload (429/529) + HTTP timeout
+        retry_delays = [5, 15, 30]
+        response = None
+        for attempt in range(len(retry_delays) + 1):
+            try:
+                response = requests.post(
+                    self._make_url(),
+                    headers=headers,
+                    json=payload,
+                    timeout=(10, 60),  # (connect, read) timeout
+                )
+                if response.status_code == 200:
+                    break
+                if response.status_code not in (429, 529) or attempt == len(retry_delays):
+                    return LLMResponse(
+                        success=False,
+                        content="",
+                        error=f"HTTP {response.status_code}: {response.text[:500]}",
+                    )
+                time.sleep(retry_delays[attempt])
+            except requests.exceptions.Timeout:
+                # HTTP timeout → retry (server busy, don't give up)
+                if attempt == len(retry_delays):
+                    return LLMResponse(
+                        success=False, content="", error="Request timeout (60s read) after 3 retries",
+                    )
+                time.sleep(retry_delays[attempt])
+            except Exception as e:
+                if attempt == len(retry_delays):
+                    return LLMResponse(
+                        success=False, content="", error=f"Request failed: {str(e)}",
+                    )
+                time.sleep(retry_delays[attempt])
+
+        # Parse success response
         try:
-            response = requests.post(
-                self._make_url(),
-                headers=headers,
-                json=payload,
-                timeout=120,
-            )
-
-            if response.status_code != 200:
-                return LLMResponse(
-                    success=False,
-                    content="",
-                    error=f"HTTP {response.status_code}: {response.text[:500]}",
-                )
-
             data = response.json()
-
-            # OpenAI兼容格式：choices[0].message.content
-            if "choices" in data:
-                content = data["choices"][0]["message"]["content"]
-                usage = data.get("usage", {})
-                return LLMResponse(
-                    success=True,
-                    content=content,
-                    prompt_tokens=usage.get("prompt_tokens", 0),
-                    completion_tokens=usage.get("completion_tokens", 0),
-                    total_tokens=usage.get("total_tokens", 0),
-                )
-            else:
-                return LLMResponse(
-                    success=False,
-                    content="",
-                    error=f"Unexpected response format: {str(data)[:200]}",
-                )
-
-        except requests.exceptions.Timeout:
-            return LLMResponse(
-                success=False,
-                content="",
-                error="Request timeout after 120s",
-            )
         except Exception as e:
             return LLMResponse(
+                success=False, content="", error=f"JSON parse failed: {str(e)}",
+            )
+
+        if "choices" in data:
+            content = data["choices"][0]["message"]["content"]
+            usage = data.get("usage", {})
+            return LLMResponse(
+                success=True,
+                content=content,
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+                total_tokens=usage.get("total_tokens", 0),
+            )
+        else:
+            return LLMResponse(
                 success=False,
                 content="",
-                error=f"Request failed: {str(e)}",
+                error=f"Unexpected response format: {str(data)[:200]}",
             )
 
     # ── 文本向量化（用于 experiences 语义检索）──────────────────────────────
@@ -152,25 +164,31 @@ class MiniMaxAdapter(LLMAdapter):
         }
         payload = {
             "model": "embo-01",
-            "input": text[:8192],  # MiniMax 单次最大 8192 tokens
+            "texts": [text[:8192]],  # MiniMax: texts array
         }
 
-        try:
-            # 用 _make_url() 相同的 base，替换 endpoint
-            base = self._make_url().replace("/chat/completions", "")
-            response = requests.post(
-                f"{base}/embeddings",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            if response.status_code != 200:
-                return None
-            data = response.json()
-            embedding = data.get("data", [{}])[0].get("embedding")
-            return embedding  # List[float] or None
-        except Exception:
-            return None
+        # Retry on overload
+        base = self._make_url().replace("/chat/completions", "")
+        for attempt in range(4):
+            try:
+                response = requests.post(
+                    f"{base}/embeddings",
+                    headers=headers,
+                    json=payload,
+                    timeout=30,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    embedding = data.get("data", [{}])[0].get("embedding")
+                    return embedding
+                if response.status_code not in (429, 529) or attempt == 3:
+                    return None
+                time.sleep([3, 10][min(attempt, 1)])
+            except Exception:
+                if attempt == 3:
+                    return None
+                time.sleep(3)
+        return None
 
     def embed_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
         """批量向量化（每条独立调用，返回列表）"""

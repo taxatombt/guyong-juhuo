@@ -37,7 +37,7 @@ def load_config() -> dict:
         "provider": "minimax",
         "minimax_api_key": "",
         "minimax_group_id": "",
-        "minimax_model": "MiniMax-M2.7",
+        "minimax_model": "MiniMax-M2",
         "openai_api_key": "",
         "openai_model": "gpt-4o",
         "openai_api_base": "https://api.openai.com/v1",
