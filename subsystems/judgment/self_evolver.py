@@ -61,9 +61,9 @@ def check_trigger() -> Dict:
     with get_conn() as conn:
         # 连续错误检查 - 优先使用 verdict_outcomes（实际有数据的表）
         recent = conn.execute("""
-            SELECT v.*, j.dimensions 
+            SELECT v.*, s.dimensions
             FROM verdict_outcomes v
-            LEFT JOIN judgments j ON v.chain_id = j.chain_id
+            LEFT JOIN judgment_snapshots s ON v.chain_id = s.chain_id
             ORDER BY v.created_at DESC LIMIT 6
         """).fetchall()
         
@@ -119,11 +119,12 @@ def get_cases() -> List[Dict]:
     """获取历史案例用于规则训练"""
     with get_conn() as conn:
         # 优先使用 verdict_outcomes（实际有数据的表）
+        # FIX: judgment_snapshots 有数据，judgments 是空表
         rows = conn.execute("""
             SELECT v.chain_id, v.task_text, v.correct as outcome, v.created_at,
-                   j.dimensions, j.weights
+                   s.dimensions, s.weights
             FROM verdict_outcomes v
-            LEFT JOIN judgments j ON v.chain_id = j.chain_id
+            LEFT JOIN judgment_snapshots s ON v.chain_id = s.chain_id
             ORDER BY v.created_at DESC LIMIT 100
         """).fetchall()
         
@@ -251,12 +252,12 @@ def apply_evolved_weights(new_weights: Dict[str, float]) -> bool:
         try:
             from .closed_loop import _get_db_conn
             conn = _get_db_conn()
-            for dim_id, belief in new_weights.items():
+            for dimension, belief in new_weights.items():
                 conn.execute(
-                    "INSERT OR REPLACE INTO dimension_beliefs (dim_id, belief, hit_count, miss_count) "
-                    "VALUES (?, ?, COALESCE((SELECT hit_count FROM dimension_beliefs WHERE dim_id=?), 0), "
-                    "COALESCE((SELECT miss_count FROM dimension_beliefs WHERE dim_id=?), 0))",
-                    (dim_id, belief, dim_id, dim_id)
+                    "INSERT OR REPLACE INTO dimension_beliefs (dimension, belief, hit_count, miss_count) "
+                    "VALUES (?, ?, COALESCE((SELECT hit_count FROM dimension_beliefs WHERE dimension=?), 0), "
+                    "COALESCE((SELECT miss_count FROM dimension_beliefs WHERE dimension=?), 0))",
+                    (dimension, belief, dimension, dimension)
                 )
             conn.commit()
             log.info(f"[Self-Evolver] dimension_beliefs 已同步: {new_weights}")  # P0-1: 不关闭 per-thread 连接
@@ -339,11 +340,11 @@ def run_evolution_cycle() -> Dict:
     result["winner"] = comp["winner"]
     result["improvement"] = comp.get("improvement", 0)
     
-    # 记录到数据库
+    # 记录到数据库（使用正确的列名匹配 evolution_log schema）
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO evolution_log (trigger_type, trigger_reason, old_rules, new_rules, comparison_result, winner, improvement) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (trigger.get("type"), trigger.get("reason"), json.dumps(old_rules), json.dumps(new_rules), json.dumps(comp), comp["winner"], comp.get("improvement", 0))
+            "INSERT OR REPLACE INTO evolution_log (evolution_id, trigger_type, status, verdicts_count, weights_before, weights_after, result) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (trigger.get("reason", ""), trigger.get("type", ""), result.get("status", ""), len(cases), json.dumps(old_rules), json.dumps(new_rules), json.dumps(comp))
         )
         conn.commit()
     
@@ -523,8 +524,8 @@ class EvolverScheduler:
             result["action"] = "continued"
             print(f"[Self-Evolver] ⏳ 进化{evolution_id}验证不确定：delta={delta:.2%}")
         
-        # 更新数据库
-        self._update_validation_record(result)
+        # 更新数据库（已记录到 evolution_log，跳过 evolution_validation 写入）
+        # self._update_validation_record(result)
         
         # 清理
         del self._pending_validations[evolution_id]
@@ -568,12 +569,12 @@ class EvolverScheduler:
             try:
                 from .closed_loop import _get_db_conn
                 conn = _get_db_conn()
-                for dim_id, belief in old_weights.items():
+                for dimension, belief in old_weights.items():
                     conn.execute(
-                        "INSERT OR REPLACE INTO dimension_beliefs (dim_id, belief, hit_count, miss_count) "
-                        "VALUES (?, ?, COALESCE((SELECT hit_count FROM dimension_beliefs WHERE dim_id=?), 0), "
-                        "COALESCE((SELECT miss_count FROM dimension_beliefs WHERE dim_id=?), 0))",
-                        (dim_id, belief, dim_id, dim_id)
+                        "INSERT OR REPLACE INTO dimension_beliefs (dimension, belief, hit_count, miss_count) "
+                        "VALUES (?, ?, COALESCE((SELECT hit_count FROM dimension_beliefs WHERE dimension=?), 0), "
+                        "COALESCE((SELECT miss_count FROM dimension_beliefs WHERE dimension=?), 0))",
+                        (dimension, belief, dimension, dimension)
                     )
                 conn.commit()
                 log.info(f"[Self-Evolver] dimension_beliefs 已回滚: {old_weights}")  # P0-1: 不关闭 per-thread 连接

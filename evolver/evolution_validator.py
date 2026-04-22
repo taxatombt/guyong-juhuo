@@ -8,7 +8,7 @@ evolution_validator.py — Self-Evolver 验证闭环
 数据流：
     apply_evolved_weights() 应用新规则
         ↓
-    记录 evolution_validation (status='pending')
+    记录 evolution_track (status='pending')
         ↓
     追踪接下来 N 次判决的准确率
         ↓
@@ -90,7 +90,7 @@ def start_evolution_tracking(evolution_id: str, pre_accuracy: float) -> bool:
     
     with get_conn() as c:
         c.execute("""
-            INSERT INTO evolution_validation 
+            INSERT INTO evolution_track 
             (evolution_id, applied_at, pre_accuracy, post_judgments, post_correct, status)
             VALUES (?, ?, ?, 0, 0, 'pending')
         """, (evolution_id, now, pre_accuracy))
@@ -114,7 +114,7 @@ def record_post_verdict(evolution_id: str, correct: bool) -> None:
     with get_conn() as c:
         # 更新统计
         c.execute("""
-            UPDATE evolution_validation 
+            UPDATE evolution_track 
             SET post_judgments = post_judgments + 1,
                 post_correct = post_correct + ?
             WHERE evolution_id = ? AND status = 'pending'
@@ -122,7 +122,7 @@ def record_post_verdict(evolution_id: str, correct: bool) -> None:
         
         # 如果达到验证窗口，自动触发验证
         row = c.execute("""
-            SELECT post_judgments FROM evolution_validation 
+            SELECT post_judgments FROM evolution_track 
             WHERE evolution_id = ?
         """, (evolution_id,)).fetchone()
         
@@ -155,7 +155,7 @@ def verify_evolution(evolution_id: str) -> Tuple[bool, str]:
     
     with get_conn() as c:
         row = c.execute("""
-            SELECT * FROM evolution_validation WHERE evolution_id = ?
+            SELECT * FROM evolution_track WHERE evolution_id = ?
         """, (evolution_id,)).fetchone()
         
         if not row:
@@ -180,7 +180,7 @@ def verify_evolution(evolution_id: str) -> Tuple[bool, str]:
         if accuracy_delta >= ACCURACY_IMPROVEMENT_THRESHOLD:
             # 准确率提升，验证通过
             c.execute("""
-                UPDATE evolution_validation
+                UPDATE evolution_track
                 SET post_accuracy = ?, accuracy_delta = ?, status = 'confirmed', validated_at = ?
                 WHERE evolution_id = ?
             """, (post_accuracy, accuracy_delta, now, evolution_id))
@@ -196,7 +196,7 @@ def verify_evolution(evolution_id: str) -> Tuple[bool, str]:
             rollback_success = _rollback_self_model(evolution_id)
             
             c.execute("""
-                UPDATE evolution_validation
+                UPDATE evolution_track
                 SET post_accuracy = ?, accuracy_delta = ?, status = 'reverted', 
                     validated_at = ?, rollback_reason = ?
                 WHERE evolution_id = ?
@@ -286,7 +286,7 @@ def get_evolution_status(evolution_id: str) -> Optional[Dict]:
     
     with get_conn() as c:
         row = c.execute("""
-            SELECT * FROM evolution_validation WHERE evolution_id = ?
+            SELECT * FROM evolution_track WHERE evolution_id = ?
         """, (evolution_id,)).fetchone()
         
         if row:
@@ -300,7 +300,7 @@ def get_pending_evolutions() -> list:
     
     with get_conn() as c:
         rows = c.execute("""
-            SELECT * FROM evolution_validation WHERE status = 'pending'
+            SELECT * FROM evolution_track WHERE status = 'pending'
             ORDER BY created_at ASC
         """).fetchall()
         
@@ -345,7 +345,7 @@ def add_verdict_to_evolution_tracking(correct: int) -> None:
         with get_conn() as c:
             # 更新所有 pending 进化
             c.execute("""
-                UPDATE evolution_validation
+                UPDATE evolution_track
                 SET post_judgments = post_judgments + 1,
                     post_correct = post_correct + ?
                 WHERE status = 'pending'
@@ -355,7 +355,7 @@ def add_verdict_to_evolution_tracking(correct: int) -> None:
             # 检查是否有达到窗口的进化
             rows = c.execute("""
                 SELECT evolution_id, post_judgments
-                FROM evolution_validation
+                FROM evolution_track
                 WHERE status = 'pending' AND post_judgments >= ?
             """, (VERIFICATION_WINDOW,)).fetchall()
             
