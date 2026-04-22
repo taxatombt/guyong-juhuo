@@ -30,8 +30,8 @@ _TABLE_DEFS = [
      "matched_keywords TEXT, outcome TEXT, outcome_notes TEXT, outcome_score REAL, "
      "verdict TEXT, created_at TEXT, action_channel TEXT, tool_calls TEXT, "
      "execution_result TEXT, perception_summary TEXT, behavior_id TEXT, "
-     "source TEXT DEFAULT 'manual', "
-     "task_embedding TEXT"),
+     "source TEXT DEFAULT 'manual', task_embedding TEXT, "
+     "chain_id TEXT"),
     ("causal_chain",
      "id INTEGER PRIMARY KEY, chain_id TEXT, ts REAL, task_hash TEXT, task_text TEXT, "
      "dimensions TEXT, outcome REAL, corrected INTEGER, notes TEXT, created_at TEXT"),

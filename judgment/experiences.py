@@ -128,7 +128,8 @@ def init():
         # 如果旧表缺少列，走 _rebuild_table 迁移（保留现有数据）
         existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(experiences)").fetchall()]
         behavior_cols = ["action_channel", "tool_calls", "execution_result",
-                         "perception_summary", "behavior_id", "source", "task_embedding"]
+                         "perception_summary", "behavior_id", "source", "task_embedding",
+                         "chain_id"]
         missing = [c for c in behavior_cols if c not in existing_cols]
         if missing:
             print(f"[experiences.init] 迁移 experiences 表，补充列: {missing}")

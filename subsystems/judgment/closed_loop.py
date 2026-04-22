@@ -377,7 +377,20 @@ def _trigger_fitness(chain_id,task_text,correct,changes,outcome_score=None):
                 outcome_score=_score,
             )
     except Exception as e2:_logger.debug(f"fitness_evolution trigger skip: {e2}")
-
+    # [P0 Fix] experiences.outcome_score write-through
+    # record_outcome() was never called -> all 40 rows have NULL outcome_score
+    try:
+        from judgment.experiences import record_outcome as _rec_outcome_exp
+        if task_text and _score is not None:
+            _outcome_label = "correct" if _correct_for_belief else "incorrect"
+            _rec_outcome_exp(
+                task_text=task_text,
+                outcome=_outcome_label,
+                outcome_score=_score,
+                notes="closed_loop trigger - outcome_score updated",
+                chain_id=chain_id or "",
+            )
+    except Exception as e3:_logger.debug(f"experiences outcome skip: {e3}")
 
 
 def _trigger_curiosity(chain_id,task_text,correct,changes):
