@@ -355,12 +355,13 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         "questions": questions,
         "answers": answers,
         "agent_profile": agent_profile,
-        "causal_memory": {
-            "has_history": causal_result["summary"] is not None,
-            "similar_events": causal_result["similar_events"],
-            "causal_chains": causal_result["causal_chains"],
-            "summary": causal_result["summary"],
-            "causal_inference": None,
+        # causal_result 可能为空字典（run_pipeline 未填充 → 用 .get() 兜底）
+        "causal_memory": (causal_result if isinstance(causal_result, dict) else {}) and {
+            "has_history": (causal_result.get("summary") if isinstance(causal_result, dict) else None) is not None,
+            "similar_events": (causal_result.get("similar_events") if isinstance(causal_result, dict) else None) or [],
+            "causal_chains": (causal_result.get("causal_chains") if isinstance(causal_result, dict) else None) or [],
+            "summary": (causal_result.get("summary") if isinstance(causal_result, dict) else "") or "",
+            "causal_inference": (causal_result.get("causal_inference") if isinstance(causal_result, dict) else None),
         },
         # P3改进：规则预检结果
         "rule_precheck": {
