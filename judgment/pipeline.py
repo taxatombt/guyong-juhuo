@@ -1,16 +1,15 @@
 """
 pipeline.py — Judgment Pipeline 编排层
 
-每个注入器独立函数，router.py 只做编排：
-    ctx = JudgmentContext(task, ...)
-    ctx = inject_biography(ctx)
-    ctx = inject_experiences(ctx)
-    ctx = inject_causal_memory(ctx)
-    ctx = inject_emotion(ctx)
-    ctx = inject_self_model(ctx)
-    return llm_judge(ctx)
+单一汇聚：inject_unified_profile = 三路（biography + experiences + causal_memory）
+          + 矛盾检测 + 时间衰减
 
-每个 injector 返回 ctx（修改后的），链式调用。
+router.py 只调用 run_pipeline：
+    ctx = run_pipeline(ctx)
+        → inject_emotion        (情绪 PAD 调制)
+        → inject_unified_profile (三路合一汇聚)
+        → inject_self_model     (动态权重 prior_adjustments)
+        → inject_user_model     (矛盾标记 + 向后兼容)
 """
 from typing import Optional, Dict, Any
 from .context import JudgmentContext
@@ -30,46 +29,9 @@ def _lazy(name: str, path: str):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Injector 1: Biography — 途径1，生平事实
 # ════════════════════════════════════════════════════════════════════════════
-
-def inject_biography(ctx: JudgmentContext) -> JudgmentContext:
-    """
-    途径1注入：
-    1. 从当前任务抽取生平事实
-    2. 写入 biography 表
-    3. 返回生平上下文字符串
-    """
-    from .biography import extract_bio, get_bio_context, log_bio_batch
-    
-    facts = extract_bio(ctx.task_text)
-    if facts:
-        log_bio_batch(facts, source="auto")
-    ctx.bio_facts = facts
-    ctx.bio_context = get_bio_context()
-    return ctx
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# Injector 2: Experiences — 途径2，历史相似判断
-# ════════════════════════════════════════════════════════════════════════════
-
-def inject_experiences(ctx: JudgmentContext) -> JudgmentContext:
-    """
-    途径2注入：
-    1. 查找用户的历史相似判断
-    2. 生成"这个用户（你）遇到过类似情况"上下文
-    """
-    from .experiences import get_context_for_judgment
-    
-    ctx.history_context = get_context_for_judgment(ctx.task_text, ctx.user_id)
-    return ctx
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════
-# Injector 3: UnifiedProfile — 单一汇聚点，三路合一
-# 替代 biography + experiences + causal_memory 三个独立inject
+# ────────────────────────────────────────────────────────────────────────
+# 三路(传记+经历+感知) → UnifiedProfile → router
 # ════════════════════════════════════════════════════════════════════════════
 
 def inject_unified_profile(ctx: JudgmentContext) -> JudgmentContext:
@@ -135,29 +97,8 @@ def inject_unified_profile(ctx: JudgmentContext) -> JudgmentContext:
     return ctx
 
 
-# Injector 3: Causal Memory — 途径3，因果记忆
 # ════════════════════════════════════════════════════════════════════════════
-
-def inject_causal_memory(ctx: JudgmentContext) -> JudgmentContext:
-    """
-    途径3注入：
-    1. 召回相似历史事件
-    2. 注入到判断上下文
-    """
-    from causal_memory import recall_causal_history, inject_to_judgment_input
-    
-    causal_result = recall_causal_history(ctx.task_text)
-    ctx.causal_result = causal_result
-    
-    if causal_result.get("summary"):
-        ctx.causal_context = inject_to_judgment_input(ctx.task_text)
-        ctx.task_text = causal_result.get("task_with_context", ctx.task_text)
-    
-    return ctx
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# Injector 4: Emotion — 情绪 PAD 调制
+# ────────────────────────────────────────────────────────────────────────
 # ════════════════════════════════════════════════════════════════════════════
 
 def inject_emotion(ctx: JudgmentContext) -> JudgmentContext:
@@ -183,7 +124,7 @@ def inject_emotion(ctx: JudgmentContext) -> JudgmentContext:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Injector 5: Self Model — 自我模型，动态权重
+# ────────────────────────────────────────────────────────────────────────
 # ════════════════════════════════════════════════════════════════════════════
 
 def inject_self_model(ctx: JudgmentContext) -> JudgmentContext:
@@ -203,7 +144,7 @@ def inject_self_model(ctx: JudgmentContext) -> JudgmentContext:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Injector 6: UserModel — 三路汇聚层（L1+L2+L3+矛盾检测+时间衰减）
+# ────────────────────────────────────────────────────────────────────────（L1+L2+L3+矛盾检测+时间衰减）
 # ════════════════════════════════════════════════════════════════════════════
 
 def inject_user_model(ctx: JudgmentContext) -> JudgmentContext:
@@ -314,8 +255,8 @@ def run_pipeline(ctx: JudgmentContext) -> JudgmentContext:
       3. inject_self_model     — 动态权重 prior_adjustments
       4. inject_user_model     — 补全矛盾标记 + 向后兼容
 
-    注意：inject_biography / inject_experiences / inject_causal_memory
-          已由 inject_unified_profile 替代，不再单独调用。
+    注意：三个旧injector(inject_biography/inject_experiences/inject_causal_memory)
+          已物理删除，仅通过 inject_unified_profile 调用。
     """
     ctx = inject_emotion(ctx)
     ctx = inject_unified_profile(ctx)   # 单一汇聚：三路 + 矛盾 + 时间衰减

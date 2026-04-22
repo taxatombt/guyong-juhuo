@@ -617,12 +617,27 @@ class UnifiedProfile:
                 confidence=i.relevance, recency_score=1.0,
                 contradiction_flag=False,
                 profile_id="signal:{}:{}".format(i.topic[:20], hash(i.summary) % 999999)))
+        # 矛盾双向处理：
+        #   - L1 claim vs L2 behavior → L1降priority, L2升priority
         for c_ in (ctx.contradictions or []):
+            matched_fact = None
+            matched_pattern = None
             for e in entries:
                 if e.source == "fact" and c_.l1_claim[:20] in e.claim:
-                    e.priority = 3
-                    e.contradiction_flag = True
-        entries.sort(key=lambda x: (x.priority, -x.recency_score))
+                    matched_fact = e
+                # L2 behavior匹配：pattern的conclusion含L2关键词
+                if e.source == "pattern":
+                    for kw in _SEMANTIC_DIMENSIONS.get(c_.dimension, {}).get("l2_patterns", []):
+                        if kw in e.claim:
+                            matched_pattern = e
+                            break
+            if matched_fact:
+                matched_fact.priority = 3
+                matched_fact.contradiction_flag = True
+            if matched_pattern:
+                matched_pattern.priority = 1          # 升：行为>声称
+                matched_pattern.contradiction_flag = True
+        entries.sort(key=lambda x: (x.priority if not x.contradiction_flag else 99, -x.recency_score))
         return entries
 
     def get_for_task(self, entries: List[ProfileEntry], dimension: str = "") -> List[ProfileEntry]:
@@ -641,15 +656,26 @@ class UnifiedProfile:
         return best
 
     def to_prompt(self, entries: List[ProfileEntry], dimension: str = "") -> str:
-        """ProfileEntry -> 带优先级标注的 prompt 文本"""
+        """
+        ProfileEntry -> 结构化 prompt 文本。
+
+        格式：[PROFILE: priority=X, source=Y, recency=Z, claim="...", flag=Z]
+        - priority: 1(主动确认)>2(行为推断)>3(被动信号)
+        - source: fact/pattern/signal
+        - recency: 时间衰减后权重 0.0~1.0
+        - flag: contra(矛盾)|ok(正常)
+        """
         dim_entries = self.get_for_task(entries, dimension=dimension)
         if not dim_entries:
             return ""
         parts = []
-        for src, lbl in [("fact","Fact-高可信"),("pattern","Pattern-行为"),("signal","Signal-被动")]:
-            for e in [x for x in dim_entries if x.source == src]:
-                flag = " [矛盾]" if e.contradiction_flag else ""
-                parts.append("[{}]{} {}".format(lbl, flag, e.claim))
+        for e in dim_entries:
+            flag_str = "contra" if e.contradiction_flag else "ok"
+            parts.append(
+                '[PROFILE: priority={}, source={}, recency={:.2f}, claim="{}", flag={}]'.format(
+                    e.priority, e.source, e.recency_score, e.claim[:60], flag_str
+                )
+            )
         return "\\n".join(parts)
 
     def to_summary(self, entries: List[ProfileEntry]) -> str:
