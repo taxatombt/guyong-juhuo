@@ -43,6 +43,13 @@ def cmd_judge(task: str, verbose: bool = False):
     else:
         print(f"→ 建议: {result.get('verdict', '无法判断')}")
         print(f"→ 置信度: {result.get('confidence', 0) * 100:.1f}%")
+        pred_act = result.get('predicted_action', '')
+        pred_conf = result.get('prediction_confidence', 0)
+        if pred_act and pred_act not in ('未知', '未知'):
+            src = result.get('prediction_source', '')
+            src_map = {'verdict_extraction':'绵弁解析','llm':'LLM预测','llm_raw':'LLM原始','none':'无'}
+            src_ch = src_map.get(src, src)
+            print(f"  → 预测你会选择: 【{pred_act}】 (置信度 {pred_conf*100:.0f}%, 来源: {src_ch})")
         print(f"→ Chain ID: {result.get('chain_id', '')}")
 
 
@@ -103,6 +110,31 @@ def cmd_status():
         print(f"  [{cid}] {task}... → {verdict}")
 
 
+
+def cmd_actual(args):
+    """Record actual choice and compute outcome_score"""
+    chain_id = getattr(args, 'chain_id', None)
+    actual = getattr(args, 'actual', None)
+    if not chain_id or not actual:
+        print("Usage: verdict --actual -c <chain_id> -a \"actual choice\"")
+        return
+    try:
+        from judgment.verdict_collector import receive_actual_choice
+        result = receive_actual_choice(chain_id, actual)
+        if result.get("ok"):
+            pred = result.get("predicted_action", "")
+            score = result.get("outcome_score", 0)
+            hit = result.get("hit", False)
+            hit_str = "\u2713 \u547d\u4e2d" if hit else "\u2717 \u672a\u547d\u4e2d"
+            print(f"\u673a\u5236\u9884\u6d4b: {pred}")
+            print(f"\u7528\u6237\u5b9e\u9645: {actual}")
+            print(f"\u547d\u4e2d\u72b6\u6001: {hit_str}")
+            print(f"outcome_score: {score:.2f}")
+        else:
+            print(f"\u9519\u8bef: {result.get('error', 'unknown')}")
+    except Exception as e:
+        print(f"ERROR: {e}")
+
 def cmd_verdict(args):
     """Verdict 管理"""
     if args.action == "list":
@@ -131,6 +163,29 @@ def cmd_verdict(args):
             print(format_full_report(detail))
         else:
             print(f"未找到: {args.chain_id}")
+
+    elif args.action == "actual":
+        chain_id = args.chain_id_arg or args.chain_id
+        actual = args.actual_arg
+        if not chain_id or not actual:
+            print("Usage: verdict actual -c <chain_id> -a \"用户实际\u9009\u62e9\"")
+            return
+        try:
+            from judgment.verdict_collector import receive_actual_choice
+            result = receive_actual_choice(chain_id, actual)
+            if result.get("ok"):
+                pred = result.get("predicted_action", "")
+                score = result.get("outcome_score", 0)
+                hit = result.get("hit", False)
+                hit_str = "✓ 命中" if hit else "✗ 未命中"
+                print(f"机制预测: {pred}")
+                print(f"用户实际: {actual}")
+                print(f"命中状态: {hit_str}")
+                print(f"outcome_score: {score:.2f}")
+            else:
+                print(f"Error: {result.get('error', 'unknown')}")
+        except Exception as e:
+            print(f"ERROR: {e}")
 
 
 def cmd_config(args):
@@ -270,8 +325,10 @@ def main():
     
     # verdict
     verdict_parser = subparsers.add_parser("verdict", help="Verdict 管理")
-    verdict_parser.add_argument("action", choices=["list", "correct", "wrong", "detail"], help="操作")
+    verdict_parser.add_argument("action", choices=["list", "correct", "wrong", "detail", "actual"], help="操作")
     verdict_parser.add_argument("chain_id", nargs="?", help="Chain ID")
+    verdict_parser.add_argument("-c", "--chain_id_arg", dest="chain_id_arg", help="Chain ID (actual command)")
+    verdict_parser.add_argument("-a", "--actual", dest="actual_arg", help="Actual user choice (actual command)")
     verdict_parser.add_argument("-n", "--limit", type=int, default=20, help="列表数量")
 
     # bio
@@ -306,6 +363,9 @@ def main():
     elif args.cmd == "status":
         cmd_status()
     elif args.cmd == "verdict":
+        if args.action == "actual":
+            args.chain_id = args.chain_id_arg or getattr(args, 'chain_id', None)
+            args.actual = args.actual_arg or None
         cmd_verdict(args)
     elif args.cmd == "bio":
         cmd_bio(args)

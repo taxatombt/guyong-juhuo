@@ -58,14 +58,15 @@ def snapshot_judgment(chain_id,task_text,dimensions,weights,result,complexity):
     causal_hist=1 if curiosity.get("has_gap") else 0
 
     verdict_text = result.get("verdict", "")  # 新增：记录verdict用于后续预测
+    pred_action=result.get("predicted_action","");pred_conf=result.get("prediction_confidence",None)
 
     c=_get_db_conn()
 
     try:
 
-        c.execute("INSERT OR REPLACE INTO judgment_snapshots (chain_id,ts,task_hash,task_text,dimensions,weights,answers,confidence,complexity,emotion_label,causal_has_history,verdict) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT OR REPLACE INTO judgment_snapshots (chain_id,ts,task_hash,task_text,dimensions,weights,answers,confidence,complexity,emotion_label,causal_has_history,verdict,predicted_action,prediction_confidence) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 
-            (chain_id,now,task_hash,task_text[:500] or "",json.dumps(dimensions,ensure_ascii=False),json.dumps(weights,ensure_ascii=False),json.dumps(answers,ensure_ascii=False),json.dumps(confidence,ensure_ascii=False),complexity,emotion_label,causal_hist,verdict_text[:300] or ""))
+            (chain_id,now,task_hash,task_text[:500] or "",json.dumps(dimensions,ensure_ascii=False),json.dumps(weights,ensure_ascii=False),json.dumps(answers,ensure_ascii=False),json.dumps(confidence,ensure_ascii=False),complexity,emotion_label,causal_hist,verdict_text[:300] or "",pred_action[:200] or "",pred_conf))
 
         c.execute("INSERT INTO causal_chain (chain_id,ts,task_hash,task_text,dimensions,outcome) VALUES (?,?,?,?,?,NULL)",
 

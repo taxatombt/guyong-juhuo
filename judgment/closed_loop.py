@@ -7,4 +7,5 @@ from subsystems.judgment.closed_loop import (
     start_verdict_listener, stop_verdict_listener, is_listener_active,
     record_judgment, predict_outcome, verify_outcome,
     get_verification_stats, auto_predict_from_verdict,
+    _get_db_conn,
 )

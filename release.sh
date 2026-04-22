@@ -2,7 +2,7 @@
 # release.sh - 一键发版：文档 + 打包 + tag + 推送 + 打开Release页面
 #
 # 用法（网络恢复后）:
-#   cd /d E:\juhuo && bash release.sh v2.0.0
+#   cd /d E:\juhuo && bash release.sh v2.1.0
 #
 # 规则：每次 git push 之前，必须跑这一句。
 #
@@ -14,7 +14,6 @@
 #
 # 输出：
 #   - dist/guyong-juhuo-setup.exe  （Inno Setup 安装版，约 50MB）
-#     注意：不再生成便携版（不需要 portable exe）
 
 set -e
 TAG=${1:-$(date +v%Y.%m.%d)}
@@ -42,18 +41,17 @@ echo "  OK: $(ls -lh dist/guyong-juhuo.exe | awk '{print $5}')"
 
 # 3. Inno Setup 安装版
 echo "[3/6] Inno Setup（安装版）..."
-ISCC=""
-for p in "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "/c/Program Files/Inno Setup 6/ISCC.exe"; do
-    if [ -f "$p" ]; then ISCC="$p"; break; fi
-done
+ISCC="E:/inno_setup/Inno Setup 6/ISCC.exe"
 
-if [ -z "$ISCC" ]; then
-    echo "  WARN: Inno Setup 未安装，跳过安装版"
+if [ ! -f "$ISCC" ]; then
+    echo "  WARN: Inno Setup 未安装（$ISCC 不存在），跳过安装版"
     echo "  Inno Setup 安装后重新运行: bash release.sh $TAG"
 else
-    cmd /c "cd /d E:\juhuo && \"$ISCC\" installer.iss"
+    cmd /c "cd /d E:\juhuo && \"E:\inno_setup\Inno Setup 6\ISCC.exe\" installer.iss"
     if [ -f "dist/guyong-juhuo-setup.exe" ]; then
         echo "  OK: $(ls -lh dist/guyong-juhuo-setup.exe | awk '{print $5}')"
+    else
+        echo "  WARN: installer.iss 可能不存在，请先创建"
     fi
 fi
 

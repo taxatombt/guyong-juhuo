@@ -514,3 +514,79 @@ def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
 
     confidence = 0.38 + len(answers) * 0.04
     return ("需要更多信息才能判断", confidence)
+def _extract_action_from_verdict(verdict):
+    """Chinese: verdict extract"""
+    import re
+    for pat, tag in [
+        ('[建议]([^\s，。；!?]{2,15})', 's'),
+        ('[不要]([^\s，。；!?]{2,10})', 'w'),
+        ('[应该]([^\s，。；!?]{2,10})', 's'),
+        ('[可以]([^\s，。；!?]{2,10})', 'c'),
+        ('[推荐]([^\s，。；!?]{2,10})', 'r'),
+        ('[值得]([^\s，。；!?]{2,10})', 'v'),
+    ]:
+        m = re.search(pat, verdict)
+        if m:
+            return m.group(0).strip(), 'v:' + tag
+    for kw in ['不要','all in','保守','激进','控制仓位',
+                '分散','全仓','先做','先看','先评估',
+                '辛职','跳槐','创业','留在','接受',
+                '拒绝','买房','移民','读研','分手',
+                '坚持','改变','审慎','谨慎','枬断']:
+        if kw in verdict:
+            idx = verdict.index(kw)
+            return verdict[idx:idx+12].strip(), 'kw:' + kw
+    if len(verdict) >= 6:
+        return verdict[:18], 'prefix'
+    return verdict, 'fallback'
+
+
+
+def _llm_predict_choice(task_text, answers):
+    """Chinese: LLM fallback for prediction"""
+    import re
+    dim_sum = ""
+    for dim, ans in list(answers.items())[:5]:
+        if isinstance(ans, dict) and "content" in ans:
+            c = re.sub(r"<[^>]+>", "", ans["content"])[:120]
+        elif isinstance(ans, str):
+            c = re.sub(r"<[^>]+>", "", ans)[:120]
+        else:
+            c = str(ans)[:120]
+        dim_sum += "[%s] %s\n" % (dim[:12], c)
+    p = ("\u4efb\u52a1\uff1a%s\n\u7528\u6237\u753b\u50cf\u53c2\u8003\uff1a\n%s\n"
+         "\u8bf7\u9884\u6d4b\uff1a\u8fd9\u4e2a\u7528\u6237\u6700\u7ec8\u6700\u53ef\u80fd"
+         "\u9009\u62e9\u4ec0\u4e48\u884c\u52a8\uff1f\u53ea\u8f93\u51fa\u4e00\u4e2a\u7b80"
+         "\u77ed\u884c\u52a8\uff08\u4e0d\u8d85\u8fc720\u5b57\uff09\uff1a\n"
+         "\u9884\u6d4b\u884c\u52a8\uff1a[\u5177\u4f53\u884c\u52a8]") % (task_text, dim_sum)
+    try:
+        from judgment.llm_calls import get_adapter
+        a = get_adapter()
+        if not a or not a.is_configured():
+            raise ValueError("no adapter")
+        req = type("CR",(),{"prompt":p,"max_tokens":300,"temperature":0.3})()
+        r = a.complete(req)
+        txt = r if isinstance(r,str) else getattr(r,"content",str(r))
+        m = re.search(r"[\u9884\u6d4b][\u884c\u52a8][\uff1a:]\s*([^\n]{2,25})", txt)
+        if m:
+            return {"predicted_action":m.group(1).strip(),"prediction_confidence":0.55,"reasoning":"llm","source":"llm"}
+        lines = [l.strip() for l in txt.split("\n") if l.strip() and len(l.strip())>=4]
+        if lines:
+            return {"predicted_action":lines[0][:20],"prediction_confidence":0.50,"reasoning":"llm_raw","source":"llm"}
+    except Exception:
+        pass
+    return {"predicted_action":"\u672a\u77e5","prediction_confidence":0.30,"reasoning":"no_adapter","source":"none"}
+
+
+def predict_user_choice(task_text, answers, verdict, confidence):
+    """Chinese: core predict function"""
+    action, reason = _extract_action_from_verdict(verdict)
+    if action and action != "\u672a\u77e5" and len(action) >= 2:
+        return {
+            "predicted_action": action,
+            "prediction_confidence": min(0.90, confidence + 0.08),
+            "reasoning": reason,
+            "source": "verdict_extraction",
+        }
+    return _llm_predict_choice(task_text, answers)
+

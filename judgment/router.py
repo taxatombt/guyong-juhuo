@@ -45,6 +45,7 @@ from judgment.llm_calls import (
     _keyword_match,
     _synthesize_verdict,
     MUST_CHECK,
+    predict_user_choice,
 )
 from judgment.pipeline import run_pipeline, JudgmentContext
 
@@ -80,7 +81,7 @@ from subsystems.judgment.emotion_adapter import get_emotion_modulation
 
 # 新增：自我复盘 + Fitness Baseline
 from .self_review import SelfReviewSystem
-from .closed_loop import record_judgment, snapshot_judgment, get_prior_adjustments
+from .closed_loop import record_judgment, snapshot_judgment, get_prior_adjustments, _get_db_conn
 from .fitness_baseline import FitnessBaseline
 
 # LLM接入：MiniMax适配器
@@ -562,6 +563,30 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     verdict_str, confidence = _synthesize_verdict(task_text, answers)
     base_result["verdict"] = verdict_str
     base_result["confidence"] = confidence
+
+    # predict-before-decision
+    try:
+        pred = predict_user_choice(task_text, answers, verdict_str, confidence)
+        base_result["predicted_action"] = pred["predicted_action"]
+        base_result["prediction_confidence"] = pred["prediction_confidence"]
+        base_result["prediction_source"] = pred["source"]
+    except Exception:
+        base_result["predicted_action"] = verdict_str[:20]
+        base_result["prediction_confidence"] = 0.40
+        base_result["prediction_source"] = "error"
+
+    # 【P0】将预测写入 judgment_snapshots（snapshot_judgment 已调用，补充字段）
+    _chain_id = base_result.get("meta", {}).get("chain_id", "")
+    if _chain_id:
+        try:
+            _c = _get_db_conn()
+            _c.execute(
+                "UPDATE judgment_snapshots SET verdict=?, confidence=?, predicted_action=?, prediction_confidence=? WHERE chain_id=?",
+                (verdict_str[:300], confidence, base_result["predicted_action"][:200], base_result.get("prediction_confidence"), _chain_id)
+            )
+            _c.commit()
+        except Exception:
+            pass  # 不阻断返回
 
     # 经历层：判断完成后自动存为经历
     _chain_id2 = base_result.get("meta", {}).get("chain_id", "")
