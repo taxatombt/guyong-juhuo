@@ -476,8 +476,9 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     _ret["confidence"] = confidence
 
     # 经历层：存为历史记忆
+    _chain_id = _ret.get("meta", {}).get("chain_id", "")
     try:
-        save_experience(ctx.original_task, verdict_str, confidence, context=ctx.history_context, user_id=user_id)
+        save_experience(ctx.original_task, verdict_str, confidence, context=ctx.history_context, user_id=user_id, chain_id=_chain_id)
         # 途径3：行为日志（judgment 通道，无工具调用）
         log_agent_behavior(
             task_text=ctx.original_task,
@@ -563,8 +564,9 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     base_result["confidence"] = confidence
 
     # 经历层：判断完成后自动存为经历
+    _chain_id2 = base_result.get("meta", {}).get("chain_id", "")
     try:
-        save_experience(task_text, verdict_str, confidence, context=_history_ctx, user_id=user_id)
+        save_experience(task_text, verdict_str, confidence, context=_history_ctx, user_id=user_id, chain_id=_chain_id2)
         # 途径3：行为日志（judgment 通道，无工具调用）
         log_agent_behavior(
             task_text=task_text,

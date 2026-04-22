@@ -132,12 +132,14 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
             # 【修复】添加 ORDER BY ts DESC，确保取到最新的完整记录
 
             # 同时过滤 dimensions 为空或格式不对的记录
+            # 【P0修复3】corrected 可能是 0/1/NULL，用 corrected IS NOT 1 代替 corrected=0
+            # SQLite: NULL != 1 → TRUE，0 != 1 → TRUE，1 != 1 → FALSE
 
             r=c.execute("""
 
                 SELECT id,dimensions FROM causal_chain 
 
-                WHERE chain_id=? AND corrected=0 
+                WHERE chain_id=? AND corrected IS NOT 1
 
                 AND INSTR(dimensions,'"dims"')>0
 
@@ -147,13 +149,22 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
             if r: target=r
 
+            # 【P0修复】从 judgment_snapshots 查 task_text，
+            # 解决 verdict_collector/stop_hook 只传 chain_id 不传 task_text 的问题
+            _snap = c.execute(
+                "SELECT task_text FROM judgment_snapshots WHERE chain_id=? LIMIT 1",
+                (chain_id,)
+            ).fetchone()
+            if _snap and _snap[0]:
+                task_text = _snap[0]  # 覆盖 None，确保后续 record_outcome 能触发
+
         elif task_text:
 
             r=c.execute("""
 
                 SELECT id,dimensions FROM causal_chain 
 
-                WHERE task_hash=? AND corrected=0 
+                WHERE task_hash=? AND corrected IS NOT 1
 
                 AND INSTR(dimensions,'"dims"')>0
 
@@ -175,7 +186,7 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
             b,h,m=row;delta=max(-MAX_DELTA,min(MAX_DELTA,BELIEF_DECAY*correction));nb=max(SAT_LOW,min(SAT_HIGH,b+delta))
 
-            c.execute("UPDATE dimension_beliefs SET belief=?,hit_count=?,miss_count=?,last_id=? WHERE dimension=?",(nb,h+(1 if correct else 0),m+(0 if correct else 1),chain_id,dim_id))
+            c.execute("UPDATE dimension_beliefs SET belief=?,hit_count=?,miss_count=?,last_updated=datetime('now') WHERE dimension=?",(nb,h+(1 if correct else 0),m+(0 if correct else 1),dim_id))
 
             changes[dim_id]={"belief_before":round(b,4),"belief_after":round(nb,4),"delta":round(delta,4)}
 
@@ -214,8 +225,6 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
                 import sys, os.path as op
 
-                # experiences.py 在 judgment/，closed_loop.py 在 subsystems/judgment/
-
                 _exp_path = op.join(op.dirname(op.dirname(op.dirname(op.abspath(__file__)))), 'judgment', 'experiences.py')
 
                 if op.exists(_exp_path):
@@ -225,8 +234,29 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
                     from judgment.experiences import record_outcome as _rec_outcome
 
                     _score = outcome_score if outcome_score is not None else (1.0 if correct else 0.0)
+                    _outcome = actual_action or ("对" if correct else "错")
 
-                    _rec_outcome(task_text, outcome=actual_action or ("对" if correct else "错"), outcome_score=_score, notes=notes)
+                    # 【P0修复2】优先用 chain_id 直接 UPDATE experiences，
+                    # 绕过 task_hash 不一致问题（judgment_snapshots=SHA256[:16],
+                    # experiences=MD5[:24]），同时兼容旧 experiences（task_text NULL 但有 chain_id）
+                    _n = c.execute(
+                        "UPDATE experiences SET outcome=?, outcome_score=?, outcome_notes=? "
+                        "WHERE chain_id=?",
+                        (_outcome, _score, str(notes)[:200], chain_id)
+                    ).rowcount
+
+                    # 如果 chain_id 查不到（老数据），fallback 到 task_text 匹配
+                    if _n == 0:
+                        _n = c.execute(
+                            "UPDATE experiences SET outcome=?, outcome_score=?, outcome_notes=? "
+                            "WHERE task_text=? AND user_id='default' AND outcome_score IS NULL",
+                            (_outcome, _score, str(notes)[:200], task_text)
+                        ).rowcount
+
+                    c.commit()
+
+                    # record_outcome 的其他副作用（感知同步等）
+                    _rec_outcome(task_text, outcome=_outcome, outcome_score=_score, notes=notes)
 
             except Exception:
 

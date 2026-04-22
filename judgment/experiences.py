@@ -153,7 +153,13 @@ def _get_embedding(text: str) -> str:
 
 def save_experience(task_text: str, conclusion: str, confidence: float,
                    context: str = "", user_id: str = "default",
-                   perception_summary: str = "") -> int:
+                   perception_summary: str = "",
+                   chain_id: str = "") -> int:
+    """Save or update a user experience record.
+    
+    Args:
+        chain_id: judgment snapshot chain_id, used for linking to closed_loop.receive_verdict
+    """
     th = _task_hash(user_id, task_text)
     stype = _classify(task_text)
     keywords = _extract_keywords(task_text)
@@ -164,20 +170,22 @@ def save_experience(task_text: str, conclusion: str, confidence: float,
             INSERT INTO experiences
             (user_id, situation_type, task_hash, task_text, context, conclusion,
              confidence, matched_keywords, created_at, task_embedding,
-             perception_summary)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             perception_summary, chain_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """, (user_id, stype, th, task_text, context, conclusion,
               confidence, keywords, datetime.now().isoformat(), embedding,
-              perception_summary))
+              perception_summary, chain_id or None))
         eid = cur.lastrowid
         conn.commit()
     except sqlite3.IntegrityError:
         conn.execute("""
             UPDATE experiences
             SET conclusion=?, confidence=?, context=?, task_embedding=COALESCE(task_embedding, ?),
-                perception_summary=COALESCE(?, perception_summary)
+                perception_summary=COALESCE(?, perception_summary),
+                chain_id=COALESCE(?, chain_id)
             WHERE user_id=? AND task_hash=?
-        """, (conclusion, confidence, context, embedding, perception_summary, user_id, th))
+        """, (conclusion, confidence, context, embedding, perception_summary,
+              chain_id or None, user_id, th))
         eid = -1
     finally:
         pass  # P0-1: 不关闭 per-thread 连接
@@ -200,13 +208,28 @@ def save_experience(task_text: str, conclusion: str, confidence: float,
 
 
 def record_outcome(task_text: str, outcome: str, outcome_score: float = 1.0,
-                   notes: str = "", user_id: str = "default") -> bool:
-    th = _task_hash(user_id, task_text)
+                   notes: str = "", user_id: str = "default",
+                   chain_id: str = "") -> bool:
+    """Record the outcome of a judgment experience.
+    
+    Args:
+        chain_id: if provided, UPDATE by chain_id first (avoids task_hash mismatch
+                  between experiences[SHA256[:16]] and judgment_snapshots[MD5[:24]])
+    """
     conn = _get_conn()
-    n = conn.execute(
-        'UPDATE experiences SET outcome=?, outcome_score=?, outcome_notes=? '
-        'WHERE user_id=? AND task_hash=?',
-        (outcome, outcome_score, notes, user_id, th)).rowcount
+    
+    if chain_id:
+        n = conn.execute(
+            'UPDATE experiences SET outcome=?, outcome_score=?, outcome_notes=? '
+            'WHERE chain_id=?',
+            (outcome, outcome_score, notes, chain_id)).rowcount
+    else:
+        th = _task_hash(user_id, task_text)
+        n = conn.execute(
+            'UPDATE experiences SET outcome=?, outcome_score=?, outcome_notes=? '
+            'WHERE user_id=? AND task_hash=?',
+            (outcome, outcome_score, notes, user_id, th)).rowcount
+    
     conn.commit()
     return n > 0  # P0-1: 不关闭 per-thread 连接
 
