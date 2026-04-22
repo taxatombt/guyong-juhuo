@@ -227,7 +227,7 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 - [x] **三路优先级铁律** — experiences > biography > behavior，per-item half_life_days（v2.0 2026-04-22）
 - [x] **P1 矛盾双向检测** — L1 降 priority=3，L2 升 priority=1，to_prompt 结构化（v2.0 2026-04-22）
 - [x] **experiences embedding v1** — MiniMax ebo-01 向量 + cosine similarity 混合检索（v2.0 2026-04-22）
-- [ ] **生产数据积累** — 真实 verdicts 驱动（benchmark 22-case → 真实 outcome 积累中）（v2.0）
+- [ ] **生产数据积累** — MiniMax 429过载中，benchmark 待 API 恢复后继续（v2.1）
 - [x] Self-Evolver rollback 修复 + 验证闭环（v1.6）
 - [x] judgment/config.py 集中生产配置（v1.6）
 - [x] GDPVal Benchmark 22案例 + A/B/C/D 评分（v1.6）
@@ -239,6 +239,25 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 ---
 
 ## 版本更新
+
+### v2.1 (2026-04-22) — v2.0 根因修复 + Benchmark 验证
+
+**P0 outcome_score 写入链路修复（根因链 2026-04-22）：**
+- experiences 表 schema 缺少 `chain_id` 列 → 新增列 + migration
+- `_trigger_fitness()` 从未调用 `experiences.record_outcome()` → 新增调用
+- `chain_id` 哈希不匹配（experiences=SHA256[:16], judgment_snapshots=MD5[:24]）→ 改用 `task_text` 通过 `task_hash` 匹配
+
+**Commit 链：**
+```
+f7025fe fix(P0): experiences.outcome_score写入链路修复
+c315212 fix: record_outcome用task_text匹配，避免SHA256vsMD5哈希不匹配
+```
+
+**UnifiedProfile 验证（2026-04-22）：**
+- Profile entries: 29条已注入（verified: check10d_run 返回 `_profile_entries` 正确填充）
+- MiniMax: 429服务端过载，benchmark 待恢复
+
+---
 
 ### v2.0 (2026-04-22) — UnifiedProfile 单汇聚层 + P1 Review 全部完成
 
