@@ -325,13 +325,15 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
 
     # LLM接入：MiniMax回答所有维度问题
     prior_adj = ctx.prior_adjustments
+    # P0 FIX: ctx.unified_context 已在 merge_prompt_context() 里（inject_user_model 生成）
+    # 不再单独传 history_context / bio_context（避免重复注入 prompt）
     answers = _answer_questions(
-        ctx.merge_prompt_context(), # pipeline 合并后的 prompt（含情绪/因果/经历/生平）
+        ctx.merge_prompt_context(),  # unified_context 优先 + 三路已合并
         questions,
         agent_profile,
         prior_adj,
-        ctx.history_context,    # 途径2：历史相似（来自 pipeline）
-        ctx.bio_context,        # 途径1：生平事实（来自 pipeline）
+        "",  # 不再单独传 history_context（已合并到 unified_context）
+        "",  # 不再单独传 bio_context（已合并到 unified_context）
     )
 
     _ret = {
@@ -533,17 +535,16 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
         all_questions.update(dim_result)
     # Pipeline 编排（同步版，复用 check10d 已构建的 ctx）
     _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
-    # inject_experiences / inject_biography 已在 check10d 中执行，
-    # base_result["history_context"] / base_result["bio_context"] 可直接读
-    _history_ctx = base_result.get("history_context", "")
-    _bio_ctx = base_result.get("bio_context", "")
-    answers = _answer_questions(task_text, all_questions, agent_profile, _prior_adj, _history_ctx, _bio_ctx)
+    # P0 FIX: base_result["task"] 是 merge_prompt_context() 的结果（含 unified_context）
+    # 不再单独传 history_context / bio_context（已合并到 base_result["task"]）
+    _merged_prompt = base_result.get("task", task_text)
+    answers = _answer_questions(_merged_prompt, all_questions, agent_profile, _prior_adj, "", "")
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
     base_result["meta"]["parallel"] = False
     base_result["meta"]["prior_adjustments"] = _prior_adj
-    base_result["meta"]["history_context"] = _history_ctx  # 保留，供输出参考
+    base_result["meta"]["history_context"] = base_result.get("history_context", "")  # 保留，供输出参考
     # 末尾再次合成 verdict（用全部9维答案覆盖 check10d() 里的早期合成）
     verdict_str, confidence = _synthesize_verdict(task_text, answers)
     base_result["verdict"] = verdict_str

@@ -166,6 +166,11 @@ class UserModel:
             for p in ctx.patterns[:5]:
                 outcome_str = " -> {}".format(p.outcome) if p.outcome else ""
                 parts.append("  - {}{} ({})".format(p.conclusion, outcome_str, p.situation_type))
+        if ctx.intents:
+            parts.append("[Perception Intents]")
+            for i in ctx.intents[:5]:
+                parts.append("  - [{}.{}] {}: {}...".format(
+                    i.source, i.topic[:15], i.relevance, i.summary[:60]))
         return "\n".join(parts) if parts else ""
     # L1: Biography facts
     def _get_l1_facts(self, user_id: str) -> List[Fact]:

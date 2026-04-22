@@ -161,7 +161,7 @@ def inject_user_model(ctx: JudgmentContext) -> JudgmentContext:
             ctx.skipped_dimensions = getattr(ctx, 'skipped_dimensions', [])
             for c in unified_ctx.contradictions:
                 ctx.skipped_dimensions.append(
-                    f"contradiction:{c.l1_fact[:30]} vs {c.l2_pattern[:30]}"
+                    f"contradiction:{c.l1_claim[:30]} vs {c.l2_behavior[:30]}"
                 )
     except Exception as e:
         # 降级：不阻断判断流程
