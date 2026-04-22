@@ -236,6 +236,29 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 
 ## 版本更新
 
+### v2.0 (2026-04-22) — UnifiedProfile 单汇聚层 + P1 Review 全部完成
+
+**单汇聚点架构：**
+- `inject_unified_profile()` 是唯一汇聚点（移除 `inject_biography`/`inject_experiences`/`inject_causal_memory` 三个旧 injector）
+- pipeline.py：325→265行死代码清理
+- router 只读 `_profile_entries`（不再拼接 `bio_context`/`history_context`/`causal_context`）
+
+**三路优先级铁律**：experiences(做的) > biography(说的) > behavior(被动追踪的)
+- L2 experiences：`find_similar_structured()` — `similarity(0.6) + keyword_overlap(0.4)` 融合权重
+- L1 biography：per-item `half_life_days` 分级半衰期（finance=90d / career=180d / personality=730d）
+- L2 behavior：`_get_l3_behaviors()` → `BehaviorEntry` dataclass → 合并进 L3 intents
+
+**P1 Review 全部完成：**
+- 矛盾双向检测：`generate()` — L1 降 priority=3，L2 升 priority=1，`contradiction_flag` 双向
+- `to_prompt()` 结构化：`[PROFILE: priority=X, source=Y, recency=Z, claim="...", flag=Z]`
+- perception_intents 表路径修复：`_pi_db == _juhuo_db == E:\juhuo\data\juhuo.db`
+
+**experiences embedding v1：**
+- MiniMax `embo-01` 向量 + cosine similarity 混合检索
+- `_cosine_sim()` 纯 Python 实现，零 numpy 依赖
+
+---
+
 ### v2.0 (2026-04-21) — 三途径信息层 + Life OS v3
 
 **三途径信息层：**

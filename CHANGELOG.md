@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0] - 2026-04-22
+
+### Added
+- **UnifiedProfile 单汇聚层** — L1(facts) + L2(patterns) + L3(intents) → `ProfileEntry` 统一结构
+  - `judgment/user_model.py` — `UserModel.generate()` / `to_prompt()` / `to_summary()`
+  - `inject_unified_profile()` — pipeline 唯一汇聚点（移除三个旧 injector）
+  - `ProfileEntry` dataclass: `source/fact/pattern/signal`, `priority(1/2/3)`, `dimension`, `claim`, `recency_score`, `contradiction_flag`
+  - 端到端：37 profile entries / 552 chars unified_context
+
+- **三路优先级铁律**：experiences(做的) > biography(说的) > behavior(被动追踪的)
+  - L2 experiences: `find_similar_structured()` — `similarity(0.6) + keyword_overlap(0.4)` 融合权重
+  - L1 biography: 分级半衰期 per-item `half_life_days`（`biographical_facts` 表新列）
+  - L2 behavior: `_get_l3_behaviors()` → `BehaviorEntry` dataclass → 合并进 L3 intents
+
+- **P1 矛盾双向检测** — L1 声称 vs L2 行为 → 双向调整权重
+  - `generate()`: L1 降 `priority=3`（降级），L2 升 `priority=1`（升级），`contradiction_flag=True` 双向
+  - `to_prompt()`: 结构化格式 `[PROFILE: priority=X, source=Y, recency=Z, claim="...", flag=Z]`
+
+### Fixed
+- **pipeline.py 死代码清理** — `inject_biography`/`inject_experiences`/`inject_causal_memory` 定义删除，325→265行
+- **perception_intents 表路径** — `_pi_db == _juhuo_db` 确认，`perception_intents` 在 `data/juhuo.db`
+
+### Changed
+- **Experiences embedding v1** — MiniMax `embo-01` 向量 + cosine similarity 混合检索
+- **biography.py 增强** — 26条正则扩展（年龄近似/职业/家庭/学历），`confidence` 字段 per-item
+- **life_os.py PAD 扩展** — 情绪词 6→30+，PAD阈值修复（anxiety/excitement/anger 区分）
+
+---
+
 ## [2.0] - 2026-04-21
 
 ### Added
@@ -210,4 +239,4 @@ juhuo/
 
 ---
 
-_Last updated: 2026-04-21_
+_Last updated: 2026-04-22_
