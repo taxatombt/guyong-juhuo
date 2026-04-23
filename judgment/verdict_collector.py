@@ -5,6 +5,7 @@ from subsystems.judgment.judgment_db import (
     get_verdict_history,
 )
 from subsystems.judgment.closed_loop import receive_verdict
+from judgment.lessons import extract_and_save_from_case
 
 import json
 from pathlib import Path
@@ -84,13 +85,13 @@ def receive_actual_choice(chain_id, actual_action, user_id: str = "default"):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "SELECT task_text, verdict, predicted_action, prediction_confidence FROM judgment_snapshots WHERE chain_id=?",
+        "SELECT task_text, verdict, predicted_action, prediction_confidence, dimensions FROM judgment_snapshots WHERE chain_id=?",
         (chain_id,))
     row = c.fetchone()
     if not row:
         conn.close()
         return {"ok": False, "error": "Chain not found"}
-    task_text, verdict, predicted_action, prediction_confidence = row
+    task_text, verdict, predicted_action, prediction_confidence, dimensions_json = row
     predicted_action = (predicted_action or "").strip()
     def norm(s):
         _p = r"[\s，。！？；：\u201c\u201d\u2018\u2019\u300c\u300d\u300e\u300f\u2014\u2026\u00a0-\u00ff]+"
@@ -103,6 +104,29 @@ def receive_actual_choice(chain_id, actual_action, user_id: str = "default"):
             (len(set(np_) & set(na_)) / max(len(set(np_)), len(set(na_))) >= 0.5
             if np_ and na_ else False)))
     score = 1.0 if hit else 0.0
+
+    # 因果链教训提取（从判断结果自动生成教训）
+    dims_list = []
+    if dimensions_json:
+        try:
+            dims_list = json.loads(dimensions_json)
+        except Exception:
+            pass
+    lesson_ids = []
+    try:
+        lesson_ids = extract_and_save_from_case(
+            task_text=task_text or "",
+            verdict=verdict or "",
+            predicted_action=predicted_action,
+            actual_action=actual_action,
+            outcome_score=score,
+            dimensions=dims_list,
+            chain_id=chain_id,
+            user_id=user_id,
+        )
+    except Exception as _e:
+        import sys; print(f"extract_and_save_from_case failed: {_e}", file=sys.stderr)
+
     try:
         c.execute(
             "INSERT INTO verdict_outcomes (chain_id, task_text, correct, predicted_action, actual_action, outcome_score, notes, user_id) "
@@ -143,6 +167,7 @@ def receive_actual_choice(chain_id, actual_action, user_id: str = "default"):
         "outcome_score": score,
         "hit": hit,
         "experiences_updated": n_exp,
+        "lessons_extracted": lesson_ids,
     }
 
 

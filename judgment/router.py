@@ -35,6 +35,13 @@ from judgment.self_evolver import start_evolver_scheduler
 # Verdict 自动积累
 from evolver.verdict_collector import save_verdict as _save_auto_verdict, VerdictRecord
 
+# 因果链教训层
+from judgment.lessons import (
+    lessons_to_prompt,
+    classify_task_domain,
+    extract_and_save_from_case,
+)
+
 # LLM 调用函数（从 router.py 拆分，独立可测）
 # 注意：inject_emotion_signal 需使用 router.py 中的 global_emotion_system，
 # 已在 router.py line 108 初始化，此处直接用同名引用。
@@ -332,6 +339,9 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     # 不再单独传 history_context / bio_context（避免重复注入 prompt）
     # UnifiedProfile entries：ctx._profile_entries 由 inject_user_model 填充
     _profile_entries = getattr(ctx, '_profile_entries', None) or []
+    # 因果链教训注入（从同类判断结果中提取的具体教训）
+    _task_domain = classify_task_domain(ctx.task_text)
+    _lessons_ctx = lessons_to_prompt(domain=_task_domain)
     answers = _answer_questions(
         ctx.merge_prompt_context(),  # unified_context 优先 + 三路已合并
         questions,
@@ -340,6 +350,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         "",  # 不再单独传 history_context（已合并到 unified_context）
         "",  # 不再单独传 bio_context（已合并到 unified_context）
         _profile_entries,  # UnifiedProfile.to_prompt() 标注注入
+        _lessons_ctx,      # 历史教训注入（因果链教训）
     )
 
     _ret = {
@@ -552,8 +563,10 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     # 三路数据统一通过 inject_unified_profile → _profile_entries
     _merged_prompt = task_text  # 原始任务，profile 由 _answer_questions 注入
     _profile_entries = base_result.get("_profile_entries", []) or []
+    _task_domain = classify_task_domain(task_text)
+    _lessons_ctx = lessons_to_prompt(domain=_task_domain)
     answers = _answer_questions(_merged_prompt, all_questions, agent_profile,
-                                _prior_adj, "", "", _profile_entries)
+                                _prior_adj, "", "", _profile_entries, _lessons_ctx)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
