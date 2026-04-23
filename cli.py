@@ -37,6 +37,7 @@ def cmd_judge(task: str, verbose: bool = False, user_id: str = "default"):
     print(f"\n⚖️  正在分析: {task}\n")
     
     result = check10d_full(task, user_id=user_id)
+    chain_id = result.get('chain_id', '')
     
     if verbose:
         print(format_full_report(result))
@@ -50,7 +51,29 @@ def cmd_judge(task: str, verbose: bool = False, user_id: str = "default"):
             src_map = {'verdict_extraction':'绵弁解析','llm':'LLM预测','llm_raw':'LLM原始','none':'无'}
             src_ch = src_map.get(src, src)
             print(f"  → 预测你会选择: 【{pred_act}】 (置信度 {pred_conf*100:.0f}%, 来源: {src_ch})")
-        print(f"→ Chain ID: {result.get('chain_id', '')}")
+        print(f"→ Chain ID: {chain_id}")
+
+    # P0 #1: 反馈入口 — 闭环的开关
+    if chain_id:
+        try:
+            fb = input("\n这个判断对吗？(y=对了 / n=错了 / u=不确定 / 回车=跳过): ").strip().lower()
+            if fb == 'y':
+                mark_verdict_correct(chain_id, user_id=user_id)
+                print("✅ 已标记为正确")
+            elif fb == 'n':
+                mark_verdict_wrong(chain_id, user_id=user_id)
+                print("❌ 已标记为错误")
+            elif fb == 'u':
+                # 不确定 → 调用 receive_verdict 记录为中性反馈
+                try:
+                    from judgment.verdict_collector import receive_verdict
+                    receive_verdict(chain_id=chain_id, correct=True,
+                                   outcome_score=0.5, notes="user_unsure", user_id=user_id)
+                    print("📝 已记录为不确定反馈")
+                except Exception:
+                    pass
+        except (KeyboardInterrupt, EOFError):
+            print()  # 换行，避免 Ctrl+C 后残留提示符
 
 
 def cmd_shell():
