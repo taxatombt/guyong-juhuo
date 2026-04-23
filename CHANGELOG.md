@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2] - 2026-04-23
+
+### Added
+- **Lessons System v2** — 因果链教训层（P2-1/P2-2/P2-3全部完成）
+  - `judgment/lessons.py` — 完整教训系统（326行）
+  - **P2-1 LLM语义提取**: `_llm_extract_lessons()` — MiniMax API调用 + fallback规则提取
+  - **P2-2 50条种子教训**: 9领域49条种子，investment(13)/career(8)/relationship(6)/health(6)/universal(3)/family(4)/finance(4)/education(3)/migration(3)
+  - **P2-3 Confidence时间衰减**: 半衰期30天，`exp(-ln2 * days_elapsed / 30)`，有效置信度 = stored × decay
+  - `lessons_to_prompt()` → router.py `_build_answer_prompt(lessons_context=...)` → 第5位注入
+  - 20列表schema: `id, lesson_type, domain, pattern, root_cause, correction, positive_cases, negative_cases, hit_count, miss_count, confidence, source, tags, verified, instance_signature, created_at, updated_at, last_reinforced, times_applied, user_id`
+
+### Fixed
+- Schema不匹配: `LESSONS_SCHEMA`从12列→20列，与表定义对齐
+- Cursor vs Connection: `c.lastrowid` → `cur.lastrowid`
+- `SELECT *` 列错位: DROP旧表→重建→INSERT seeds
+- DB路径: lessons.py 用 `E:\juhuo\data\judgment_data\juhuo.db`
+
 ## [2.0] - 2026-04-22
 
 ### Added
