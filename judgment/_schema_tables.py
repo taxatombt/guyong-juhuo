@@ -12,18 +12,19 @@ _TABLE_DEFS = [
      "miss_count INTEGER DEFAULT 0, last_id TEXT, "
      "last_updated TEXT DEFAULT (datetime('now')), last_used TEXT"),
     ("judgment_snapshots",
-     "id INTEGER, chain_id TEXT UNIQUE, ts REAL, task_hash TEXT, task_text TEXT, "
-     "dimensions TEXT, weights TEXT, answers TEXT, confidence TEXT, complexity TEXT, "
-     "emotion_label TEXT, causal_has_history INTEGER, outcome_auto REAL, corrected INTEGER, "
-     "verdict TEXT, created_at TEXT DEFAULT (datetime('now')), PRIMARY KEY(id, chain_id)"),
+     "id INTEGER, user_id TEXT DEFAULT 'default', chain_id TEXT UNIQUE, ts REAL, "
+     "task_hash TEXT, task_text TEXT, dimensions TEXT, weights TEXT, answers TEXT, "
+     "confidence TEXT, complexity TEXT, emotion_label TEXT, causal_has_history INTEGER, "
+     "outcome_auto REAL, corrected INTEGER, verdict TEXT, created_at TEXT DEFAULT (datetime('now')), "
+     "PRIMARY KEY(id, chain_id)"),
     ("outcome_predictions",
      "id INTEGER, chain_id TEXT, predicted_action TEXT, predicted_consequence TEXT, "
      "expected_timeline TEXT, prediction_ts REAL, verified INTEGER, actual_action TEXT, "
      "actual_consequence TEXT, outcome_score REAL, verified_ts REAL, verifier TEXT, "
      "created_at TEXT DEFAULT (datetime('now')), PRIMARY KEY(id,chain_id)"),
     ("verdict_outcomes",
-     "id INTEGER PRIMARY KEY, chain_id TEXT, task_text TEXT, correct INTEGER, "
-     "notes TEXT, outcome_score REAL, created_at TEXT DEFAULT (datetime('now'))"),
+     "id INTEGER PRIMARY KEY, user_id TEXT DEFAULT 'default', chain_id TEXT, task_text TEXT, "
+     "correct INTEGER, notes TEXT, outcome_score REAL, created_at TEXT DEFAULT (datetime('now'))"),
     ("experiences",
      "id INTEGER PRIMARY KEY, user_id TEXT DEFAULT 'default', situation_type TEXT, "
      "task_hash TEXT, task_text TEXT, context TEXT, conclusion TEXT, confidence REAL, "
@@ -33,8 +34,8 @@ _TABLE_DEFS = [
      "source TEXT DEFAULT 'manual', task_embedding TEXT, "
      "chain_id TEXT"),
     ("causal_chain",
-     "id INTEGER PRIMARY KEY, chain_id TEXT, ts REAL, task_hash TEXT, task_text TEXT, "
-     "dimensions TEXT, outcome REAL, corrected INTEGER, notes TEXT, created_at TEXT"),
+     "id INTEGER PRIMARY KEY, user_id TEXT DEFAULT 'default', chain_id TEXT, ts REAL, "
+     "task_hash TEXT, task_text TEXT, dimensions TEXT, outcome REAL, corrected INTEGER, notes TEXT, created_at TEXT"),
     ("causal_events",
      "id INTEGER PRIMARY KEY, event_type TEXT, task_hash TEXT, task_text TEXT, "
      "situation_type TEXT, conclusion TEXT, outcome TEXT, outcome_score REAL, "

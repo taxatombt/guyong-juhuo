@@ -78,7 +78,7 @@ def save_verdict(*args, **kwargs): pass
 
 
 
-def receive_actual_choice(chain_id, actual_action):
+def receive_actual_choice(chain_id, actual_action, user_id: str = "default"):
     """用户决策后调用：写入 verdict_outcomes + 更新 judgment_snapshots.outcome_score"""
     import sqlite3, re
     conn = sqlite3.connect(DB_PATH)
@@ -105,18 +105,18 @@ def receive_actual_choice(chain_id, actual_action):
     score = 1.0 if hit else 0.0
     try:
         c.execute(
-            "INSERT INTO verdict_outcomes (chain_id, task_text, correct, predicted_action, actual_action, outcome_score, notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO verdict_outcomes (chain_id, task_text, correct, predicted_action, actual_action, outcome_score, notes, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (chain_id, (task_text or "")[:300], 1 if hit else 0,
-             predicted_action[:200], (actual_action or "")[:200], score, "actual_choice"))
+             predicted_action[:200], (actual_action or "")[:200], score, "actual_choice", user_id))
     except Exception as ex:
         print(f"verdict_outcomes insert error: {ex}")
     c.execute("UPDATE judgment_snapshots SET outcome_score=? WHERE chain_id=?",
               (score, chain_id))
     c.execute(
         "UPDATE experiences SET actual_action=?, outcome_score=?, updated_at=datetime('now') "
-        "WHERE task_text=? AND (actual_action IS NULL OR actual_action='')",
-        ((actual_action or "")[:200], score, (task_text or "")[:300]))
+        "WHERE task_text=? AND (actual_action IS NULL OR actual_action='') AND user_id=?",
+        ((actual_action or "")[:200], score, (task_text or "")[:300], user_id))
     n_exp = c.rowcount
     conn.commit()
     conn.close()
@@ -129,7 +129,8 @@ def receive_actual_choice(chain_id, actual_action):
             chain_id=chain_id,
             correct=_correct,
             outcome_score=score,
-            notes=f"actual_choice: predicted={predicted_action[:50]} actual={actual_action[:50]}"
+            notes=f"actual_choice: predicted={predicted_action[:50]} actual={actual_action[:50]}",
+            user_id=user_id,
         )
     except Exception as _e:
         import sys; print(f"receive_verdict call failed: {_e}", file=sys.stderr)

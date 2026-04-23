@@ -43,7 +43,7 @@ def init():
     init_schema(rebuild=False)
 
 
-def snapshot_judgment(chain_id,task_text,dimensions,weights,result,complexity):
+def snapshot_judgment(chain_id,task_text,dimensions,weights,result,complexity,user_id="default"):
 
     """Frozen Snapshot: judgment调用时立即落盘，同时记录causal_chain"""  
 
@@ -68,9 +68,9 @@ def snapshot_judgment(chain_id,task_text,dimensions,weights,result,complexity):
 
             (chain_id,now,task_hash,task_text[:500] or "",json.dumps(dimensions,ensure_ascii=False),json.dumps(weights,ensure_ascii=False),json.dumps(answers,ensure_ascii=False),json.dumps(confidence,ensure_ascii=False),complexity,emotion_label,causal_hist,verdict_text[:300] or "",pred_action[:200] or "",pred_conf))
 
-        c.execute("INSERT INTO causal_chain (chain_id,ts,task_hash,task_text,dimensions,outcome) VALUES (?,?,?,?,?,NULL)",
+        c.execute("INSERT INTO causal_chain (chain_id,ts,task_hash,task_text,dimensions,outcome,user_id) VALUES (?,?,?,?,?,NULL,?)",
 
-            (chain_id,now,task_hash,task_text[:300] or "",json.dumps({"dims":dimensions,"weights":weights},ensure_ascii=False)))
+            (chain_id,now,task_hash,task_text[:300] or "",json.dumps({"dims":dimensions,"weights":weights},ensure_ascii=False),user_id))
 
         c.execute("DELETE FROM causal_chain WHERE id NOT IN (SELECT id FROM causal_chain ORDER BY ts DESC LIMIT ?)",(MAX_CHAIN_RECORDS,))
 
@@ -102,7 +102,7 @@ def snapshot_judgment(chain_id,task_text,dimensions,weights,result,complexity):
 
 def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
-                      actual_action="", actual_consequence="", outcome_score=None, verifier="user"):
+                      user_id="default", actual_action="", actual_consequence="", outcome_score=None, verifier="user"):
 
     """
 
@@ -265,16 +265,16 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
                     # experiences=MD5[:24]），同时兼容旧 experiences（task_text NULL 但有 chain_id）
                     _n = c.execute(
                         "UPDATE experiences SET outcome=?, outcome_score=?, outcome_notes=? "
-                        "WHERE chain_id=?",
-                        (_outcome, _score, str(notes)[:200], chain_id)
+                        "WHERE chain_id=? AND user_id=?",
+                        (_outcome, _score, str(notes)[:200], chain_id, user_id)
                     ).rowcount
 
                     # 如果 chain_id 查不到（老数据），fallback 到 task_text 匹配
                     if _n == 0:
                         _n = c.execute(
                             "UPDATE experiences SET outcome=?, outcome_score=?, outcome_notes=? "
-                            "WHERE task_text=? AND user_id='default' AND outcome_score IS NULL",
-                            (_outcome, _score, str(notes)[:200], task_text)
+                            "WHERE task_text=? AND user_id=? AND outcome_score IS NULL",
+                            (_outcome, _score, str(notes)[:200], task_text, user_id)
                         ).rowcount
 
                     c.commit()
@@ -682,13 +682,13 @@ def is_listener_active()->bool:
 
 # 新实现: 内部调用 snapshot_judgment，同时写入 causal_chain + judgment_snapshots
 
-def record_judgment(task_text, dimensions, weights, reasoning=None, outcome=None):
+def record_judgment(task_text, dimensions, weights, reasoning=None, outcome=None, user_id="default"):
 
     chain_id = f"j_{int(time.time()*1000)}"
 
     dummy_result = {"answers": {}, "meta": {"reasoning": reasoning or {}}, "emotion": {}, "curiosity": {}, "dim_confidence": {}}
 
-    snapshot_judgment(chain_id, task_text, dimensions, weights, dummy_result, "auto")
+    snapshot_judgment(chain_id, task_text, dimensions, weights, dummy_result, "auto", user_id)
 
     return chain_id
 
@@ -751,7 +751,7 @@ def predict_outcome(chain_id, predicted_action, predicted_consequence="", expect
 
 
 
-def verify_outcome(chain_id, actual_action, actual_consequence="", outcome_score=None, verifier="user"):
+def verify_outcome(chain_id, actual_action, actual_consequence="", outcome_score=None, user_id="default", verifier="user"):
 
     """
 

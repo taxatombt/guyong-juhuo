@@ -421,6 +421,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
             dimensions=_dims_chosen,
             weights=_weights,
             reasoning={},
+            user_id=user_id,
         )
         _ret["meta"]["chain_id"] = _chain_id
         
