@@ -534,17 +534,6 @@ def get_prior_adjustments()->Dict[str,float]:
 
     c=_get_db_conn()
 
-    # ── Debug: trace decision ───────────────────────────────────────────
-    import threading as _thr, sys as _sys
-    _t = _thr.current_thread().ident
-    if not hasattr(_sys, '_recv_depths'):
-        _sys._recv_depths = {}
-    _sys._recv_depths[_t] = _sys._recv_depths.get(_t, 0) + 1
-    _depth = _sys._recv_depths[_t]
-    if _depth <= 3:
-        print(f"  [recv:{_depth}] chain={str(chain_id)[:25]} correct={correct}")
-    # ── End Debug ──────────────────────────────────────────────────────
-
     try:return {r[0]:r[1] for r in c.execute("SELECT dimension,belief FROM dimension_beliefs")}
 
     finally:pass  # P0-1: 不关闭 per-thread 连接
@@ -554,17 +543,6 @@ def get_prior_adjustments()->Dict[str,float]:
 def get_recent_chains(limit=10, user_id='default'):
 
     c=_get_db_conn()
-
-    # ── Debug: trace decision ───────────────────────────────────────────
-    import threading as _thr, sys as _sys
-    _t = _thr.current_thread().ident
-    if not hasattr(_sys, '_recv_depths'):
-        _sys._recv_depths = {}
-    _sys._recv_depths[_t] = _sys._recv_depths.get(_t, 0) + 1
-    _depth = _sys._recv_depths[_t]
-    if _depth <= 3:
-        print(f"  [recv:{_depth}] chain={str(chain_id)[:25]} correct={correct}")
-    # ── End Debug ──────────────────────────────────────────────────────
 
     try:return [{"chain_id":r[0],"ts":r[1],"task_text":r[2],"outcome":r[3],"corrected":bool(r[4])} for r in c.execute("SELECT chain_id,ts,task_text,outcome,corrected FROM causal_chain WHERE user_id=? ORDER BY ts DESC LIMIT ?",(user_id,limit,)).fetchall()]
 
