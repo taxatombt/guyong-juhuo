@@ -539,8 +539,7 @@ class EvolverScheduler:
             result["action"] = "continued"
             print(f"[Self-Evolver] ⏳ 进化{evolution_id}验证不确定：delta={delta:.2%}")
         
-        # 更新数据库（已记录到 evolution_log，跳过 evolution_validation 写入）
-        # self._update_validation_record(result)
+        # 更新数据库（已记录到 evolution_log，无需额外写入）
         
         # 清理
         del self._pending_validations[evolution_id]
@@ -616,25 +615,6 @@ class EvolverScheduler:
         except Exception as e:
             log.error(f"[Self-Evolver] Rollback 异常: {e}")
             return False
-    
-    def _update_validation_record(self, result: Dict) -> None:
-        """更新验证记录到数据库"""
-        with get_conn() as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO evolution_validation 
-                (evolution_id, applied_at, post_judgments, post_correct, 
-                 accuracy_delta, status, validated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                result.get("evolution_id"),
-                datetime.now().isoformat(),
-                result.get("post_judgments", 0),
-                result.get("post_correct", 0),
-                result.get("delta", 0),
-                result.get("status"),
-                datetime.now().isoformat()
-            ))
-            conn.commit()
     
     def run_if_needed(self) -> Optional[Dict]:
         """条件满足则执行进化"""
