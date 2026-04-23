@@ -150,30 +150,24 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
             if r: target=r
 
-            # 【P0修复】从 judgment_snapshots 查 task_text，
-            # 解决 verdict_collector/stop_hook 只传 chain_id 不传 task_text 的问题
+            # 【P2核心修复】causal_chain corrected=1 → fallback 到 judgment_snapshots
+            # 【P2核心修复2】judgment_snapshots 有 corrected 记录时，target 不置空，不重复运行 hooks
             _snap = c.execute(
-                "SELECT task_text FROM judgment_snapshots WHERE chain_id=? LIMIT 1",
+                "SELECT task_text, corrected, dimensions FROM judgment_snapshots WHERE chain_id=? LIMIT 1",
                 (chain_id,)
             ).fetchone()
             if _snap and _snap[0]:
-                task_text = _snap[0]  # 覆盖 None，确保后续 record_outcome 能触发
+                task_text = _snap[0]
+                _snap_corrected = _snap[1]
+                _snap_dims_raw = _snap[2]
 
-            # 【P0核心修复】causal_chain 里 corrected=1（已被处理），
-            # fallback 到 judgment_snapshots.dimensions（judgment_snapshots 才是真实数据源）
-            if not target:
-                _snap_dims = c.execute("""
-                    SELECT dimensions, corrected FROM judgment_snapshots
-                    WHERE chain_id=? AND dimensions IS NOT NULL AND dimensions != '[]'
-                    LIMIT 1
-                """, (chain_id,)).fetchone()
-                if _snap_dims:
-                    dims_json, _corrected = _snap_dims
-                    # judgment_snapshots.dimensions 是 JSON list: ["cognitive", "game_theory", ...]
-                    # 转为 causal_chain 兼容的 {"dims": [...]} 格式
-                    dims_list = json.loads(dims_json) if dims_json else []
-                    if dims_list:
-                        target = (-1, json.dumps({"dims": dims_list}))
+                if not target:
+                    # 只有 causal_chain 没有数据时才从 judgment_snapshots 恢复
+                    # 如果 judgment_snapshots 已有 corrected=1，不重建 target，避免 stop_hook 递归
+                    if _snap_corrected != 1 and _snap_dims_raw:
+                        dims_list = json.loads(_snap_dims_raw) if _snap_dims_raw else []
+                        if dims_list:
+                            target = (-1, json.dumps({"dims": dims_list}))
 
         elif task_text:
 
@@ -540,6 +534,17 @@ def get_prior_adjustments()->Dict[str,float]:
 
     c=_get_db_conn()
 
+    # ── Debug: trace decision ───────────────────────────────────────────
+    import threading as _thr, sys as _sys
+    _t = _thr.current_thread().ident
+    if not hasattr(_sys, '_recv_depths'):
+        _sys._recv_depths = {}
+    _sys._recv_depths[_t] = _sys._recv_depths.get(_t, 0) + 1
+    _depth = _sys._recv_depths[_t]
+    if _depth <= 3:
+        print(f"  [recv:{_depth}] chain={str(chain_id)[:25]} correct={correct}")
+    # ── End Debug ──────────────────────────────────────────────────────
+
     try:return {r[0]:r[1] for r in c.execute("SELECT dimension,belief FROM dimension_beliefs")}
 
     finally:pass  # P0-1: 不关闭 per-thread 连接
@@ -550,6 +555,17 @@ def get_recent_chains(limit=10, user_id='default'):
 
     c=_get_db_conn()
 
+    # ── Debug: trace decision ───────────────────────────────────────────
+    import threading as _thr, sys as _sys
+    _t = _thr.current_thread().ident
+    if not hasattr(_sys, '_recv_depths'):
+        _sys._recv_depths = {}
+    _sys._recv_depths[_t] = _sys._recv_depths.get(_t, 0) + 1
+    _depth = _sys._recv_depths[_t]
+    if _depth <= 3:
+        print(f"  [recv:{_depth}] chain={str(chain_id)[:25]} correct={correct}")
+    # ── End Debug ──────────────────────────────────────────────────────
+
     try:return [{"chain_id":r[0],"ts":r[1],"task_text":r[2],"outcome":r[3],"corrected":bool(r[4])} for r in c.execute("SELECT chain_id,ts,task_text,outcome,corrected FROM causal_chain WHERE user_id=? ORDER BY ts DESC LIMIT ?",(user_id,limit,)).fetchall()]
 
     finally:pass  # P0-1: 不关闭 per-thread 连接
@@ -559,6 +575,17 @@ def get_recent_chains(limit=10, user_id='default'):
 def get_dimension_beliefs()->Dict[str,Dict[str,Any]]:
 
     c=_get_db_conn()
+
+    # ── Debug: trace decision ───────────────────────────────────────────
+    import threading as _thr, sys as _sys
+    _t = _thr.current_thread().ident
+    if not hasattr(_sys, '_recv_depths'):
+        _sys._recv_depths = {}
+    _sys._recv_depths[_t] = _sys._recv_depths.get(_t, 0) + 1
+    _depth = _sys._recv_depths[_t]
+    if _depth <= 3:
+        print(f"  [recv:{_depth}] chain={str(chain_id)[:25]} correct={correct}")
+    # ── End Debug ──────────────────────────────────────────────────────
 
     try:return {r[0]:{"belief":r[1],"hit":r[2],"miss":r[3]} for r in c.execute("SELECT dimension,belief,hit_count,miss_count FROM dimension_beliefs")}
 
@@ -578,17 +605,21 @@ def _verdict_signal_listener():
 
     """后台线程：监听 outcomes.jsonl，自动调用 receive_verdict"""  
 
-    empty_count=0
+    empty_count=0; base_sleep=2; max_sleep=30
 
     while not _listener_stop.is_set():
 
-        _listener_stop.wait(timeout=2)
-
+        # 指数退避：2s → 4s → 8s → 16s → 30s（封顶）
+        sleep_time = min(base_sleep * (2 ** empty_count), max_sleep)
+        _listener_stop.wait(timeout=sleep_time)
         if _listener_stop.is_set(): break
 
         try:
 
-            if not os.path.exists(_OUTCOMES_FILE): empty_count+=1; continue
+            if not os.path.exists(_OUTCOMES_FILE):
+                empty_count += 1
+                _logger.debug(f"[listener] file not found, empty_count={empty_count}, sleep={sleep_time}s")
+                continue
 
             with open(_OUTCOMES_FILE,encoding="utf-8") as f:
 
@@ -596,10 +627,8 @@ def _verdict_signal_listener():
 
             if not lines:
 
-                empty_count+=1
-
-                if empty_count>=3: break
-
+                empty_count += 1
+                _logger.debug(f"[listener] empty file, empty_count={empty_count}, sleep={sleep_time}s")
                 continue
 
             empty_count=0
