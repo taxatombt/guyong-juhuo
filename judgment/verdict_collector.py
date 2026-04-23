@@ -28,14 +28,14 @@ def get_verdict_stats() -> dict:
     }
 
 
-def mark_verdict_correct(chain_id: str, notes: str = "") -> bool:
+def mark_verdict_correct(chain_id: str, notes: str = "", user_id: str = "default") -> bool:
     """标记某条判断为正确"""
-    return receive_verdict(chain_id=chain_id, correct=True, notes=notes)
+    return receive_verdict(chain_id=chain_id, correct=True, notes=notes, user_id=user_id)
 
 
-def mark_verdict_wrong(chain_id: str, notes: str = "") -> bool:
+def mark_verdict_wrong(chain_id: str, notes: str = "", user_id: str = "default") -> bool:
     """标记某条判断为错误"""
-    return receive_verdict(chain_id=chain_id, correct=False, notes=notes)
+    return receive_verdict(chain_id=chain_id, correct=False, notes=notes, user_id=user_id)
 
 
 def remove_verdict(chain_id: str) -> bool:

@@ -32,11 +32,11 @@ from judgment.biography import log, format_profile, get_all
 log = get_logger("juhuo.cli")
 
 
-def cmd_judge(task: str, verbose: bool = False):
+def cmd_judge(task: str, verbose: bool = False, user_id: str = "default"):
     """执行判断"""
     print(f"\n⚖️  正在分析: {task}\n")
     
-    result = check10d_full(task)
+    result = check10d_full(task, user_id=user_id)
     
     if verbose:
         print(format_full_report(result))
@@ -153,11 +153,11 @@ def cmd_verdict(args):
             print(f"    → {verdict}\n")
     
     elif args.action == "correct":
-        mark_verdict_correct(args.chain_id)
+        mark_verdict_correct(args.chain_id, user_id=getattr(args,"user_id","default"))
         print(f"✅ 已标记为正确: {args.chain_id}")
     
     elif args.action == "wrong":
-        mark_verdict_wrong(args.chain_id)
+        mark_verdict_wrong(args.chain_id, user_id=getattr(args,"user_id","default"))
         print(f"❌ 已标记为错误: {args.chain_id}")
     
     elif args.action == "detail":
@@ -349,6 +349,7 @@ def main():
     judge_parser = subparsers.add_parser("judge", help="执行判断")
     judge_parser.add_argument("task", help="判断问题")
     judge_parser.add_argument("-v", "--verbose", action="store_true", help="详细输出")
+    judge_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识（多用户隔离）")
     
     # shell
     subparsers.add_parser("shell", help="交互模式")
@@ -367,11 +368,13 @@ def main():
     verdict_parser.add_argument("-c", "--chain_id_arg", dest="chain_id_arg", help="Chain ID (actual command)")
     verdict_parser.add_argument("-a", "--actual", dest="actual_arg", help="Actual user choice (actual command)")
     verdict_parser.add_argument("-n", "--limit", type=int, default=20, help="列表数量")
+    verdict_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识（多用户隔离）")
 
     # bio
     bio_parser = subparsers.add_parser("bio", help="生平事实管理")
     bio_parser.add_argument("action", choices=["show", "add", "list"], help="操作")
     bio_parser.add_argument("fact", nargs="?", help="事实文本（如：我30岁程序员）")
+    bio_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识（多用户隔离）")
     
     # config
     config_parser = subparsers.add_parser("config", help="配置管理")
@@ -387,11 +390,12 @@ def main():
     beh_parser.add_argument("-c", "--channel", help="过滤通道（如：judgment/web_search）")
     beh_parser.add_argument("-n", "--limit", type=int, default=10, help="列表数量")
     beh_parser.add_argument("behavior_id", nargs="?", help="行为ID（show时用）")
+    beh_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识（多用户隔离）")
 
     args = parser.parse_args()
     
     if args.cmd == "judge":
-        cmd_judge(args.task, args.verbose)
+        cmd_judge(args.task, args.verbose, getattr(args, "user_id", "default"))
     elif args.cmd == "shell":
         cmd_shell()
     elif args.cmd == "web":

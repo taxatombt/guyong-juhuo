@@ -92,13 +92,13 @@ def format_causal_report(chain_result):
 
 # ── CLI re-exports (judgment/closed_loop 中的函数) ──
 # Lazy import 避免触发 judgment/llm_adapter 链
-def get_recent_chains(limit=10):
+def get_recent_chains(limit=10, user_id="default"):
     from subsystems.judgment.closed_loop import get_recent_chains as _f
-    return _f(limit=limit)
+    return _f(limit=limit, user_id=user_id)
 
-def get_chain_detail(chain_id: str) -> dict:
+def get_chain_detail(chain_id: str, user_id: str = "default") -> dict:
     from subsystems.judgment.closed_loop import get_recent_chains as _f
-    chains = _f(limit=9999)
+    chains = _f(limit=9999, user_id=user_id)
     for c in chains:
         if c.get("chain_id") == chain_id:
             return c

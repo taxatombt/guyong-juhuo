@@ -115,7 +115,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
             try:
-                self._stream_analysis(task, profile_name)
+                parsed_q = urlparse(self.path)
+                params_q = parse_qs(parsed_q.query)
+                uid_q = params_q.get("user_id", ["default"])[0]
+                self._stream_analysis(task, profile_name, user_id=uid_q)
             except Exception as e:
                 self.send_sse("error", {"message": str(e)})
             return
@@ -141,9 +144,10 @@ class Handler(BaseHTTPRequestHandler):
             if not task:
                 self.send_json({"error": "task empty"}, 400)
                 return
+            user_id = data.get("user_id", "default")
             profile = load_profile(profile_name) if profile_name else None
             try:
-                result = check10d(task, agent_profile=profile, complexity="auto")
+                result = check10d(task, agent_profile=profile, complexity="auto", user_id=user_id)
             except Exception as e:
                 self.send_json({"error": str(e)}, 500)
                 return
@@ -212,12 +216,12 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
 
-    def _stream_analysis(self, task, profile_name):
+    def _stream_analysis(self, task, profile_name, user_id="default"):
         """Stream progressive analysis via SSE events"""
         profile = load_profile(profile_name) if profile_name else None
         cfg = PipelineConfig(agent_profile=profile, enable_adversarial=True, enable_qiushi=True,
                              enable_embedding=True, enable_lessons=True)
-        result = check10d_full(task, cfg)
+        result = check10d_full(task, cfg, user_id=user_id)
         dims = result.get("check_result", {}).get("dimensions", [])
         weights = result.get("weights", {})
         confidences = result.get("confidences", {})

@@ -213,7 +213,7 @@ def prefetch(task_text: str) -> Dict[str, Any]:
 # Pipeline 编排入口
 # ════════════════════════════════════════════════════════════════════════════
 
-def check10d_full(task_text: str, config: dict = None) -> dict:
+def check10d_full(task_text: str, config: dict = None, user_id: str = "default") -> dict:
     """
     全量 pipeline 判断（供 MCP server 等外部调用）。
 
@@ -225,12 +225,13 @@ def check10d_full(task_text: str, config: dict = None) -> dict:
     Args:
         task_text: 判断问题
         config: 可选配置（目前未使用，保留接口兼容）
+        user_id: 用户标识，用于多用户数据隔离
 
     Returns:
         dict，含 verdict/confidence/chain_id/dimensions
     """
     from judgment.router import check10d_run
-    return check10d_run(task_text)
+    return check10d_run(task_text, user_id=user_id)
 
 
 def PipelineConfig(**kwargs):

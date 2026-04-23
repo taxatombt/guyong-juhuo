@@ -546,11 +546,11 @@ def get_prior_adjustments()->Dict[str,float]:
 
 
 
-def get_recent_chains(limit=10):
+def get_recent_chains(limit=10, user_id='default'):
 
     c=_get_db_conn()
 
-    try:return [{"chain_id":r[0],"ts":r[1],"task_text":r[2],"outcome":r[3],"corrected":bool(r[4])} for r in c.execute("SELECT chain_id,ts,task_text,outcome,corrected FROM causal_chain ORDER BY ts DESC LIMIT ?",(limit,)).fetchall()]
+    try:return [{"chain_id":r[0],"ts":r[1],"task_text":r[2],"outcome":r[3],"corrected":bool(r[4])} for r in c.execute("SELECT chain_id,ts,task_text,outcome,corrected FROM causal_chain WHERE user_id=? ORDER BY ts DESC LIMIT ?",(user_id,limit,)).fetchall()]
 
     finally:pass  # P0-1: 不关闭 per-thread 连接
 
