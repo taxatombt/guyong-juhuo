@@ -16,6 +16,7 @@ self_evolver.py — Juhuo Self-Evolver 自动闭环引擎
 """
 
 import json
+import uuid
 import time
 import logging
 from datetime import datetime, timedelta
@@ -122,6 +123,7 @@ def get_cases() -> List[Dict]:
         # FIX: judgment_snapshots 有数据，judgments 是空表
         rows = conn.execute("""
             SELECT v.chain_id, v.task_text, v.correct as outcome, v.created_at,
+                   v.outcome_score,
                    s.dimensions, s.weights
             FROM verdict_outcomes v
             LEFT JOIN judgment_snapshots s ON v.chain_id = s.chain_id
@@ -170,33 +172,46 @@ def compute_new_weights(cases: List[Dict]) -> Dict:
 # 5. 对比新旧规则
 def compare(old_rules: Dict, new_rules: Dict, cases: List[Dict]) -> Dict:
     """新旧规则对比"""
-    def score(rules):
+    """新旧规则对比"""
+    def score(rules, cases):
+        """score: 0.0~1.0. 有outcome_score则用它；无权重时也用outcome_score作基准"""
         if not cases:
-            return 0
+            return 0.0
         w = rules.get("weights", {})
-        ok_cnt = 0
+        total, count = 0.0, 0
         for c in cases:
             dims = json.loads(c.get("dimensions", "[]")) if c.get("dimensions") else []
-            
-            outcome = c.get("outcome")
-            if outcome is None:
-                correct = bool(c.get("correct", 0))
-            else:
-                correct = outcome not in ["坏", "错", "wrong", "bad", "", None]
-            
+            outcome_score = c.get("outcome_score")  # 连续分数 0.0~1.0
             if dims and w:
                 predicted = sum(w.get(d, 0.1) for d in dims) / len(dims) > 0.5
-                if predicted == correct:
-                    ok_cnt += 1
-        return ok_cnt / len(cases) if cases else 0
+                if outcome_score is not None:
+                    case_score = outcome_score if predicted else (1.0 - outcome_score)
+                else:
+                    correct = c.get("outcome") not in ["坏", "错", "wrong", "bad", "", None] if c.get("outcome") else bool(c.get("correct", 0))
+                    case_score = 1.0 if predicted == correct else 0.0
+            elif outcome_score is not None:
+                case_score = outcome_score  # 无权重时：用 outcome_score 作为基准
+            else:
+                case_score = 0.5  # 随机基线
+            total += case_score
+            count += 1
+        return total / count if count > 0 else 0.0
     
-    old_s = score(old_rules)
-    new_s = score(new_rules)
+    # 基线：历史判断的平均 outcome_score（衡量当前系统真实水平）
+    baseline = (sum((c.get("outcome_score") or 0.5) for c in cases) / len(cases)) if cases else 0.5
+    old_s = score(old_rules, cases)
+    new_s = score(new_rules, cases)
+    # 无权重时 old_s = baseline（真实基准），improvement 不再是 100%
+    if not old_rules.get("weights"):
+        old_s = baseline
+    winner = "new" if new_s > old_s else "old"
+    improvement = new_s - old_s
     return {
-        "old_score": old_s,
-        "new_score": new_s,
-        "winner": "new" if new_s > old_s else "old",
-        "improvement": new_s - old_s
+        "old_score": round(old_s, 4),
+        "new_score": round(new_s, 4),
+        "baseline": round(baseline, 4),
+        "winner": winner,
+        "improvement": round(improvement, 4)
     }
 
 # 5.5 应用进化后的规则（新增）
@@ -343,8 +358,8 @@ def run_evolution_cycle() -> Dict:
     # 记录到数据库（使用正确的列名匹配 evolution_log schema）
     with get_conn() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO evolution_log (evolution_id, trigger_type, status, verdicts_count, weights_before, weights_after, result) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (trigger.get("reason", ""), trigger.get("type", ""), result.get("status", ""), len(cases), json.dumps(old_rules), json.dumps(new_rules), json.dumps(comp))
+            "INSERT INTO evolution_log (evolution_id, trigger_type, status, verdicts_count, weights_before, weights_after, result, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (f"evo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}", trigger.get("type", ""), result.get("status", ""), len(cases), json.dumps(old_rules), json.dumps(new_rules), json.dumps(comp), datetime.now().isoformat())
         )
         conn.commit()
     
