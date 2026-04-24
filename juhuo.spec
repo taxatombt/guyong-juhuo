@@ -43,6 +43,11 @@ html_file = os.path.join(ROOT, 'web_console.html')
 if os.path.exists(html_file):
     datas.append((html_file, '.'))
 
+# CLI 入口文件
+cli_file = os.path.join(ROOT, 'cli.py')
+if os.path.exists(cli_file):
+    datas.append((cli_file, '.'))
+
 # ── 隐藏 import（动态导入的模块）─────────────────────
 hiddenimports = [
     # Flask 及相关（web_console.py 用，但环境中可能未安装，按需添加）
@@ -93,6 +98,8 @@ hiddenimports = [
     'judgment.logging_config',
     'judgment.self_evolover',
     'config.env_loader',
+    # CLI
+    'cli',
 ]
 
 # DLL 收集（conda Library/bin 目录）
