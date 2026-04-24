@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [2.2.1] - 2026-04-24
 
+### Added
+- **Hermes Guide P0 落地** — 16册白皮书啃读落地
+  - **JudgmentBudget**（`judgment/judgment_budget.py`）：栈深度+verdict数+超时三重保护，防止递归
+  - 集成到 `subsystems/judgment/closed_loop.py`：`receive_verdict` 入口增加 `budget.enter()` + `try/except BudgetExceeded`
+  - **FTS5全文索引**（`experiences.py`）：SQLite FTS5 bm25 排序 + 3个同步触发器（AI/AD/AU）
+  - `fts_search()`：FTS5 主搜索，bm25 排名
+  - `find_similar()`：FTS5-primary + keyword fallback 去重合并（无重复）
+
 ### Fixed
 - **P2 Stop-Hook 无限递归** — `receive_verdict` → `stop_hook.capture_verdict` → `receive_verdict` 死循环
   - 根因：`judgment_snapshots` 查询缺 `corrected` 防护，递归时重建 `target` 导致再次触发 hook

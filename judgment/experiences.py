@@ -123,6 +123,17 @@ def init():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_user ON experiences(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_type ON experiences(user_id, situation_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_exp_kw ON experiences(user_id, matched_keywords)")
+
+        # P1 FTS5 全文索引（Hermes 启发）
+        _fts_sql = "CREATE VIRTUAL TABLE IF NOT EXISTS experiences_fts USING fts5(task_text, conclusion, matched_keywords, content='experiences', content_rowid='id')"
+        conn.execute(_fts_sql)
+        conn.execute("CREATE TRIGGER IF NOT EXISTS experiences_fts_ai AFTER INSERT ON experiences BEGIN INSERT INTO experiences_fts(rowid, task_text, conclusion, matched_keywords) VALUES (new.id, new.task_text, new.conclusion, new.matched_keywords); END")
+        conn.execute("CREATE TRIGGER IF NOT EXISTS experiences_fts_ad AFTER DELETE ON experiences BEGIN INSERT INTO experiences_fts(experiences_fts, rowid, task_text, conclusion, matched_keywords) VALUES ('delete', old.id, old.task_text, old.conclusion, old.matched_keywords); END")
+        conn.execute("CREATE TRIGGER IF NOT EXISTS experiences_fts_au AFTER UPDATE ON experiences BEGIN INSERT INTO experiences_fts(experiences_fts, rowid, task_text, conclusion, matched_keywords) VALUES ('delete', old.id, old.task_text, old.conclusion, old.matched_keywords); INSERT INTO experiences_fts(rowid, task_text, conclusion, matched_keywords) VALUES (new.id, new.task_text, new.conclusion, new.matched_keywords); END")
+        try:
+            conn.execute("INSERT INTO experiences_fts(experiences_fts) VALUES('rebuild')")
+        except Exception:
+            pass
         conn.commit()
 
         # 如果旧表缺少列，走 _rebuild_table 迁移（保留现有数据）
@@ -258,6 +269,25 @@ def _cosine_sim(a: List[float], b: List[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+def fts_search(task_text: str, user_id: str = "default", limit: int = 10) -> list:
+    """P1 FTS5 全文搜索：bm25 排名。失败返回空列表。"""
+    try:
+        conn = _get_conn()
+        rows = conn.execute(
+            "SELECT e.id, e.situation_type, e.task_text, e.conclusion, "
+            "e.confidence, e.matched_keywords, e.outcome, e.outcome_score, "
+            "bm25(experiences_fts) as rank "
+            "FROM experiences_fts "
+            "JOIN experiences e ON e.id = experiences_fts.rowid "
+            "WHERE experiences_fts MATCH ? AND e.user_id = ? "
+            "ORDER BY rank LIMIT ?",
+            (task_text, user_id, limit)).fetchall()
+        keys = ["experience_id","situation_type","task_text","conclusion","confidence","matched_keywords","outcome","outcome_score","rank"]
+        return [dict(zip(keys, r)) for r in rows]
+    except Exception:
+        return []
+
+
 def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_id: str = "default") -> list:
     stype = _classify(task_text)
     keywords = _extract_keywords(task_text)
@@ -266,37 +296,71 @@ def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_i
     query_vec = _json.loads(query_emb) if query_emb else []
 
     conn = _get_conn()
-    rows = conn.execute(
+
+    # P1 FTS5 primary + keyword fallback
+    fts_results = fts_search(task_text, user_id, limit=limit * 3)
+    fts_ids = set(r["experience_id"] for r in fts_results)
+
+    # Build params: user_id, [optional: fts exclusion ids], stype, limit
+    kw_params = [user_id]
+    kw_filter = ""
+    if fts_ids:
+        kw_filter = " AND id NOT IN ({})".format(",".join(["?"] * len(fts_ids)))
+        kw_params += list(fts_ids)
+    kw_params += [stype, limit * 3]  # stype and limit always last
+
+    kw_rows = conn.execute(
         "SELECT id, situation_type, task_text, conclusion, confidence, "
         "matched_keywords, outcome, outcome_score, task_embedding "
-        "FROM experiences WHERE user_id = ? "
+        "FROM experiences WHERE user_id = ?" + kw_filter + " "
         "ORDER BY CASE WHEN situation_type = ? THEN 1 ELSE 0 END DESC, "
-        "outcome_score DESC, created_at DESC LIMIT 100",
-        (user_id, stype)).fetchall()
-    # P0-1: 不关闭 per-thread 连接
+        "outcome_score DESC, created_at DESC LIMIT ?",
+        kw_params).fetchall()
 
     scored = []
-    for r in rows:
+
+    # P1 FTS: bm25 归一化 -> 0-1 score
+    if fts_results:
+        ranks = [r["rank"] for r in fts_results]
+        worst, best = min(ranks), max(ranks)
+        span = best - worst if best != worst else 1.0
+        for r in fts_results:
+            rtype = r["situation_type"]; rkw = r["matched_keywords"] or ""
+            norm = max(0.0, min(1.0, 1.0 - (r["rank"] - worst) / span))
+            kw_sim = _keyword_overlap(keywords, rkw)
+            type_bonus = 0.15 if rtype == stype else 0.0
+            emb_sim = 0.0
+            r_emb_raw = r.get("task_embedding") or ""
+            if query_vec and r_emb_raw:
+                try: emb_sim = _cosine_sim(query_vec, _json.loads(r_emb_raw))
+                except Exception: pass
+            if emb_sim > 0:
+                score = emb_sim * 0.5 + norm * 0.3 + kw_sim * 0.15 + type_bonus * 0.05
+            else:
+                score = norm * 0.6 + kw_sim * 0.25 + type_bonus * 0.15
+            if score >= min_score:
+                scored.append({
+                    "experience_id": r["experience_id"], "situation_type": rtype,
+                    "task_text": r["task_text"], "conclusion": r["conclusion"],
+                    "confidence": r["confidence"], "matched_keywords": rkw,
+                    "similarity": round(score, 3),
+                    "emb_similarity": round(emb_sim, 3) if emb_sim > 0 else None,
+                    "outcome": r.get("outcome"), "outcome_score": r.get("outcome_score"),
+                })
+
+    # keyword fallback
+    for r in kw_rows:
         eid, rtype, rtext, rconclusion, rconf, rkw, routcome, rscore, r_emb = r
         kw_sim = _keyword_overlap(keywords, rkw or "")
         type_bonus = 0.15 if rtype == stype else 0.0
-
-        # P3-11: cosine similarity（仅当双方都有 embedding 时）
         emb_sim = 0.0
         if query_vec and r_emb:
-            try:
-                stored_vec = _json.loads(r_emb)
-                emb_sim = _cosine_sim(query_vec, stored_vec)
-            except Exception:
-                emb_sim = 0.0
-
-        # 混合评分：embedding 0.5 + keyword 0.3 + type 0.15
+            try: emb_sim = _cosine_sim(query_vec, _json.loads(r_emb))
+            except Exception: pass
         if emb_sim > 0:
             score = emb_sim * 0.5 + kw_sim * 0.3 + type_bonus
         else:
-            # 无 embedding 时回退到纯 keyword + type
             score = kw_sim * 0.7 + type_bonus
-
         if score >= min_score:
             scored.append({
                 "experience_id": eid, "situation_type": rtype,

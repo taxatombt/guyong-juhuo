@@ -11,6 +11,7 @@ _juhuo_root = Path(__file__).resolve().parents[2]
 if str(_juhuo_root) not in _sys.path:
     _sys.path.insert(0, str(_juhuo_root))
 from judgment._schema import _get_db_conn
+from judgment.judgment_budget import get_budget, BudgetExceeded
 
 from threading import Lock
 
@@ -121,9 +122,15 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
     - verifier: "user" / "system" / "time"
 
     """  
+    # P0: JudgmentBudget 保护（防止无限递归）
+    budget = get_budget()
+    budget.enter("receive_verdict")
+    try:
+        pass
+    except BudgetExceeded:
+        raise
 
     c=_get_db_conn()
-
     try:
 
         target=None
@@ -368,7 +375,8 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
         return {"updated":True,"chain_id":chain_id,"changes":changes}
 
-    finally:pass  # P0-1: 不关闭 per-thread 连接
+    finally:
+        budget.exit()  # P0 JudgmentBudget
 
 
 
