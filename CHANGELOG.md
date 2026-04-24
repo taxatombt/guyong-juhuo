@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.1] - 2026-04-24
+
+### Fixed
+- **P2 Stop-Hook 无限递归** — `receive_verdict` → `stop_hook.capture_verdict` → `receive_verdict` 死循环
+  - 根因：`judgment_snapshots` 查询缺 `corrected` 防护，递归时重建 `target` 导致再次触发 hook
+  - 修复：`_snap_corrected != 1` 时才重建 target，避免 corrected=1 时重复触发
+  - 结果：递归深度 73→2 层，`max_depth` 285→18，20 verdict 从 >120s → ~20s
+
+- **信念更新验证** — `receive_verdict` → `update_dimension_beliefs` 端到端验证通过
+  - 修复后 10/10 维度 hit_count 正确增加
+
+- **Self-Evolver 触发** — evolver 正常触发，`winner=old`，无假 100% 改善
+
+### Added
+- **CLI 交互反馈入口** — `cli.py` judge 后提示用户 y/n/u 标记判断质量
+  - y: 正确，n: 错误，u: 不知道
+  - 自动调用 `receive_verdict` / `receive_actual_choice`
+
+### Chores
+- 移除 `get_dimension_beliefs` 残留 debug 代码（`chain_id` 未定义 NameError）
+- 移除 117 个 `_*` / `debug_*` 临时文件
+- `emotions.json` 格式修复（553 条记录，wrap 为 `{"signals": [...]}` 格式）
+
 ## [2.2] - 2026-04-23
 
 ### Added
