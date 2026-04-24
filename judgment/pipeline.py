@@ -218,6 +218,7 @@ def check10d_full(task_text: str, config: dict = None, user_id: str = "default")
     全量 pipeline 判断（供 MCP server 等外部调用）。
 
     流程：
+        0. IntentRouter.route() — 判断是否需要 check10d
         1. prefetch() — 预取 biography/experiences/emotion/self_model
         2. run_pipeline() — 注入全部上下文
         3. 返回完整结果（verdict + dimensions + confidence + chain_id）
@@ -230,6 +231,25 @@ def check10d_full(task_text: str, config: dict = None, user_id: str = "default")
     Returns:
         dict，含 verdict/confidence/chain_id/dimensions
     """
+    # [ZeusHammer IntentRouter] 80% 简单任务不走 LLM 判断
+    try:
+        from judgment.intent_router import route, handle, direct_reply, IntentType
+        ir = route(task_text)
+        if not ir.should_check10d:
+            reply = direct_reply(ir.intent_type, task_text)
+            return {
+                "task": task_text,
+                "verdict": reply or f"[{ir.intent_type.value}]",
+                "confidence": ir.confidence,
+                "chain_id": "",
+                "dimensions": [],
+                "intent_type": ir.intent_type.value,
+                "should_check10d": False,
+                "note": ir.note,
+            }
+    except Exception:
+        pass  # 降级：正常走 check10d_run
+
     from judgment.router import check10d_run
     return check10d_run(task_text, user_id=user_id)
 

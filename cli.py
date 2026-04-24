@@ -33,9 +33,21 @@ log = get_logger("juhuo.cli")
 
 
 def cmd_judge(task: str, verbose: bool = False, user_id: str = "default"):
-    """执行判断"""
+    """执行判断 — ZeusHammer IntentRouter: 简单任务直接回复，需要判断才走 check10d"""
+    # [ZeusHammer IntentRouter] 先尝试直接回复
+    try:
+        from judgment.intent_router import route, handle, direct_reply
+        ir = route(task)
+        if not ir.should_check10d:
+            reply = direct_reply(ir.intent_type, task)
+            print(f"\n💡 直接回复 [{ir.intent_type.value}] (conf={ir.confidence:.0%}):\n")
+            print(f"   {reply or f'[{ir.intent_type.value}]'}")
+            return
+    except Exception:
+        pass  # 降级：正常走 check10d
+
     print(f"\n⚖️  正在分析: {task}\n")
-    
+
     result = check10d_full(task, user_id=user_id)
     chain_id = result.get('chain_id', '')
     
