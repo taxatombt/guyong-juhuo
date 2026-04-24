@@ -56,16 +56,16 @@ cd guyong-juhuo
 pip install -r requirements.txt
 
 # CLI 判断
-python cli.py "要不要辞职创业？"
+python hub.py "要不要辞职创业？"
 
 # Web Console
-python cli.py web
+python hub.py web
 
 # 查看状态
-python cli.py status
+python hub.py status
 
 # 自检
-python cli.py test
+python hub.py test
 ```
 
 ---
@@ -125,7 +125,7 @@ Perception  →  Attention Filter  →  Judgment (10D)
 
 👉 https://github.com/taxatombt/guyong-juhuo/releases/latest
 
-下载 `guyong-juhuo-2.0.0-setup.exe`（约 50 MB），双击安装。
+下载 `guyong-juhuo-setup.exe`（约 100 MB），双击安装。
 
 详细说明：[INSTALL_GUIDE.md](https://github.com/taxatombt/guyong-juhuo/blob/main/INSTALL_GUIDE.md)
 
@@ -135,7 +135,7 @@ Perception  →  Attention Filter  →  Judgment (10D)
 
 ```bash
 pip install -r requirements.txt
-python cli.py web
+python hub.py web
 # 访问 http://localhost:18768
 ```
 
@@ -149,8 +149,7 @@ python cli.py web
 
 首次配置：
 ```bash
-python cli.py config init  # 创建配置模板
-python cli.py config edit  # 编辑配置
+python hub.py config wizard  # 首次配置向导
 ```
 
 ---
@@ -158,23 +157,23 @@ python cli.py config edit  # 编辑配置
 ## CLI 命令
 
 ```bash
-python cli.py "问题"           # 单次判断
-python cli.py shell           # 交互模式
-python cli.py web             # Web Console（默认 port 18768）
-python cli.py status          # 状态查看
-python cli.py verdict list    # 判断历史
-python cli.py verdict correct <id>   # 标记正确
-python cli.py verdict wrong <id>     # 标记错误
-python cli.py config show     # 显示配置
-python cli.py config wizard   # 首次配置向导
-python cli.py bio show        # 查看用户画像
-python cli.py bio add "我30岁程序员"  # 添加生平信息
-python cli.py bio list        # 列出所有生平事实
-python cli.py behavior stats  # 行为统计（各通道）
-python cli.py behavior list   # 最近行为记录
-python cli.py behavior show <id>  # 行为详情
-python cli.py test            # 自检
-python cli.py benchmark       # Benchmark 测试
+python hub.py "问题"           # 单次判断
+python hub.py shell           # 交互模式
+python hub.py web             # Web Console（默认 port 18768）
+python hub.py status          # 状态查看
+python hub.py verdict list    # 判断历史
+python hub.py verdict correct <id>   # 标记正确
+python hub.py verdict wrong <id>     # 标记错误
+python hub.py config show     # 显示配置
+python hub.py config wizard   # 首次配置向导
+python hub.py bio show        # 查看用户画像
+python hub.py bio add "我30岁程序员"  # 添加生平信息
+python hub.py bio list        # 列出所有生平事实
+python hub.py behavior stats  # 行为统计（各通道）
+python hub.py behavior list   # 最近行为记录
+python hub.py behavior show <id>  # 行为详情
+python hub.py test            # 自检
+python hub.py benchmark       # Benchmark 测试
 ```
 
 ---
@@ -219,15 +218,17 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 
 > 方向收拢：因果记忆选型已完成，Self-Evolver 目标降级为「维度权重自动调整」。
 
-- [x] **Verdict 数据积累** — 41条 verdict_outcomes（2026-04-22 v2.0）
-- [x] **维度权重闭环** — verdict → belief → prior_adj → LLM prompt 全通（2026-04-21 v1.8）
+- [x] **Verdict 数据积累** — 72条 verdict_outcomes（v2.2.1）
+- [x] **维度权重闭环** — verdict → belief → prior_adj → LLM prompt 全通（v1.8）
 - [x] **三途径信息层** — biography 生平 + experiences 经历 + behavior 行为日志（v2.0）
 - [x] **Life OS v3** — 精力/情绪驱动任务调度，rules + juhuo 双模式（v2.0）
-- [x] **UnifiedProfile 单汇聚层** — inject_unified_profile 唯一入口，pipeline 325→265行（v2.0 2026-04-22）
-- [x] **三路优先级铁律** — experiences > biography > behavior，per-item half_life_days（v2.0 2026-04-22）
-- [x] **P1 矛盾双向检测** — L1 降 priority=3，L2 升 priority=1，to_prompt 结构化（v2.0 2026-04-22）
-- [x] **experiences embedding v1** — MiniMax ebo-01 向量 + cosine similarity 混合检索（v2.0 2026-04-22）
-- [ ] **生产数据积累** — MiniMax 429过载中，benchmark 待 API 恢复后继续（v2.1）
+- [x] **UnifiedProfile 单汇聚层** — inject_unified_profile 唯一入口，pipeline 325→265行（v2.0）
+- [x] **三路优先级铁律** — experiences > biography > behavior，per-item half_life_days（v2.0）
+- [x] **P1 矛盾双向检测** — L1 降 priority=3，L2 升 priority=1，to_prompt 结构化（v2.0）
+- [x] **experiences embedding v1** — MiniMax ebo-01 向量 + cosine similarity 混合检索（v2.0）
+- [x] **JudgmentBudget 预算保护** — 栈深度+verdict数+超时三重保护，防止递归（v2.2.1）
+- [x] **FTS5全文索引** — experiences bm25排序 + 3个同步触发器 + keyword fallback去重（v2.2.1）
+- [ ] **生产数据积累** — benchmark 待 MiniMax API 稳定后继续（v2.1）
 - [x] Self-Evolver rollback 修复 + 验证闭环（v1.6）
 - [x] judgment/config.py 集中生产配置（v1.6）
 - [x] GDPVal Benchmark 22案例 + A/B/C/D 评分（v1.6）
@@ -239,6 +240,23 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 ---
 
 ## 版本更新
+
+### v2.2.1 (2026-04-24) — Hermes Guide P0 落地
+
+**JudgmentBudget 预算保护：**
+- `judgment/judgment_budget.py`：`BudgetExceeded` 异常 + 线程局部计数器（depth/verdict_count/start_time）
+- `subsystems/judgment/closed_loop.py`：`receive_verdict` 入口集成三重保护
+- 来源：Hermes Guide 教训 — "预算是第一道防线，防止 90% 失控"
+
+**FTS5 全文索引（experiences 重构）：**
+- Part 1：`init()` 建 FTS5 虚拟表 + 3个同步触发器（AI/AD/AU）
+- Part 2：`fts_search()` bm25 排序全文搜索
+- Part 3：`find_similar()` FTS5-primary + keyword fallback 去重合并
+- 来源：Hermes Guide 教训 — "SQLite FTS5 优于关键词 bigram"
+
+**P2 Stop-Hook 无限递归修复：**
+- 递归深度 73→2 层，`max_depth` 285→18
+- 20 verdict 批量从 >120s → ~20s
 
 ### v2.1 (2026-04-22) — v2.0 根因修复 + Benchmark 验证
 

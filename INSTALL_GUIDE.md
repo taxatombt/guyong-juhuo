@@ -8,13 +8,13 @@
 
 👉 https://github.com/taxatombt/guyong-juhuo/releases/latest
 
-下载 `guyong-juhuo-2.0.0-setup.exe`（约 50 MB）
+下载 `guyong-juhuo-setup.exe`（约 100 MB）
 
 ---
 
 ## 安装
 
-1. 双击 `guyong-juhuo-2.0.0-setup.exe`
+1. 双击 `guyong-juhuo-setup.exe`
 2. 选择安装位置（默认 `C:\Program Files\guyong-juhuo`）
 3. 点击"安装"，等待完成
 4. 点击"完成"启动程序
