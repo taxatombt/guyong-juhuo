@@ -551,20 +551,7 @@ def get_recent_chains(limit=10, user_id='default'):
 
 
 def get_dimension_beliefs()->Dict[str,Dict[str,Any]]:
-
     c=_get_db_conn()
-
-    # ── Debug: trace decision ───────────────────────────────────────────
-    import threading as _thr, sys as _sys
-    _t = _thr.current_thread().ident
-    if not hasattr(_sys, '_recv_depths'):
-        _sys._recv_depths = {}
-    _sys._recv_depths[_t] = _sys._recv_depths.get(_t, 0) + 1
-    _depth = _sys._recv_depths[_t]
-    if _depth <= 3:
-        print(f"  [recv:{_depth}] chain={str(chain_id)[:25]} correct={correct}")
-    # ── End Debug ──────────────────────────────────────────────────────
-
     try:return {r[0]:{"belief":r[1],"hit":r[2],"miss":r[3]} for r in c.execute("SELECT dimension,belief,hit_count,miss_count FROM dimension_beliefs")}
 
     finally:pass  # P0-1: 不关闭 per-thread 连接
