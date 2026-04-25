@@ -42,6 +42,9 @@ from judgment.lessons import (
     extract_and_save_from_case,
 )
 
+# MiniMind 长上下文压缩（Compactor v1）
+from judgment.compactor import compact_history
+
 # LLM 调用函数（从 router.py 拆分，独立可测）
 # 注意：inject_emotion_signal 需使用 router.py 中的 global_emotion_system，
 # 已在 router.py line 108 初始化，此处直接用同名引用。
@@ -55,6 +58,56 @@ from judgment.llm_calls import (
     predict_user_choice,
 )
 from judgment.pipeline import run_pipeline, JudgmentContext
+
+# MiniMind 长上下文压缩：超长 prompt 时自动摘要
+# 调用位置：check10d 和 check10d_run 中，_answer_questions 调用之前
+_COMPACT_THRESHOLD = 6000  # token 阈值，超过则压缩
+
+def _maybe_compact_ctx(profile_entries: list, lessons_ctx: str,
+                       history_context: str = "") -> tuple:
+    """
+    如果 profile_entries + lessons_ctx + history_context 合计超过阈值，
+    用 compact_history() 压缩上下文。
+
+    Returns:
+        (compact_profile_entries, compact_lessons_ctx, compact_history_context, was_compacted)
+    """
+    # 估算 token 数（char * 0.25）
+    def _tok(s):
+        return len(str(s)) * 0.25
+
+    total = _tok(profile_entries) + _tok(lessons_ctx) + _tok(history_context)
+    if total < _COMPACT_THRESHOLD:
+        return profile_entries, lessons_ctx, history_context, False
+
+    # 构建压缩消息列表
+    items = []
+    # profile_entries: 列表[dict] -> 转文本摘要
+    if profile_entries:
+        count = len(profile_entries)
+        summary_text = f"[背景摘要] 共 {count} 条用户背景信息。核心："
+        for e in profile_entries[:5]:  # 只取前5条
+            if isinstance(e, dict):
+                claim = e.get('claim', e.get('content', str(e)))
+                summary_text += claim[:30] + "；"
+            else:
+                summary_text += str(e)[:30] + "；"
+        if count > 5:
+            summary_text += f"等（共{count}条）"
+        items.append({'role': 'system', 'content': summary_text})
+
+    # lessons_ctx: 字符串 -> system 消息
+    if lessons_ctx:
+        items.append({'role': 'system', 'content': f"[教训摘要] {lessons_ctx}"})
+
+    # history_context: 字符串 -> system 消息
+    if history_context:
+        items.append({'role': 'system', 'content': f"[历史摘要] {history_context}"})
+
+    result = compact_history(items, reason="long_context_auto")
+    # compact_history 返回 CompactionResult.compacted_items / .summary
+    summary = result.summary if result.summary else ""
+    return [], summary, "", True  # 原始 entries 压缩为 summary
 
 # 懒启动标记（避免 import 时执行副作用，测试可正常 mock）
 _STARTED = False
@@ -342,15 +395,19 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     # 因果链教训注入（从同类判断结果中提取的具体教训）
     _task_domain = classify_task_domain(ctx.task_text)
     _lessons_ctx = lessons_to_prompt(domain=_task_domain)
+    # [MiniMind Compactor] 长上下文自动压缩
+    _profile_entries, _lessons_ctx, _hist_ctx, _was_compact = _maybe_compact_ctx(
+        _profile_entries, _lessons_ctx, ctx.history_context or ""
+    )
     answers = _answer_questions(
         ctx.merge_prompt_context(),  # unified_context 优先 + 三路已合并
         questions,
         agent_profile,
         prior_adj,
-        "",  # 不再单独传 history_context（已合并到 unified_context）
+        _hist_ctx,  # 压缩后的历史摘要
         "",  # 不再单独传 bio_context（已合并到 unified_context）
         _profile_entries,  # UnifiedProfile.to_prompt() 标注注入
-        _lessons_ctx,      # 历史教训注入（因果链教训）
+        _lessons_ctx,      # 历史教训注入（因果链教训，被压缩时为摘要）
     )
 
     _ret = {
@@ -565,8 +622,12 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     _profile_entries = base_result.get("_profile_entries", []) or []
     _task_domain = classify_task_domain(task_text)
     _lessons_ctx = lessons_to_prompt(domain=_task_domain)
+    # [MiniMind Compactor] 长上下文自动压缩
+    _profile_entries, _lessons_ctx, _hist_ctx, _was_compact = _maybe_compact_ctx(
+        _profile_entries, _lessons_ctx, base_result.get("history_context", "") or ""
+    )
     answers = _answer_questions(_merged_prompt, all_questions, agent_profile,
-                                _prior_adj, "", "", _profile_entries, _lessons_ctx)
+                                _prior_adj, _hist_ctx, "", _profile_entries, _lessons_ctx)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
