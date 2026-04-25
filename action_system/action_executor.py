@@ -71,6 +71,93 @@ class ExecutionResult:
 
 
 # ── 主执行器 ────────────────────────────────────────────────────────────────
+# === MiniMind Rollout Engine 等效（P2 落地）===
+
+class ActionRolloutEngine:
+    def __init__(self, num_rollouts: int = 3): self.num_rollouts = num_rollouts
+
+    def rollout(self, task: str, verdict: str = '', user_context: dict = None) -> list:
+        ctx = user_context or {}; candidates = []
+        channels = ['benchmark', 'hermes', 'claude_code']; strategies = ['direct', 'iterative', 'incremental']; risk_levels = ['low', 'medium', 'high']
+        for i in range(self.num_rollouts):
+            ch = channels[i % 3]; st = strategies[(i + 1) % 3]; rl = risk_levels[(i + 2) % 3]
+            plan, reason = self._generate_plan(task, verdict, ch, st, rl, ctx)
+            candidates.append({'candidate_id': f'r{i+1}', 'channel': ch, 'strategy': st, 'risk_level': rl, 'action_plan': plan, 'expected_reward': 0.0, 'reasoning': reason, 'feasibility_score': 0.0, 'alignment_score': 0.0})
+        for c in candidates:
+            rew, feas, align = self.compute_reward(c, task, verdict, ctx)
+            c['expected_reward'] = rew; c['feasibility_score'] = feas; c['alignment_score'] = align
+        candidates.sort(key=lambda x: x['expected_reward'], reverse=True); return candidates
+
+    def select_best(self, candidates: list, safe_mode: bool = True) -> dict:
+        if not candidates: raise ValueError('No candidates')
+        if safe_mode:
+            safe = [c for c in candidates if c['risk_level'] in ('low', 'medium')]
+            if safe: return safe[0]
+        return candidates[0]
+
+    def compute_reward(self, candidate: dict, task: str, verdict: str, ctx: dict) -> tuple:
+        feas = self._feasibility_score(candidate, task, ctx); align = self._alignment_score(candidate, verdict)
+        risk_map = {'low': 0.0, 'medium': -0.05, 'high': -0.15}; eff = self._efficiency_score(candidate, task)
+        reward = min(1.0, max(0.0, feas + align + risk_map.get(candidate['risk_level'], 0.0) + eff)); return reward, feas, align
+
+    def _generate_plan(self, task: str, verdict: str, channel: str, strategy: str, risk: str, ctx: dict) -> tuple:
+        t = task[:25]
+        if channel == 'benchmark': plan = '[直接验证]' if strategy == 'direct' else '[迭代验证]' if strategy == 'iterative' else '[增量验证]'
+        elif channel == 'hermes': plan = '[直接执行]' if strategy == 'direct' else '[迭代执行]' if strategy == 'iterative' else '[增量执行]'
+        else: plan = '[直接实现]' if strategy == 'direct' else '[迭代实现]' if strategy == 'iterative' else '[增量实现]'
+        plan += ' [' + t + ']'; reason = {'direct': '直接', 'iterative': '深度', 'incremental': '安全'}[strategy]
+        if risk == 'high': reason += '（高风险）'
+        elif risk == 'low': reason += '（保守）'
+        return plan, reason
+
+    def _feasibility_score(self, candidate: dict, task: str, ctx: dict) -> float:
+        score = 0.2; tl = task.lower(); ch = candidate['channel']
+        if any(kw in tl for kw in ['code', 'bug', 'refactor', 'implement', 'write', 'review']): score += {'claude_code': 0.2, 'hermes': 0.05, 'benchmark': 0.0}.get(ch, 0.0)
+        elif any(kw in tl for kw in ['research', '调研', 'search', '搜索']): score += {'hermes': 0.2, 'benchmark': 0.05, 'claude_code': 0.0}.get(ch, 0.0)
+        elif any(kw in tl for kw in ['judge', '判断', '决策', '要不要', '该不']): score += {'benchmark': 0.2, 'hermes': 0.05, 'claude_code': 0.0}.get(ch, 0.0)
+        else: score += {'benchmark': 0.15, 'hermes': 0.1, 'claude_code': 0.05}.get(ch, 0.0)
+        if candidate['strategy'] == 'incremental': score += 0.05
+        return min(0.4, max(0.0, score))
+
+    def _alignment_score(self, candidate: dict, verdict: str) -> float:
+        if not verdict: return 0.2
+        score = 0.2; vl = verdict.lower(); ch = candidate['channel']
+        if any(kw in vl for kw in ['建议', '采取', '执行', '行动', '辞职', '创业', 'all in']):
+            if ch in ('hermes', 'claude_code'): score += 0.15
+        if any(kw in vl for kw in ['谨慎', '评估', '先', '调研', '观察', '再决定']):
+            if ch == 'benchmark': score += 0.1
+        if any(kw in vl for kw in ['all in', '辞职', '创业', '买房', '移民']):
+            score += 0.05 if candidate['risk_level'] == 'low' else -0.05
+        return min(0.4, max(0.0, score))
+
+    def _efficiency_score(self, candidate: dict, task: str) -> float:
+        score = 0.1
+        if candidate['strategy'] == 'incremental': score += 0.05
+        if len(task) > 200: score += 0.05
+        return min(0.2, max(0.0, score))
+
+    def _classify_task_type(self, task: str) -> str:
+        tl = task.lower()
+        if any(kw in tl for kw in ['code', 'bug', 'refactor', 'implement', 'write', 'review']): return 'code'
+        if any(kw in tl for kw in ['research', '调研', 'search', '搜索']): return 'research'
+        if any(kw in tl for kw in ['judge', '判断', '决策', '要不要', '该不']): return 'judgment'
+        return 'default'
+
+    def rollout_and_execute(self, task: str, verdict: str = '', user_context: dict = None) -> dict:
+        candidates = self.rollout(task, verdict, user_context); best = self.select_best(candidates, safe_mode=True)
+        print('[Rollout] ch=' + best['channel'] + ' st=' + best['strategy'] + ' risk=' + best['risk_level'] + ' reward=' + str(round(best['expected_reward'], 3)))
+        print('           plan: ' + best['action_plan'])
+        result = self._execute(task, verdict, best['channel']); result['rollout_info'] = {'candidates': candidates, 'selected': best}; return result
+
+    def _execute(self, task: str, verdict: str, channel: str) -> dict:
+        from action_system.action_executor import ActionExecutor; return ActionExecutor().execute(task, verdict, channel=channel)
+
+
+def check10d_and_execute(task: str, verdict: str = '', user_context: dict = None) -> dict:
+    return ActionRolloutEngine(num_rollouts=3).rollout_and_execute(task, verdict, user_context)
+
+
+
 class ActionExecutor:
     """
     统一执行入口：judgment verdict → 行动计划 → 执行 → 验证
