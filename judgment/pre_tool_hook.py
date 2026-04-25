@@ -1,7 +1,5 @@
-# Shim: re-export from canonical new location
-# Migration: 2026-04-18
-# OLD: judgment/pre_tool_hook.py  →  NEW: subsystems/judgment/pre_tool_hook.py
+# judgment/pre_tool_hook.py
+# Shim: subsystems/judgment/pre_tool_hook re-export
 from subsystems.judgment.pre_tool_hook import (
-    HookAction, PreToolUseRequest, PreToolUseOutcome, PreToolHook,
-    PostToolUseResult, PostToolHook,
+    HookAction, PreToolUseRequest, PreToolUseOutcome, PreToolHook, check
 )

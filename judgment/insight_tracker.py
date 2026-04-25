@@ -1,7 +1,5 @@
-# Shim: re-export from canonical new location
-# Migration: 2026-04-18
-# OLD: judgment/insight_tracker.py  →  NEW: subsystems/judgment/insight_tracker.py
+# judgment/insight_tracker.py
+# Shim: subsystems/judgment/insight_tracker re-export
 from subsystems.judgment.insight_tracker import (
-    ET, Event, InsightTracker,
-    insight_tracker,
+    ET, Event, insight_tracker, InsightTracker
 )

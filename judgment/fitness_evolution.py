@@ -1,7 +1,7 @@
-# Shim: re-export from canonical new location
-# Migration: 2026-04-18
-# OLD: judgment/fitness_evolution.py  →  NEW: subsystems/judgment/fitness_evolution.py
+# judgment/fitness_evolution.py
+# Shim: subsystems/judgment/fitness_evolution re-export
 from subsystems.judgment.fitness_evolution import (
     DimensionAccuracy, FitnessEvolution,
-    get_fitness, record_judgment_outcome, get_boosted_weights, get_fitness_stats,
+    get_fitness, record_judgment_outcome,
+    get_boosted_weights, get_fitness_stats
 )

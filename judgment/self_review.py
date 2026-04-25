@@ -1,7 +1,6 @@
-# Shim: re-export from canonical new location
-# Migration: 2026-04-18
-# OLD: judgment/self_review.py  →  NEW: subsystems/judgment/self_review.py
+# judgment/self_review.py
+# Shim: subsystems/judgment/self_review re-export
 from subsystems.judgment.self_review import (
-    LessonRecord, PatternAlert, SelfReviewSystem,
-    detect_task_dimensions,
+    LessonRecord, PatternAlert,
+    SelfReviewSystem, detect_task_dimensions,
 )
