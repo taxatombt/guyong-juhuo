@@ -122,6 +122,9 @@ def _ensure_started():
     start_verdict_listener()
     start_evolver_scheduler()
     _init_exp()  # 初始化经历表
+    # [ZeusHammer EventBus] 事件总线初始化
+    from judgment.event_bus import setup_event_bus
+    setup_event_bus()
 
 # 兼容旧接口命名
 class _CausalMemoryCompat:
@@ -733,14 +736,14 @@ def check10d_and_execute(task_text: str, channel: str = "auto",
     verdict = judgment_result.get("verdict", "")
     chain_id = judgment_result.get("meta", {}).get("chain_id", "")
     
-    # Step 2: 执行
+    # Step 2: 执行（MiniMind RolloutEngine 多方案选最优）
     try:
-        from action_system.action_executor import ActionExecutor
-        executor = ActionExecutor()
-        execution_result = executor.execute(
+        from action_system.action_executor import ActionRolloutEngine
+        rollout_eng = ActionRolloutEngine()
+        execution_result = rollout_eng.rollout_and_execute(
             task=task_text,
             verdict=verdict,
-            channel=channel,
+            user_context={"agent_profile": agent_profile} if agent_profile else None,
         )
     except Exception as e:
         execution_result = {"error": str(e), "outcome_score": 0.0, "channel": "none"}
