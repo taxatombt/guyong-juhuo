@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import List, Dict, Tuple
 
 DATA_DIR = Path(__file__).parent.parent / "data"
-DB_PATH = DATA_DIR / "judgment_data" / "juhuo_judgment.db"
+DB_PATH = DATA_DIR / "juhuo.db"  # P0-1: consolidated into canonical DB
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Ground Truth 来源

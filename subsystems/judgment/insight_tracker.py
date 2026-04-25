@@ -20,7 +20,7 @@ def _init_paths():
     if DATA_DIR is None:
         DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
         os.makedirs(DATA_DIR, exist_ok=True)
-        DB_PATH = os.path.join(DATA_DIR, "insights.db")
+        DB_PATH = os.path.join(DATA_DIR, "juhuo.db")  # P0-1: consolidated
 
 # ── 常量 ────────────────────────────────────────────────────────────
 class ET:

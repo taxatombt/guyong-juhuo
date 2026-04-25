@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from threading import RLock as _Lock  # RLock = 可重入锁，防止嵌套调用死锁
 
 _JD = Path(__file__).parent.parent.parent / "data" / "judgment_data"
-_DB = _JD / "juhuo_judgment.db"
+_DB = _JD.parent / "juhuo.db"  # P0-1: canonical path
 _JD.mkdir(parents=True, exist_ok=True)
 
 _lock = _Lock()  # RLock 替代 Lock，防止嵌套调用死锁
