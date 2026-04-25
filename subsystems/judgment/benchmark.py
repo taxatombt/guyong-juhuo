@@ -200,16 +200,28 @@ class Benchmark:
             timestamp=datetime.now().isoformat(),
         )
 
-    def _calc_match(self, verdict: str, expected: str) -> float:
+    def _calc_match(self, verdict: str, expected: str, rep_penalty_val: float = None) -> float:
         """
-        语义方向匹配（v2 改进版）：
+        语义方向匹配（v3 — MiniMind GRPO 增强版）：
         1. 精确包含 → 1.0
         2. 字符重叠 >= 60% → 0.8
         3. 方向分(0~0.6) + 可操作性分(0~0.2) + 主题重叠分(0~0.2)
+        4. [GRPO] Repetition Penalty 扣分：verbose/循环输出降低得分
+
+        GRPO Repetition Penalty 公式（MiniMind train_grpo.py 启发）：
+          penalty = -alpha * rep_penalty_val
+          其中 alpha 是超参（默认 0.3），rep_penalty_val ∈ [0.0, 0.5]
+          最终分数 = min(max(raw_score + penalty, 0.0), 1.0)
         """
+        from judgment.lessons import rep_penalty  # 懒加载避免循环
+
         v, e = verdict.strip(), expected.strip()
         if not v or not e:
             return 0.0
+
+        # [GRPO] Repetition Penalty（先计算，后用于最终扣分）
+        _rp = rep_penalty(v) if rep_penalty_val is None else rep_penalty_val
+        _alpha = 0.3  # 惩罚强度超参（GRPO alpha）
 
         # 精确包含
         if e in v or v in e:
@@ -286,7 +298,9 @@ class Benchmark:
         topic_score = min(overlap_ratio * 0.2, 0.2)
 
         total = direction_score + actionable_score + topic_score
-        return min(round(total, 3), 1.0)
+        # [GRPO] Repetition Penalty 扣分：verbose 判决降低得分
+        penalized = total - _alpha * _rp
+        return min(round(max(penalized, 0.0), 3), 1.0)
 
     def run_cases(self, case_ids: List[str]) -> BenchmarkReport:
         """运行指定 ID 的案例"""
