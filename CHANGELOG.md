@@ -287,4 +287,16 @@ juhuo/
 
 ---
 
-_Last updated: 2026-04-22_
+---
+
+## [2.2.2] - 2026-04-25
+
+### Added
+- **Self-Verification Loop** — Anthropic Building Effective AI Agents 第7条铁律落地
+  - `_verify_judgment()` in `judgment/llm_calls.py`：无额外LLM调用的轻量矛盾检测
+  - 两步关键词方向检测（pro/con/neutral），negated_positions防双重计算
+  - 15对预设矛盾维度检测（cognitive×emotional/economic等）
+  - verification_score综合评分 + low_quality_verdict标记
+  - 集成到 `judgment/router.py` 的 `check10d_run()`
+
+_Last updated: 2026-04-25_
