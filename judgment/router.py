@@ -578,6 +578,16 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     base_result["verdict"] = verdict_str
     base_result["confidence"] = confidence
 
+    # [MiniMind Rep Penalty] 检测判决是否陷入重复
+    try:
+        from judgment.lessons import rep_penalty, is_repetitive
+        _rp = rep_penalty(verdict_str)
+        base_result["meta"]["repetition_penalty"] = round(_rp, 3)
+        base_result["meta"]["is_repetitive"] = is_repetitive(verdict_str, threshold=0.3)
+    except Exception:
+        base_result["meta"]["repetition_penalty"] = 0.0
+        base_result["meta"]["is_repetitive"] = False
+
     # predict-before-decision
     try:
         pred = predict_user_choice(task_text, answers, verdict_str, confidence)

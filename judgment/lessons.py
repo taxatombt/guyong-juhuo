@@ -18,6 +18,30 @@ _DECAY_RATE = math.log(2) / 30
 _MIN_CONFIDENCE = 0.1
 _DEFAULT_CONFIDENCE = 0.7
 
+
+# ===== MiniMind Rep Penalty（来源：train_grpo.py / train_ppo.py）=====
+def rep_penalty(text: str, n: int = 3, cap: float = 0.5) -> float:
+    """
+    检测文本重复率，返回惩罚值 [0.0, cap]。
+    n-gram 重复率越高，惩罚越大。
+    中文：按字符滑动窗口；英文：按单词。
+    用于判断输出是否陷入循环，驱动 self_model 更新。
+    """
+    if not text or len(text) < n:
+        return 0.0
+    # 字符级分词（覆盖所有Unicode字符，n-gram滑动窗口）
+    chars = list(text.lower())
+    grams = ["".join(chars[i : i + n]) for i in range(len(chars) - n + 1)]
+    if not grams:
+        return 0.0
+    repeat_ratio = (len(grams) - len(set(grams))) / len(grams)
+    return min(cap, repeat_ratio * cap * 2)
+
+
+def is_repetitive(text: str, threshold: float = 0.3) -> bool:
+    """判断文本是否重复（rep_penalty >= threshold）"""
+    return rep_penalty(text, n=3, cap=0.5) >= threshold
+
 # Column names for lessons table (20 columns, matching actual DB schema)
 _LESSON_COLS = [
     'id','lesson_type','domain','pattern','root_cause','correction',
@@ -261,6 +285,9 @@ def save_lesson(lesson_type, domain, pattern, root_cause, correction, source="ll
 
 def extract_and_save_from_case(chain_id, task_text, outcome_score=None, llm_raw=""):
     if not task_text: return []
+    # [MiniMind Rep Penalty] 跳过高度重复的文本（无效教训来源）
+    if is_repetitive(task_text, threshold=0.4):
+        return []
     extracted = _llm_extract_lessons(task_text, chain_id=chain_id)
     saved_ids = []
     for ex in extracted:
