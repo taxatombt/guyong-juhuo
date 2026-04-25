@@ -56,6 +56,7 @@ from judgment.llm_calls import (
     _synthesize_verdict,
     MUST_CHECK,
     predict_user_choice,
+    _verify_judgment,
 )
 from judgment.pipeline import run_pipeline, JudgmentContext
 
@@ -641,6 +642,21 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     verdict_str, confidence = _synthesize_verdict(task_text, answers)
     base_result["verdict"] = verdict_str
     base_result["confidence"] = confidence
+
+    # [Anthropic Self-Verification] 检测维度间的逻辑矛盾
+    try:
+        _vf = _verify_judgment(task_text, answers, verdict_str, confidence)
+        base_result["meta"]["verification_score"] = _vf["verification_score"]
+        base_result["meta"]["verification_flags"] = _vf["flags"]
+        base_result["meta"]["verification_warnings"] = _vf["warnings"]
+        # 如果验证分数低，标记低质量判断
+        if _vf["verification_score"] < 0.6:
+            base_result["meta"]["low_quality_verdict"] = True
+            base_result["meta"]["flags"].append("verdict_contradiction_detected")
+    except Exception:
+        base_result["meta"]["verification_score"] = 1.0
+        base_result["meta"]["verification_flags"] = []
+        base_result["meta"]["verification_warnings"] = []
 
     # [MiniMind Rep Penalty] 检测判决是否陷入重复
     try:

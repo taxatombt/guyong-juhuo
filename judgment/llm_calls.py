@@ -597,3 +597,167 @@ def predict_user_choice(task_text, answers, verdict, confidence):
         }
     return _llm_predict_choice(task_text, answers)
 
+
+
+def _verify_judgment(task_text: str, answers: dict, verdict: str, confidence: float) -> dict:
+    """
+    Self-Verification: 检测判断中的逻辑矛盾（Anthropic Building Effective AI Agents启发）
+
+    不触发额外LLM调用。
+    - 用关键词检测推荐方向（支持/反对/中立）
+    - 方向冲突的维度对 = 矛盾
+    - flags: 具体矛盾描述
+    - warnings: 置信度不一致等软警告
+    - verification_score: 1.0=完全一致, 0.0=严重矛盾
+    """
+    import re
+
+    flags = []
+    warnings = []
+
+    # 推荐方向检测关键词
+    PRO_ACTION = {"建议", "支持", "推荐", "倾向", "鼓励", "可以", "可行", "值得",
+                   "应该", "鼓励", "高", "强", "重要", "显著", "all in", "果断"}
+    CON_ACTION = {"不建议", "反对", "谨慎", "慎重", "警告", "不建议", "不行",
+                   "不可", "不要", "避免", "风险", "保守", "低", "弱", "不重要"}
+    # 经济/时间维度专用：高分=高风险（反对行动），低分=可接受
+    HIGH_RISK = {"风险", "高风险", "极高风险", "风险较大", "不建议"}
+
+    def get_direction(ans) -> str:
+        """从文本判断推荐方向：pro/con/neutral（两步避免双重计算）"""
+        text = ans.get("content", "") if isinstance(ans, dict) else str(ans)
+        pro, con = 0, 0
+        # 第一步：找出所有被否定的位置
+        NEG_CHARS = "不别非无未"
+        negated_positions = set()
+        # 否定关键词对：neg_char + keyword
+        for neg_char in NEG_CHARS:
+            for kw in sorted(PRO_ACTION | CON_ACTION, key=len, reverse=True):
+                needle = neg_char + kw
+                start = 0
+                while True:
+                    idx = text.find(needle, start)
+                    if idx < 0:
+                        break
+                    # 标记从idx到idx+len(needle)的所有位置为已否定
+                    for j in range(idx, idx + len(needle)):
+                        negated_positions.add(j)
+                    start = idx + 1
+        # 否定短语
+        for neg_phrase in ("反对", "不建议", "不支持", "不可", "不要", "不建议"):
+            start = 0
+            while True:
+                idx = text.find(neg_phrase, start)
+                if idx < 0:
+                    break
+                for j in range(idx, idx + len(neg_phrase)):
+                    negated_positions.add(j)
+                start = idx + 1
+
+        def is_negated(pos, kw_len):
+            """检查从pos开始的kw_len个字符是否在否定位置中"""
+            return any(j in negated_positions for j in range(pos, pos + kw_len))
+
+        # 第二步：统计未被否定的关键词
+        for kw in sorted(PRO_ACTION, key=len, reverse=True):
+            start = 0
+            while True:
+                idx = text.find(kw, start)
+                if idx < 0:
+                    break
+                if not is_negated(idx, len(kw)):
+                    pro += 1
+                start = idx + 1
+
+        for kw in sorted(CON_ACTION, key=len, reverse=True):
+            start = 0
+            while True:
+                idx = text.find(kw, start)
+                if idx < 0:
+                    break
+                if not is_negated(idx, len(kw)):
+                    con += 1
+                start = idx + 1
+
+        # 高风险关键词（独立检测，不被其他否定覆盖）
+        for kw in HIGH_RISK:
+            if kw in text:
+                con += 2
+
+        if pro > con + 1: return "pro"
+        elif con > pro + 1: return "con"
+        return "neutral"
+
+
+    # 1. 检测维度间的推荐方向矛盾
+    dim_directions = {}
+    for dim_id, ans in answers.items():
+        dim_directions[dim_id] = get_direction(ans)
+
+    # 矛盾对：一方pro，另一方con
+    contradiction_pairs = [
+        ("cognitive", "emotional"),
+        ("cognitive", "intuitive"),
+        ("cognitive", "economic"),
+        ("cognitive", "temporal"),
+        ("game_theory", "emotional"),
+        ("game_theory", "intuitive"),
+        ("game_theory", "economic"),
+        ("emotional", "cognitive"),
+        ("emotional", "game_theory"),
+        ("emotional", "intuitive"),
+        ("economic", "cognitive"),
+        ("economic", "game_theory"),
+        ("economic", "social"),
+        ("intuitive", "cognitive"),
+        ("intuitive", "economic"),
+        ("intuitive", "temporal"),
+    ]
+
+    contradiction_count = 0
+    for dim_a, dim_b in contradiction_pairs:
+        dir_a = dim_directions.get(dim_a)
+        dir_b = dim_directions.get(dim_b)
+        if dir_a == "pro" and dir_b == "con":
+            contradiction_count += 1
+            flags.append(f"方向冲突: {dim_a}(建议{chr(24320)}) vs {dim_b}(建议{chr(21453)})")
+        elif dir_a == "con" and dir_b == "pro":
+            contradiction_count += 1
+            flags.append(f"方向冲突: {dim_a}(建议{chr(21453)}) vs {dim_b}(建议{chr(24320)})")
+
+    # 2. Verdict 与维度方向一致性
+    verdict_direction = get_direction({"content": verdict})
+    dim_pro_count = sum(1 for d in dim_directions.values() if d == "pro")
+    dim_con_count = sum(1 for d in dim_directions.values() if d == "con")
+    majority = "pro" if dim_pro_count > dim_con_count else "con"
+
+    verdict_dimension_agreement = 0
+    if verdict_direction == majority:
+        verdict_dimension_agreement = 1
+    elif verdict_direction != "neutral" and majority != "neutral":
+        verdict_dimension_agreement = -0.3  # verdict与多数维度不一致
+
+    # 3. 置信度与一致性一致性
+    if dim_directions:
+        neutral_count = sum(1 for d in dim_directions.values() if d == "neutral")
+        consistent_count = len(dim_directions) - neutral_count
+        consistency_ratio = consistent_count / len(dim_directions)
+        if consistency_ratio < 0.5 and confidence > 0.7:
+            warnings.append(f"置信度高({confidence:.2f})但维度方向混乱(仅{consistent_count}/{len(dim_directions)}一致)")
+
+    # 4. 计算综合验证分数
+    base = 1.0
+    base -= min(0.4, contradiction_count * 0.08)
+    base += verdict_dimension_agreement * 0.15
+    base -= len(warnings) * 0.05
+    verification_score = max(0.0, min(1.0, base))
+
+    return {
+        "verification_score": round(verification_score, 3),
+        "flags": flags,
+        "warnings": warnings,
+        "contradiction_count": contradiction_count,
+        "dim_directions": {k: v for k, v in dim_directions.items() if v != "neutral"},
+    }
+
+
