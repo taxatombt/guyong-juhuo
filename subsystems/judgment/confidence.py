@@ -21,67 +21,37 @@ class DimensionConfidence:
 
 
 def calculate_dimension_confidence(dim_id: str, answers: Dict) -> float:
-    """计算单个维度的置信度"""
-    # 默认中等置信度
+    """计算单个维度的置信度（MiniMind uncertainty 调制增强）"""
     base_confidence = 0.5
-    
-    # 维度特定规则
     dimension_rules = {
-        "cognitive": {
-            "keywords": ["直觉", "感觉", "分析", "思考", "认知", "偏差", "假设", "事实"],
-            "has_keywords": 0.2,
-        },
-        "game_theory": {
-            "keywords": ["玩家", "诉求", "策略", "均衡", "激励", "第三方"],
-            "has_keywords": 0.25,
-        },
-        "economic": {
-            "keywords": ["机会成本", "边际", "代价", "收益", "成本", "不可逆"],
-            "has_keywords": 0.25,
-        },
-        "dialectical": {
-            "keywords": ["矛盾", "主要", "次要", "实际", "现实", "对立", "变化"],
-            "has_keywords": 0.25,
-        },
-        "emotional": {
-            "keywords": ["情绪", "感受", "信号", "焦虑", "兴奋", "直觉"],
-            "has_keywords": 0.2,
-        },
-        "intuitive": {
-            "keywords": ["第一反应", "身体", "直觉", "经验", "模式"],
-            "has_keywords": 0.2,
-        },
-        "moral": {
-            "keywords": ["应该", "原则", "公正", "价值", "伦理", "底线"],
-            "has_keywords": 0.25,
-        },
-        "social": {
-            "keywords": ["群体", "压力", "身份", "认同", "社会", "独立"],
-            "has_keywords": 0.2,
-        },
-        "temporal": {
-            "keywords": ["长期", "短期", "五年", "复利", "折扣", "未来"],
-            "has_keywords": 0.2,
-        },
-        "metacognitive": {
-            "keywords": ["思考", "校准", "信心", "盲区", "反对", "元认知"],
-            "has_keywords": 0.2,
-        },
+        "cognitive": {"keywords": ["直觉", "感觉", "分析", "思考", "认知", "偏差", "假设", "事实"], "has_keywords": 0.2},
+        "game_theory": {"keywords": ["玩家", "诉求", "策略", "均衡", "激励", "第三方"], "has_keywords": 0.25},
+        "economic": {"keywords": ["机会成本", "边际", "代价", "收益", "成本", "不可逆"], "has_keywords": 0.25},
+        "dialectical": {"keywords": ["矛盾", "主要", "次要", "实际", "现实", "对立", "变化"], "has_keywords": 0.25},
+        "emotional": {"keywords": ["情绪", "感受", "信号", "焦虑", "兴奋", "直觉"], "has_keywords": 0.2},
+        "intuitive": {"keywords": ["第一反应", "身体", "直觉", "经验", "模式"], "has_keywords": 0.2},
+        "moral": {"keywords": ["应该", "原则", "公正", "价值", "伦理", "底线"], "has_keywords": 0.25},
+        "social": {"keywords": ["群体", "压力", "身份", "认同", "社会", "独立"], "has_keywords": 0.2},
+        "temporal": {"keywords": ["长期", "短期", "五年", "复利", "折扣", "未来"], "has_keywords": 0.2},
+        "metacognitive": {"keywords": ["思考", "校准", "信心", "盲区", "反对", "元认知"], "has_keywords": 0.2},
     }
-    
+
     if dim_id not in dimension_rules:
-        return base_confidence
-    
-    # 如果有回答，置信度提升
-    if dim_id in answers and answers[dim_id]:
+        conf = base_confidence
+    elif dim_id in answers and answers[dim_id]:
         answer_text = str(answers[dim_id])
         rules = dimension_rules[dim_id]
+        conf = base_confidence
         for kw in rules["keywords"]:
             if kw in answer_text:
-                base_confidence += rules["has_keywords"]
+                conf += rules["has_keywords"]
                 break
-    
-    return min(1.0, max(0.0, base_confidence))
+        # [MiniMind P2] uncertainty 调制
+        conf = modulate_confidence(conf, answer_text)
+    else:
+        conf = base_confidence
+
+    return min(1.0, max(0.0, conf))
 
 
 def calculate_average_confidence(dim_confidence: Dict[str, float]) -> float:
@@ -161,3 +131,39 @@ def format_hindsight(hindsight: Dict) -> str:
     if not hindsight["has_hindsight_bias"]:
         return ""
     return f"[后见之明警告] {hindsight['warning']} ({hindsight['extreme_count']}/{hindsight['extreme_ratio']:.0%})"
+
+
+# [MiniMind P2] compute_per_token_logps 等效
+import re as _re
+
+def compute_response_uncertainty(text: str) -> float:
+    """估算文本不确定性（0.0=确信，1.0=不确定）"""
+    if not text or len(text.strip()) < 5:
+        return 1.0
+    try:
+        from judgment.lessons import rep_penalty as _rp
+        _rep = _rp(text)
+    except Exception:
+        _rep = 0.0
+    _len = len(text)
+    if _len < 20:
+        _len_score = (20 - _len) / 20 * 0.5
+    elif _len > 600:
+        _len_score = min((_len - 600) / 400 * 0.5, 0.5)
+    else:
+        _len_score = 0.0
+    _sents = _re.split(r'[。！？\n]+', text)
+    _sents = [s.strip() for s in _sents if s.strip() and len(s.strip()) > 3]
+    if len(_sents) >= 2:
+        _lens = [len(s) for s in _sents]
+        _mean = sum(_lens) / len(_lens)
+        _var = sum((l - _mean) ** 2 for l in _lens) / len(_lens)
+        _ent_score = max(0.0, 0.5 - _var / 100)
+    else:
+        _ent_score = 0.2
+    _raw = 0.5 * _rep + 0.3 * _len_score + 0.2 * _ent_score
+    return min(1.0, max(0.0, _raw))
+
+def modulate_confidence(base: float, text: str) -> float:
+    """uncertainty=1.0时降至60%，uncertainty=0时不变"""
+    return base * (1.0 - compute_response_uncertainty(text) * 0.4)
