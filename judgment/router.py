@@ -60,6 +60,9 @@ from judgment.llm_calls import (
 )
 from judgment.pipeline import run_pipeline, JudgmentContext
 
+# ShortTermCache L1：会话内缓存，减少重复LLM调用
+from judgment.short_term_cache import short_term_cache, inject_short_term_context
+
 # MiniMind 长上下文压缩：超长 prompt 时自动摘要
 # 调用位置：check10d 和 check10d_run 中，_answer_questions 调用之前
 _COMPACT_THRESHOLD = 6000  # token 阈值，超过则压缩
@@ -303,6 +306,20 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     """
     # 懒启动（初始化 experiences 表等）
     _ensure_started()
+
+    # ── L1 ShortTermCache：先查会话内缓存，减少重复LLM调用 ───────
+    # ZeusHammer 三层记忆 L1，会话内跨任务共享上下文
+    stc_context = inject_short_term_context(task_text, top_k=3)
+    if stc_context:
+        # 缓存命中：简短任务可考虑直接复用
+        # 目前记录到 ctx，后续可优化"缓存命中→跳过LLM"逻辑
+        ctx._profile_entries.append({
+            "priority": 5,  # 最高优先级
+            "source": "session_cache",
+            "recency": 1.0,
+            "claim": stc_context,
+            "contradiction_flag": False,
+        })
 
     # ── P0-3 Pipeline 编排（链式注入）──────────────────────────────
     # 每个注入器独立函数，顺序执行，结果写入 ctx
@@ -712,6 +729,24 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
 
     # 【修复】check10d() 内部已通过 record_judgment() 调用过 snapshot_judgment()
     # 此处不再重复调用，避免 causal_chain 产生双重记录
+
+    # ShortTermCache L1：会话内缓存（ZeusHammer 三层记忆）
+    # 保存当前判断结果，供同会话内后续任务参考
+    try:
+        short_term_cache.set(
+            f"judgment:{_chain_id2}",
+            {
+                "task": task_text,
+                "verdict": verdict_str,
+                "confidence": confidence,
+                "emotion_pad": emotion_modulation.pad if emotion_modulation else None,
+                "chain_id": _chain_id2,
+            },
+            ttl=3600,
+            importance=2 if confidence > 0.7 else 1,
+        )
+    except Exception:
+        pass  # 不阻断判断主流程
 
     return base_result
 
