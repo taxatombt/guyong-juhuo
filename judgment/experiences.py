@@ -150,7 +150,9 @@ def init():
 
 
 def _get_embedding(text: str) -> str:
-    """生成文本 embedding，失败返回空字符串。"""
+    """生成文本 embedding。优先 MiniMax API（需要余额），失败则回退到 TF-IDF（纯Python+numpy，本地计算）。
+    TF-IDF 与存量 experiences 使用的向量方案一致（char n-gram 2-4, 256维）。"""
+    # 1. 尝试 MiniMax API
     try:
         from adapters.llm.minimax import get_adapter
         adapter = get_adapter()
@@ -160,8 +162,48 @@ def _get_embedding(text: str) -> str:
             return _json.dumps(vec)
     except Exception:
         pass
-    return ""
 
+    # 2. TF-IDF 回退（MiniMax 余额不足时使用，与存量experiences向量方案一致）
+    try:
+        import numpy as _np
+        from pathlib import Path as _Path
+
+        cache_dir = _Path(__file__).parent.parent / "data" / "tfidf_cache"
+        vec_path = cache_dir / "vectorizer_vocab.json"
+        if not vec_path.exists():
+            return ""
+
+        with open(vec_path, 'r', encoding='utf-8') as vf:
+            data = json.load(vf)
+        vocab = data["vocab"]
+        idf_vals = data["idf"]
+        ngram_range = tuple(data.get("ngram_range", [2, 4]))
+
+        def _ngs(txt, mn=2, mx=4):
+            t = (txt or "").lower().strip()
+            res = []
+            for n in range(mn, mx + 1):
+                for i in range(len(t) - n + 1):
+                    res.append(t[i:i+n])
+            return res
+
+        ng_counts = {}
+        ngrams = _ngs(text, ngram_range[0], ngram_range[1])
+        total = len(ngrams) or 1
+        for ng in ngrams:
+            if ng in vocab:
+                ng_counts[ng] = ng_counts.get(ng, 0) + 1
+
+        vec = _np.zeros(128, dtype=_np.float32)
+        for ng, count in ng_counts.items():
+            if ng in vocab and vocab[ng] < 128:
+                vec[vocab[ng]] = (count / total) * idf_vals[ng]
+
+        return json.dumps(vec.tolist())
+    except Exception:
+        pass
+
+    return ""
 
 def save_experience(task_text: str, conclusion: str, confidence: float,
                    context: str = "", user_id: str = "default",

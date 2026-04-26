@@ -58,6 +58,10 @@ from judgment.llm_calls import (
     predict_user_choice,
     _verify_judgment,
 )
+
+# P1 IntentRouter：ZeusHammer LocalBrain 启发，80%% 任务不需要LLM
+from judgment.intent_router import should_skip_judgment, route_input, IntentType
+
 from judgment.pipeline import run_pipeline, JudgmentContext
 
 # ShortTermCache L1：会话内缓存，减少重复LLM调用
@@ -300,6 +304,16 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     """
     # 懒启动（初始化 experiences 表等）
     _ensure_started()
+
+    # ── P1 IntentRouter：ZeusHammer LocalBrain ─────────────────────
+    # 在进入昂贵LLM调用前，先判断意图类型
+    intent_type = route_input(task_text)
+    if intent_type == IntentType.STATUS_QUERY:
+        return _quick_status_response(task_text)
+    elif intent_type == IntentType.SHORT_ANSWER:
+        return _quick_answer_response(task_text)
+    elif intent_type == IntentType.CONFIRM:
+        return _quick_confirm_response(task_text)
 
     # ── L1 ShortTermCache：先查会话内缓存，减少重复LLM调用 ───────
     # ZeusHammer 三层记忆 L1，会话内跨任务共享上下文
@@ -936,4 +950,56 @@ def _inject_profile_questions(profile, task_text):
 
     return extra
 
-
+
+
+
+# ──────────────────────────────────────────────
+# P1 IntentRouter：快速响应函数（ZeusHammer LocalBrain 启发）
+# ──────────────────────────────────────────────
+
+def _quick_status_response(task_text):
+    """STATUS_QUERY：直接返回状态，无需LLM调用"""
+    try:
+        from subsystems.judgment.judgment_db import get_recent_judgments
+        recent = get_recent_judgments(limit=5) or []
+        chains = [r for r in recent if isinstance(r, dict)]
+        verdict_count = len(chains)
+        confidence_avg = sum(r.get("confidence", 0) for r in chains) / max(len(chains), 1)
+        verdict = f"判断系统正常运行。近期判断{verdict_count}次，平均置信度{confidence_avg:.0%}。"
+    except Exception:
+        verdict = "判断系统正常运行。"
+    return {
+        "task": task_text,
+        "verdict": verdict,
+        "confidence": 1.0,
+        "dimensions": [],
+        "intent": "status_query",
+        "skipped_llm": True,
+        "chain_id": None,
+    }
+
+
+def _quick_answer_response(task_text):
+    """SHORT_ANSWER：简单问答，不走完整十维"""
+    return {
+        "task": task_text,
+        "verdict": "这是一个简单问题，但我需要更多信息才能给出有价值的回答。请描述更多背景。",
+        "confidence": 0.4,
+        "dimensions": [],
+        "intent": "short_answer",
+        "skipped_llm": True,
+        "chain_id": None,
+    }
+
+
+def _quick_confirm_response(task_text):
+    """CONFIRM：确认类（是不是/要不要），走轻量路径"""
+    return {
+        "task": task_text,
+        "verdict": "这是一个确认类问题，建议用更详细的描述来获取准确判断。请补充更多背景信息。",
+        "confidence": 0.5,
+        "dimensions": [],
+        "intent": "confirm",
+        "skipped_llm": True,
+        "chain_id": None,
+    }

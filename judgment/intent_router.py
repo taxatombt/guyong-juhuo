@@ -1,135 +1,263 @@
-"""ZeusHammer LocalBrain IntentRouter - ZeusHammer LocalBrain IntentRouter"""
-from __future__ import annotations
+# -*- coding: utf-8 -*-
+import re, time
 from collections import OrderedDict
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+
 class IntentType(Enum):
-    STATUS_QUERY="status_query";HELP_QUERY="help_query";KNOWLEDGE="knowledge"
-    LIFE_OS="life_os";BIO_QUERY="bio_query";VERDICT_LIST="verdict_list"
-    BEHAVIOR_Q="behavior_q";CONFIG_Q="config_q"
-    CAREER_JUDGE="career";INVEST_JUDGE="invest";RELATION_JUDGE="relation"
-    LIFE_JUDGE="life_judge";MONEY_JUDGE="money_judge";EDUCATION_J="education_j"
-    HEALTH_J="health_j";FAMILY_J="family_j";UNKNOWN="unknown"
-_P=[
-(IntentType.STATUS_QUERY,["状态","怎么样","查看判断","判断记录","历史判断","verdict","维度信念","系统状态"],10),
-(IntentType.HELP_QUERY,["怎么用","help","使用说明","命令","功能","帮忙","教我"],10),
-(IntentType.KNOWLEDGE,["什么是","告诉我关于","介绍一下","解释","概念","定义"],10),
-(IntentType.LIFE_OS,["今天做什么","精力","任务规划","本周计划","schedule","日程","todo","life os"],8),
-(IntentType.BIO_QUERY,["我的背景","我是谁","用户画像","biography","我的情况","个人信息","生平"],8),
-(IntentType.VERDICT_LIST,["判断列表","verdict list","查看历史","历史记录","judgments","判断历史"],8),
-(IntentType.BEHAVIOR_Q,["行为记录","behavior","最近做了什么","agent行为"],8),
-(IntentType.CONFIG_Q,["config","配置","设置","api key"],8),
-(IntentType.CAREER_JUDGE,["辛职","跃汁","offer","工作选择","加班","晋升","辛职吗","跃汁吗","职业","裁员","面试","创业","副业","工资","年终奖"],6),
-(IntentType.INVEST_JUDGE,["all in","allin","炸肤","投资","基金","全仓","加仓","减仓","理财","借钱炸肤","棲哈","技底","止损","股票"],6),
-(IntentType.RELATION_JUDGE,["分手","离婚","复合","情感","情侶","婚姻","追求","表白","暗恋","第三者","出轨","争吼"],6),
-(IntentType.LIFE_JUDGE,["买房","移民","买房吗","移民吗","定居","秛房","换城市","搬家","装修"],6),
-(IntentType.MONEY_JUDGE,["借钱","负债","贷款","收入","存款","月供","年入","财务"],6),
-(IntentType.EDUCATION_J,["读研","考研","留学","读研吗","考研吗","证业","学历","MBA","培训"],6),
-(IntentType.HEALTH_J,["手术","健康","体检","病例","吃药","治疗","戒烟","戒酒"],6),
-(IntentType.FAMILY_J,["结婚","生子","结婚吗","生子吗","生二胎","孩子教育","彩礼"],6),
-(IntentType.UNKNOWN,[],5),
-]
-_DIRECT_MAP={"状态":IntentType.STATUS_QUERY,"verdict":IntentType.STATUS_QUERY,"verdict list":IntentType.VERDICT_LIST,"help":IntentType.HELP_QUERY,"all in":IntentType.INVEST_JUDGE,"allin":IntentType.INVEST_JUDGE,"棲哈":IntentType.INVEST_JUDGE,"辛职":IntentType.CAREER_JUDGE,"跃汁":IntentType.CAREER_JUDGE,"买房":IntentType.LIFE_JUDGE,"移民":IntentType.LIFE_JUDGE,"分手":IntentType.RELATION_JUDGE,"借钱":IntentType.MONEY_JUDGE,"读研":IntentType.EDUCATION_J}
-_NO_CHECK10D={IntentType.STATUS_QUERY,IntentType.HELP_QUERY,IntentType.KNOWLEDGE,IntentType.LIFE_OS,IntentType.BIO_QUERY,IntentType.VERDICT_LIST,IntentType.BEHAVIOR_Q,IntentType.CONFIG_Q}
+    STATUS_QUERY   = "status_query"
+    SHORT_ANSWER   = "short_answer"
+    CONFIRM        = "confirm"
+    COMMAND        = "command"
+    CAREER_JUDGE   = "career_judge"
+    INVEST_JUDGE   = "invest_judge"
+    RELATION_JUDGE = "relation_judge"
+    LIFE_OS_JUDGE  = "life_os_judge"
+    COMPLEX_JUDGE  = "complex_judge"
+    UNKNOWN        = "unknown"
 
-class _IntentCache:
-    def __init__(self, max_size=100):
-        self._c=OrderedDict(); self._max=max_size
-    def get(self, k):
-        if k in self._c: self._c.move_to_end(k); return self._c[k]
-        return None
-    def set(self, k, v):
-        if k in self._c: self._c.move_to_end(k)
-        elif len(self._c)>=self._max: self._c.popitem(last=False)
-        self._c[k]=v
-    def clear(self): self._c.clear()
-    def __len__(self): return len(self._c)
-class IntentResult:
-    def __init__(self, it, chk, conf=0.0, kw="", note=""):
-        self.intent_type=it; self.should_check10d=chk
-        self.confidence=conf; self.matched_kw=kw; self.note=note
-    def __repr__(self):
-        return f"IntentResult({self.intent_type.value},check10d={self.should_check10d},conf={self.confidence:.2f})"
-    def to_dict(self):
-        return {"intent_type":self.intent_type.value,"should_check10d":self.should_check10d,"confidence":self.confidence,"matched_kw":self.matched_kw,"note":self.note}
+
+class IntentMatch:
+    def __init__(self, type_: IntentType, keywords: List[str],
+                 min_len: int = 0, max_len: int = 999,
+                 exclude: List[str] = None, score: int = 1):
+        self.type = type_
+        self.keywords = keywords
+        self.min_len = min_len
+        self.max_len = max_len
+        self.exclude = exclude or []
+        self.score = score
+        self._regexes = []
+        for kw in keywords:
+            parts = kw.split()
+            if len(parts) > 1:
+                escaped = r"\s+".join(re.escape(p) for p in parts)
+            else:
+                escaped = re.escape(kw)
+            self._regexes.append(re.compile(escaped, re.IGNORECASE))
+
+    def match(self, text: str) -> bool:
+        if len(text) < self.min_len or len(text) > self.max_len:
+            return False
+        for kw_re in self._regexes:
+            if kw_re.search(text):
+                for ex in self.exclude:
+                    if ex.lower() in text.lower():
+                        return False
+                return True
+        return False
+
+
 class IntentRouter:
-    _instance=None
-    def __init__(self): self._cache=_IntentCache(100)
-    @classmethod
-    def get_instance(cls):
-        if cls._instance is None: cls._instance=cls()
-        return cls._instance
-    def route(self, text):
-        if not text or not text.strip():
-            return IntentResult(IntentType.UNKNOWN,True,0.0,"","空输入")
-        text=text.strip(); key=text[:80]
-        cached=self._cache.get(key)
-        if cached is not None:
-            return IntentResult(cached,cached not in _NO_CHECK10D,1.0,"","[缓存]")
-        it,conf,kw=self._classify(text)
-        self._cache.set(key,it)
-        return IntentResult(it,it not in _NO_CHECK10D,conf,kw,"")
-    def _classify(self, text):
-        if len(text)<=10:
-            # Longest match first to avoid "verdict" matching before "verdict list"
-            for k,v in sorted(_DIRECT_MAP.items(), key=lambda x:-len(x[0])):
-                if k==text or text in k: return v,0.95,k
-        best,bestc,bestk=IntentType.UNKNOWN,0.0,""
-        # Sort all (intent, keyword) pairs by keyword length desc to prefer longer matches
-        candidates=[]
-        for it,kws,pri in _P:
-            for kw in kws:
-                if kw in text:
-                    candidates.append((len(kw),kw,it,pri))
-        # Longer keyword = higher priority, then higher pattern priority as tiebreaker
-        candidates.sort(key=lambda x:(x[0],x[3]), reverse=True)
-        if candidates:
-            _,kw,it,pri=candidates[0]
-            cov=len(kw)/max(len(text),1)
-            conf=min(pri/10.0+cov,1.0)
-            best,bestc,bestk=it,conf,kw
-        return best,bestc,bestk
-    def clear_cache(self): self._cache.clear()
-    def cache_size(self): return len(self._cache)
-def route(text): return IntentRouter.get_instance().route(text)
+    def __init__(self):
+        self._rules: List[IntentMatch] = []
+        self._cache: OrderedDict = OrderedDict()
+        self._cache_max = 200
+        self._last_clear = time.time()
+        self._build_rules()
 
-def direct_reply(it, text):
-    if it == IntentType.STATUS_QUERY:
-        try:
-            from judgment.closed_loop import get_judgment_stats
-            s = get_judgment_stats()
-            return f"判断系统状态：共 {s.get('total',0)} 条判断，正确 {s.get('correct',0)} 条"
-        except: return "判断系统运行正常"
-    if it == IntentType.HELP_QUERY:
-        return "用法：\n  python cli.py judge <问题> - 十维判断\n  python hub.py status - 查看状态\n  python hub.py verdict --show - 查看历史"
-    if it == IntentType.KNOWLEDGE:
-        kb = {
-            "all in": "把所有资金投入单一标的，风险极高。建议先小仓位验证。",
-            "止损": "止损是保护本金的重要手段。",
-            "买房": "买房需考虑：首付、月供、工作稳定性、城市发展。",
-            "辛职": "辛职前：储备 6-12 个月生活费。",
+    def _build_rules(self):
+        # ── 优先级1：具体领域（必须最前，否则被通用规则抢走） ──
+
+        # 职业决策
+        self._rules.append(IntentMatch(
+            IntentType.CAREER_JUDGE,
+            ["跳槽", "辞职", "读研", "考研", "考公", "移民",
+             "换工作", "offer", "要不要去", "要不要换",
+             "要不要接受", "要不要离开", "工作选择"],
+            min_len=3, max_len=200,
+        ))
+
+        # 投资决策（排除"是不是"确认句）
+        self._rules.append(IntentMatch(
+            IntentType.INVEST_JUDGE,
+            ["all in", "全仓", "炒股", "股票", "基金", "买房",
+             "借钱投资", "贷款", "要不要买房", "要不要创业",
+             "数字货币", "虚拟货币", "抄底", "要不要抄底"],
+            min_len=3, max_len=200,
+            exclude=["是不是", "该不该"],
+        ))
+
+        # 人际关系
+        self._rules.append(IntentMatch(
+            IntentType.RELATION_JUDGE,
+            ["吵架", "矛盾", "冲突", "分手", "挽回",
+             "怎么处理关系", "领导", "同事关系",
+             "朋友关系", "夫妻", "男/女朋友", "喜欢我"],
+            min_len=3, max_len=200,
+        ))
+
+        # 生活调度
+        self._rules.append(IntentMatch(
+            IntentType.LIFE_OS_JUDGE,
+            ["今天做什么", "精力", "状态不好", "想休息",
+             "工作安排", "怎么分配时间", "效率低", "拖延",
+             "早起了", "熬夜", "健身", "运动", "休息",
+             "睡眠", "焦虑", "压力大", "时间管理"],
+            min_len=2, max_len=60,
+        ))
+
+        # ── 优先级2：指令类 ──
+        self._rules.append(IntentMatch(
+            IntentType.COMMAND,
+            ["帮我", "帮我做", "请帮我", "执行", "做一下",
+             "生成", "创建", "写一个", "帮我写"],
+            min_len=2, max_len=60,
+        ))
+
+        # ── 优先级3：确认类 ──
+        self._rules.append(IntentMatch(
+            IntentType.CONFIRM,
+            ["是不是对的", "对不对", "是不是应该", "是不是好",
+             "好不好", "是不是真的", "是不是在", "能不能",
+             "行不行", "是不是喜欢我", "是不是喜欢",
+             "要还是不要", "是不是", "该不该"],
+            min_len=2, max_len=50,
+        ))
+
+        # ── 优先级4：状态查询 ──
+        self._rules.append(IntentMatch(
+            IntentType.STATUS_QUERY,
+            ["状态", "情况怎么样", "现在怎样", "最近如何",
+             "判断状态", "看看", "检查"],
+            min_len=2, max_len=30,
+        ))
+
+    def route(self, text: str) -> IntentType:
+        text = text.strip()
+        if not text:
+            return IntentType.UNKNOWN
+        now = time.time()
+        if now - self._last_clear > 60:
+            self._cache.clear()
+            self._last_clear = now
+        if text in self._cache:
+            self._cache.move_to_end(text)
+            return self._cache[text]
+        for rule in self._rules:
+            if rule.match(text):
+                intent = rule.type
+                self._cache_to(intent, text)
+                return intent
+        intent = self._infer_complexity(text)
+        self._cache_to(intent, text)
+        return intent
+
+    def _infer_complexity(self, text: str) -> IntentType:
+        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+        sentences = len(re.split(r'[。！？.!?]+', text))
+        if sentences >= 2 and chinese_chars >= 20:
+            return IntentType.COMPLEX_JUDGE
+        if chinese_chars <= 15:
+            question_kw = ["是什么", "为什么", "怎么办", "怎么看",
+                           "如何", "哪个好", "是不是", "要不要"]
+            for kw in question_kw:
+                if kw in text:
+                    return IntentType.SHORT_ANSWER
+            return IntentType.COMPLEX_JUDGE
+        return IntentType.COMPLEX_JUDGE
+
+    def _cache_to(self, intent: IntentType, text: str):
+        if text in self._cache:
+            self._cache.move_to_end(text)
+        else:
+            if len(self._cache) >= self._cache_max:
+                self._cache.popitem(last=False)
+        self._cache[text] = intent
+
+    def explain(self, text: str) -> Dict[str, Any]:
+        intent = self.route(text)
+        reason = self._get_intent_reason(intent, text)
+        should_skip_llm = intent in (
+            IntentType.STATUS_QUERY, IntentType.SHORT_ANSWER, IntentType.CONFIRM
+        )
+        return {
+            "intent": intent.value,
+            "reason": reason,
+            "skip_llm": should_skip_llm,
+            "skip_check10d": should_skip_llm,
+            "suggested_action": self._get_action(intent),
         }
-        for k, v in kb.items():
-            if k in text: return v
-        return f"关于「{text[:20]}」的建议：用 juhuo 做十维判断获取个性化建议。"
-    if it == IntentType.LIFE_OS:
-        return "life_os用法：python life_os.py <任务1>/<任务2>/... --energy 80\n例：python life_os.py 写报告/健身/见客户"
-    if it == IntentType.BIO_QUERY:
-        try:
-            from judgment.biography import get_context as bio_ctx
-            ctx = bio_ctx()
-            return ctx if ctx else "暂无用户背景记录。"
-        except: return "暂无用户背景记录。"
-    if it == IntentType.VERDICT_LIST:
-        try:
-            from judgment.closed_loop import get_judgment_stats
-            s = get_judgment_stats()
-            return f"历史判断：共{s.get('total',0)}条，准确率{s.get('accuracy','N/A')}"
-        except: return "暂无历史判断记录。"
-    if it == IntentType.BEHAVIOR_Q: return "行为记录：暂无。使用juhuo时自动记录行为轨迹。"
-    if it == IntentType.CONFIG_Q: return "配置：用python hub.py config set <key> <value>查看/修改。"
-    return ""
-def handle(text):
-    r = route(text)
-    if r.should_check10d: return None
-    return direct_reply(r.intent_type, text)
+
+    def _get_intent_reason(self, intent: IntentType, text: str) -> str:
+        reasons = {
+            IntentType.STATUS_QUERY: "命中状态查询关键词",
+            IntentType.CONFIRM: "命中确认类关键词（是不是/要不要/该不该）",
+            IntentType.COMMAND: "命中指令关键词（帮我/做/生成）",
+            IntentType.LIFE_OS_JUDGE: "命中精力/时间管理关键词",
+            IntentType.INVEST_JUDGE: "命中投资决策关键词",
+            IntentType.CAREER_JUDGE: "命中职业决策关键词",
+            IntentType.RELATION_JUDGE: "命中人际关系关键词",
+            IntentType.SHORT_ANSWER: "短文本，简单问答",
+            IntentType.COMPLEX_JUDGE: "复杂文本，需要完整10维判断",
+            IntentType.UNKNOWN: "无法识别，默认完整判断",
+        }
+        return reasons.get(intent, "未知原因")
+    def _get_action(self, intent: IntentType) -> str:
+        actions = {
+            IntentType.STATUS_QUERY: "直接返回状态（无需判断）",
+            IntentType.CONFIRM: "轻量级 yes/no 判断（可缓存）",
+            IntentType.COMMAND: "执行工具/CLI，不进判断",
+            IntentType.LIFE_OS_JUDGE: "调用 life_os.py",
+            IntentType.INVEST_JUDGE: "check10d_run（投资场景）",
+            IntentType.CAREER_JUDGE: "check10d_run（职业场景）",
+            IntentType.RELATION_JUDGE: "check10d_run（关系场景）",
+            IntentType.SHORT_ANSWER: "直接回答（无判断）",
+            IntentType.COMPLEX_JUDGE: "check10d_run（完整）",
+            IntentType.UNKNOWN: "check10d_run（默认）",
+        }
+        return actions.get(intent, "check10d_run（默认）")
+
+    def stats(self) -> Dict[str, Any]:
+        return {"cache_size": len(self._cache), "cache_max": self._cache_max,
+                "rules_count": len(self._rules)}
+
+
+_router_instance: Optional[IntentRouter] = None
+
+def get_router() -> IntentRouter:
+    global _router_instance
+    if _router_instance is None:
+        _router_instance = IntentRouter()
+    return _router_instance
+
+
+def route_input(text: str) -> IntentType:
+    return get_router().route(text)
+
+
+def should_skip_judgment(text: str) -> bool:
+    intent = route_input(text)
+    return intent in (
+        IntentType.STATUS_QUERY, IntentType.SHORT_ANSWER,
+        IntentType.CONFIRM, IntentType.COMMAND,
+    )
+
+
+if __name__ == "__main__":
+    router = get_router()
+    test_cases = [
+        ("状态怎么样", IntentType.STATUS_QUERY),
+        ("要不要辞职创业", IntentType.CAREER_JUDGE),
+        ("要不要 all in 炒股", IntentType.INVEST_JUDGE),
+        ("今天做什么好", IntentType.LIFE_OS_JUDGE),
+        ("是不是应该买房", IntentType.CONFIRM),
+        ("怎么看待这件事", IntentType.SHORT_ANSWER),
+        ("帮我生成一份报告", IntentType.COMMAND),
+        ("和朋友吵架了怎么办", IntentType.RELATION_JUDGE),
+        ("她是不是喜欢我", IntentType.RELATION_JUDGE),
+        ("要还是不要", IntentType.CONFIRM),
+        ("人生好迷茫啊", IntentType.COMPLEX_JUDGE),
+        ("我35岁程序员深圳有两套房要all in炒股吗", IntentType.INVEST_JUDGE),
+    ]
+    print("=== IntentRouter 测试 ===")
+    all_pass = True
+    for text, expected in test_cases:
+        got = router.route(text)
+        status = "PASS" if got == expected else "FAIL"
+        if got != expected:
+            all_pass = False
+        print(f"[{status}] [{got.value}] {text!r}")
+    print()
+    print(f"统计: {router.stats()}")
+    print("结果:", "全部通过" if all_pass else "有失败")
