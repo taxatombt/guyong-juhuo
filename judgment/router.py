@@ -63,6 +63,17 @@ from judgment.pipeline import run_pipeline, JudgmentContext
 # ShortTermCache L1：会话内缓存，减少重复LLM调用
 from judgment.short_term_cache import short_term_cache, inject_short_term_context
 
+# router_utils: 独立工公函数（从 router.py 提取）
+# _keyword_match: route() | _judge_complexity: check10d()
+# format_report/format_structured: 公共 API re-export
+from judgment.router_utils import (
+    _keyword_match,
+    _judge_complexity,
+    format_report,
+    format_structured,
+)
+
+
 # MiniMind 长上下文压缩：超长 prompt 时自动摘要
 # 调用位置：check10d 和 check10d_run 中，_answer_questions 调用之前
 _COMPACT_THRESHOLD = 6000  # token 阈值，超过则压缩
@@ -194,15 +205,6 @@ def _get_self_review():
         global_self_review = SelfReviewSystem()
     return global_self_review
 
-def inject_emotion_signal(task_text: str) -> str:
-    """兼容旧接口：如果情绪信号需要重视，返回提示文本"""
-    # 先检测情绪（我们只需要文本关键词检测，这里传入空判断结果）
-    signal = global_emotion_system.detect_emotion(task_text, {})
-    if signal.is_signal:
-        return f"\n[情绪信号提示] {signal.description}\n"
-    return None
-
-
 def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None) -> str:
     """构造LLM回答问题的prompt"""
     dim_labels = {
@@ -255,14 +257,6 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
         parts.append("")
 
     return "\n".join(parts)
-
-
-def _keyword_match(text, keywords):
-    text_lower = text.lower()
-    for kw in keywords:
-        if kw.lower() in text_lower:
-            return True
-    return False
 
 
 def route(text):
@@ -922,20 +916,6 @@ def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
     except Exception:
         return ("需要更多信息才能判断", 0.3)
 
-def _judge_complexity(text):
-    """自动判断任务复杂度"""
-    critical_kw = ["生死", "生命", "法律", "犯罪", "坐牢", "致命", "不可逆"]
-    complex_kw = ["纠结", "矛盾", "冲突", "多方", "合伙", "长期", "战略",
-                  "要不要", "选哪个", "怎么选", "利弊", "优劣", "两难"]
-    for kw in critical_kw:
-        if kw in text:
-            return "critical"
-    for kw in complex_kw:
-        if kw in text:
-            return "complex"
-    return "simple"
-
-
 def _inject_profile_questions(profile, task_text):
     """根据 agent_profile 注入个性化追问"""
     if not profile:
@@ -956,62 +936,4 @@ def _inject_profile_questions(profile, task_text):
 
     return extra
 
-
-def format_report(result):
-    """旧兼容，人可读"""
-    lines = [
-        f"[判断框架] 十维分析（{result['complexity']}级）",
-        f"[背景] {result['task'][:60]}",
-        f"[复杂度] {result['complexity']}",
-        f"[维度] {result['meta']['checked']}/10（跳过{result['meta']['skipped_count']}个）",
-        "",
-    ]
-
-    for dim in DIMENSIONS:
-        if dim.id in result["skipped"] and result["complexity"] != "critical":
-            continue
-        lines.append(f"== {dim.name} ==")
-        lines.append(f"  {dim.description}")
-        for q in dim.questions:
-            lines.append(f"  -> {q}")
-        lines.append("")
-
-    lines.append(f"[验证] 十维都有思考过吗？")
-    return "\n".join(lines)
-
-
-def format_structured(result):
-    """新接口，结构化人可读"""
-    lines = [
-        f"=== 十维检视 ===",
-        f"任务: {result['task'][:60]}",
-        f"复杂度: {result['complexity']} | 维度: {result['meta']['checked']}/10",
-        "",
-    ]
-
-    priority_map = [
-        ("MUST", result["must_check"]),
-        ("IMPORTANT", result["important"]),
-        ("SKIPPED", result["skipped"]),
-    ]
-
-    for label, dim_ids in priority_map:
-        if not dim_ids:
-            continue
-        lines.append(f"【{label}】")
-        for dim_id in dim_ids:
-            dim = next((d for d in DIMENSIONS if d.id == dim_id), None)
-            if not dim:
-                continue
-            lines.append(f"  {dim.name}:")
-            for q in dim.questions[:2]:
-                lines.append(f"    - {q}")
-        lines.append("")
-
-    if result.get("agent_profile"):
-        p = result["agent_profile"]
-        lines.append(f"【模拟对象】{p.get('name', '未知')}")
-        if p.get("values"):
-            lines.append(f"  价值: {' > '.join(p['values'][:3])}")
-
-    return "\n".join(lines)
+
