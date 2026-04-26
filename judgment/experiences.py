@@ -396,7 +396,7 @@ def fts_search(task_text: str, user_id: str = "default", limit: int = 10) -> lis
         if ids:
             placeholders = ",".join(["?"] * len(ids))
             rows = conn.execute(
-                f"SELECT id, situation_type, task_text, conclusion, confidence, matched_keywords, outcome, outcome_score "
+                f"SELECT id, situation_type, task_text, conclusion, confidence, matched_keywords, outcome, outcome_score, quality_score "
                 f"FROM experiences WHERE id IN ({placeholders})",
                 ids
             ).fetchall()
@@ -414,6 +414,7 @@ def fts_search(task_text: str, user_id: str = "default", limit: int = 10) -> lis
                         "matched_keywords": r[5] or "",
                         "outcome": r[6],
                         "outcome_score": r[7],
+                        "quality_score": r[8] if len(r) > 8 else 50.0,
                         "rank": bm25_score,
                     })
         else:
@@ -447,10 +448,10 @@ def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_i
 
     kw_rows = conn.execute(
         "SELECT id, situation_type, task_text, conclusion, confidence, "
-        "matched_keywords, outcome, outcome_score, task_embedding "
+        "matched_keywords, outcome, outcome_score, task_embedding, quality_score "
         "FROM experiences WHERE user_id = ?" + kw_filter + " "
         "ORDER BY CASE WHEN situation_type = ? THEN 1 ELSE 0 END DESC, "
-        "outcome_score DESC, created_at DESC LIMIT ?",
+        "quality_score DESC, outcome_score DESC, created_at DESC LIMIT ?",
         kw_params).fetchall()
 
     scored = []
@@ -470,10 +471,12 @@ def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_i
             if query_vec and r_emb_raw:
                 try: emb_sim = _cosine_sim(query_vec, _json.loads(r_emb_raw))
                 except Exception: pass
+            # ZeusHammer SkillLearner: quality_score 加成（高质量技能优先）
+            quality_factor = (r.get("quality_score") or 50.0) / 100.0 * 0.15
             if emb_sim > 0:
-                score = emb_sim * 0.5 + norm * 0.3 + kw_sim * 0.15 + type_bonus * 0.05
+                score = emb_sim * 0.5 + norm * 0.3 + kw_sim * 0.12 + type_bonus * 0.05 + quality_factor
             else:
-                score = norm * 0.6 + kw_sim * 0.25 + type_bonus * 0.15
+                score = norm * 0.6 + kw_sim * 0.2 + type_bonus * 0.15 + quality_factor
             if score >= min_score:
                 scored.append({
                     "experience_id": r["experience_id"], "situation_type": rtype,
@@ -486,17 +489,18 @@ def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_i
 
     # keyword fallback
     for r in kw_rows:
-        eid, rtype, rtext, rconclusion, rconf, rkw, routcome, rscore, r_emb = r
+        eid, rtype, rtext, rconclusion, rconf, rkw, routcome, rscore, r_emb, rqscore = r
         kw_sim = _keyword_overlap(keywords, rkw or "")
         type_bonus = 0.15 if rtype == stype else 0.0
+        quality_factor = (rqscore or 50.0) / 100.0 * 0.15
         emb_sim = 0.0
         if query_vec and r_emb:
             try: emb_sim = _cosine_sim(query_vec, _json.loads(r_emb))
             except Exception: pass
         if emb_sim > 0:
-            score = emb_sim * 0.5 + kw_sim * 0.3 + type_bonus
+            score = emb_sim * 0.5 + kw_sim * 0.25 + type_bonus * 0.15 + quality_factor
         else:
-            score = kw_sim * 0.7 + type_bonus
+            score = kw_sim * 0.65 + type_bonus * 0.15 + quality_factor
         if score >= min_score:
             scored.append({
                 "experience_id": eid, "situation_type": rtype,
@@ -505,6 +509,7 @@ def find_similar(task_text: str, limit: int = 3, min_score: float = 0.05, user_i
                 "similarity": round(score, 3),
                 "emb_similarity": round(emb_sim, 3) if emb_sim > 0 else None,
                 "outcome": routcome, "outcome_score": rscore,
+                "quality_score": rqscore or 50.0,
             })
     scored.sort(key=lambda x: -x["similarity"])
     return scored[:limit]
