@@ -210,17 +210,88 @@ class ActionExecutor:
             "timestamp": datetime.now().isoformat(),
         }
 
+    # 通道4: Codex CLI（everything-copilot-cli 多AI编排模式）
+    # 来源: drvoss/everything-copilot-cli - 11个编排模式之一
+    def execute_via_codex(self, task: str, verdict: str = "") -> Dict[str, Any]:
+        """
+        通过 OpenAI Codex CLI 执行代码任务。
+        everything-copilot-cli "Shell Invocation" 模式：copilot --via codex
+        
+        Codex CLI 优势:
+        - 快速代码补全/生成
+        - 适合 snippet/模板/小函数
+        - 比 Claude Code 更轻量
+        """
+        exec_id = f"codex_{int(time.time()*1000)}"
+        chain_id = f"codex_chain_{int(time.time()*1000)}"
+        action_desc = f"Codex执行: {task[:60]}"
+        try:
+            from judgment.closed_loop import snapshot_judgment
+            _dims = ["cognitive", "economic"]
+            snapshot_judgment(
+                chain_id=chain_id, task_text=task, dimensions=_dims,
+                weights={d: 1.0 for d in _dims},
+                result={"verdict": verdict, "answers": {}, "confidence": 0.5,
+                        "dim_confidence": {}, "emotion": {}, "curiosity": {}},
+                complexity="simple",
+            )
+        except Exception: pass
+
+        try:
+            result = subprocess.run(
+                ["codex", "--print", task],
+                capture_output=True, text=True, timeout=60,
+                encoding="utf-8", errors="replace",
+            )
+            actual_result = result.stdout[:2000] if result.stdout else ""
+            if not actual_result:
+                actual_result = result.stderr[:500] if result.stderr else "(no output)"
+            outcome_score = 1.0 if result.returncode == 0 else 0.3
+        except FileNotFoundError:
+            actual_result = "codex not found in PATH (安装: npm install -g @openai/codex)"
+            outcome_score = 0.0
+        except subprocess.TimeoutExpired:
+            actual_result = "Codex timed out (60s)"
+            outcome_score = 0.5
+        except Exception as e:
+            actual_result = f"Codex error: {e}"
+            outcome_score = 0.0
+
+        return {
+            "execution_id": exec_id, "chain_id": chain_id,
+            "channel": "codex", "verdict": verdict,
+            "action_description": action_desc,
+            "actual_result": actual_result,
+            "outcome_score": outcome_score, "score": outcome_score,
+            "timestamp": datetime.now().isoformat(),
+        }
+
     # 统一入口 ─────────────────────────────────────────────────────────────
     def execute(self, task: str, verdict: str = "",
                 channel: str = "auto", **kwargs) -> Dict[str, Any]:
         task_lower = task.lower()
         if channel == "auto":
-            if any(kw in task_lower for kw in ["code", "bug", "refactor", "implement", "write", "review"]):
-                channel = "claude_code"
-            elif any(kw in task_lower for kw in ["research", "search", "调研", "搜索"]):
-                channel = "hermes"
-            else:
-                channel = "benchmark"
+            # P0: 优先用 IntentRouter 的 tool_route（everything-copilot-cli 路由模式）
+            try:
+                from judgment.intent_router import get_router
+                router = get_router()
+                tool_info = router.tool_route(task)
+                if tool_info:
+                    channel = tool_info[0]  # claude_code/hermes/codex
+                    # codex channel is pending: tool not installed yet
+                    if channel == "codex":
+                        # Codex CLI 未安装，fallback 到 claude_code
+                        channel = "claude_code"
+            except Exception:
+                pass
+            # Fallback to keyword-based routing
+            if channel == "auto":
+                if any(kw in task_lower for kw in ["code", "bug", "refactor", "implement", "write", "review"]):
+                    channel = "claude_code"
+                elif any(kw in task_lower for kw in ["research", "search", "调研", "搜索"]):
+                    channel = "hermes"
+                else:
+                    channel = "benchmark"
 
         if channel == "benchmark":
             result = self.execute_via_benchmark(task, expected_verdict=kwargs.get("expected_verdict", ""))
@@ -228,6 +299,8 @@ class ActionExecutor:
             result = self.execute_via_hermes(task, verdict)
         elif channel == "claude_code":
             result = self.execute_via_claude_code(task, verdict)
+        elif channel == "codex":
+            result = self.execute_via_codex(task, verdict)
         else:
             return {"error": f"Unknown channel: {channel}"}
 

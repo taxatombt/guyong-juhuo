@@ -165,18 +165,55 @@ class IntentRouter:
                 self._cache.popitem(last=False)
         self._cache[text] = intent
 
+    # ── P0: 工具路由（everything-copilot-cli "model choice = routing" 模式）────
+    TOOL_ROUTES = [
+        # claude_code: 代码/重构/实现类
+        (["代码", "写代码", "implement", "bug", "fix bug", "refactor",
+          "重构", "review code", "代码审查", "write code",
+          "帮我写", "create function", "函数", "class ", "算法"],
+         "claude_code"),
+        # hermes: 调研/搜索/研究类
+        (["调研", "搜索", "research", "调查", "查一下",
+          "了解一下", "告诉我关于", "帮我查"],
+         "hermes"),
+        # codex: 快速代码生成/补全（codex CLI 安装后启用）
+        (["补全", "complete", "autocomplete", "snippet", "模板代码",
+          "generate code"],
+         "codex"),
+    ]
+
+    def tool_route(self, text: str) -> tuple:
+        """
+        返回 (tool_name, task_text) 或 None。
+        基于 everything-copilot-cli "model choice = routing" 模式：
+        - 模型选择是路由决策，不是固定分配
+        - 不同任务类型路由到最适合的工具
+        """
+        text_lower = text.lower()
+        for keywords, tool in self.TOOL_ROUTES:
+            for kw in keywords:
+                if kw.lower() in text_lower:
+                    return (tool, text)
+        return None
+
     def explain(self, text: str) -> Dict[str, Any]:
         intent = self.route(text)
         reason = self._get_intent_reason(intent, text)
         should_skip_llm = intent in (
             IntentType.STATUS_QUERY, IntentType.SHORT_ANSWER, IntentType.CONFIRM
         )
+        # P0: 工具路由（everything-copilot-cli "model choice = routing"）
+        tool_info = self.tool_route(text)
         return {
             "intent": intent.value,
             "reason": reason,
             "skip_llm": should_skip_llm,
             "skip_check10d": should_skip_llm,
             "suggested_action": self._get_action(intent),
+            "tool_route": tool_info[0] if tool_info else None,  # 路由到哪个工具
+            "tool_task": tool_info[1] if tool_info else None,
+            "tool_action": self.get_tool_action(tool_info[0]) if tool_info else None,
+            "routing_source": "everything-copilot-cli:model-choice-as-routing",
         }
 
     def _get_intent_reason(self, intent: IntentType, text: str) -> str:
@@ -207,6 +244,15 @@ class IntentRouter:
             IntentType.UNKNOWN: "check10d_run（默认）",
         }
         return actions.get(intent, "check10d_run（默认）")
+
+    def get_tool_action(self, tool: str) -> str:
+        """P0: 工具路由动作映射（everything-copilot-cli 模式）"""
+        tool_actions = {
+            "claude_code": "copaw agents chat --to claude --message <task>",
+            "hermes": "copaw agents chat --to hermes --message <task>",
+            "codex": "codex <task> (Codex CLI, 安装后启用)",
+        }
+        return tool_actions.get(tool, f"未知工具: {tool}")
 
     def stats(self) -> Dict[str, Any]:
         return {"cache_size": len(self._cache), "cache_max": self._cache_max,
