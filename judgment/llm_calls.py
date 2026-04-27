@@ -38,7 +38,8 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
                          prior_adj: dict = None, history_context: str = "",
                          bio_context: str = "",
                          profile_entries: list = None,
-                         lessons_context: str = "") -> str:
+                         lessons_context: str = "",
+                         pet_context: str = "") -> str:
     """构造LLM回答问题的prompt"""
     dim_labels = {
         "cognitive": "认知维度",
@@ -85,6 +86,10 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
     # 生平事实参考（如果有）
     if bio_context:
         parts.insert(1, bio_context)
+    # 宠物状态注入（排在 UnifiedProfile 之前）
+    if pet_context:
+        parts.insert(1, pet_context)
+
     # UnifiedProfile 标注注入（优先级：Fact > Pattern > Signal）
     if profile_entries:
         try:
@@ -107,7 +112,8 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
                       prior_adj: dict = None, history_context: str = "",
                       bio_context: str = "",
                       profile_entries: list = None,
-                      lessons_context: str = "") -> dict:
+                      lessons_context: str = "",
+                      pet_context: str = "") -> dict:
     """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
     adapter = get_adapter()
 
@@ -118,7 +124,7 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
 
     prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj,
                                   history_context, bio_context, profile_entries,
-                                  lessons_context)
+                                  lessons_context, pet_context)
 
     # 截断prompt（LLM context limit）
     if len(prompt) > 6000:

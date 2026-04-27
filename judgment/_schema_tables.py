@@ -67,6 +67,13 @@ _TABLE_DEFS = [
     ("insights",
      "id INTEGER PRIMARY KEY, event_type TEXT, trigger TEXT, insight TEXT, "
      "importance REAL, tags TEXT, created_at TEXT, verified INTEGER DEFAULT 0"),
+    ("pets",
+     "pet_id TEXT PRIMARY KEY, name TEXT NOT NULL, "
+     "species TEXT NOT NULL CHECK(species IN ('cat','dog')), "
+     "personality TEXT NOT NULL, "
+     "mood REAL DEFAULT 60.0, affection REAL DEFAULT 50.0, "
+     "health REAL DEFAULT 80.0, energy REAL DEFAULT 70.0, "
+     "created_at TEXT NOT NULL, last_interact TEXT, last_fed TEXT, last_played TEXT"),
 ]
 
 

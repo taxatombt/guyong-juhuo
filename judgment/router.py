@@ -176,6 +176,7 @@ from judgment.behavior_logger import log_agent_behavior, ActionChannel
 
 # 途径1：生平事实层
 from judgment.biography import get_context as get_bio_context, extract_from_text as extract_bio, log_batch as log_bio_batch
+from judgment.pets import update_from_emotion, pet_to_prompt, get_status_summary, interact as _pet_interact, get_pet as _get_pet
 
 # P0改进：因果推断引擎 - 给judgment提供推理底座
 from causal_memory.causal_inference import CausalInferenceEngine, infer_causal_chain
@@ -348,7 +349,18 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     emotion_modulation = ctx.emotion_modulation
     emotion_detection = ctx.emotion_detection
     causal_result = ctx.causal_result
-    
+
+    # 宠物系统：主人情绪变化 → 宠物状态同步更新
+    if emotion_detection and emotion_detection.emotion_label:
+        pet_result = update_from_emotion(
+            pet_id=user_id,
+            emotion_label=emotion_detection.emotion_label,
+            owner_pad={"P": emotion_detection.p_score, "A": emotion_detection.a_score, "D": emotion_detection.d_score} if hasattr(emotion_detection, "p_score") else None
+        )
+        # 宠物心情变化附加到判断上下文中
+        if pet_result and pet_result.get("reaction"):
+            ctx._pet_reaction = pet_result["reaction"]
+
     # Hook 上下文（Hermes 启发）
     hook_context = {}
     fenced_context = ""
@@ -437,6 +449,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         "",  # 不再单独传 bio_context（已合并到 unified_context）
         _profile_entries,  # UnifiedProfile.to_prompt() 标注注入
         _lessons_ctx,      # 历史教训注入（因果链教训，被压缩时为摘要）
+        pet_to_prompt(user_id),  # 宠物状态注入
     )
 
     _ret = {
@@ -605,6 +618,12 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     # UnifiedProfile entries 透传给外部（供 check10d_run / API 使用）
     _ret["_profile_entries"] = _profile_entries
 
+    # 宠物状态（附加到结果中）
+    _ret["pet"] = {
+        "status": get_status_summary(user_id),
+        "reaction": getattr(ctx, "_pet_reaction", None),
+    }
+
     return _ret
 
 
@@ -656,7 +675,8 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
         _profile_entries, _lessons_ctx, base_result.get("history_context", "") or ""
     )
     answers = _answer_questions(_merged_prompt, all_questions, agent_profile,
-                                _prior_adj, _hist_ctx, "", _profile_entries, _lessons_ctx)
+                                _prior_adj, _hist_ctx, "", _profile_entries, _lessons_ctx,
+                                pet_to_prompt(user_id))
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
