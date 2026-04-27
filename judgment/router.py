@@ -632,6 +632,27 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         "reaction": getattr(ctx, "_pet_reaction", None),
     }
 
+    # [Hermes Orange-Book] Progressive Disclosure 渐进揭示
+    try:
+        from judgment.progressive_disclosure import apply_disclosure
+        _dr = apply_disclosure(
+            ctx.original_task,
+            _ret.get("answers", {}),
+            verdict_str,
+            confidence,
+            _ret,
+        )
+        _ret["disclosure"] = {
+            "layer": _dr.layer,
+            "needs_confirm": _dr.needs_user_confirm,
+            "user_prompt": _dr.user_prompt,
+            "suggestions": _dr.suggestions,
+            "reveal_dimensions": _dr.reveal_dimensions,
+        }
+        _ret["meta"]["disclosure_layer"] = _dr.layer
+    except Exception:
+        pass
+
     return _ret
 
 
@@ -785,11 +806,30 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
                 "emotion_pad": emotion_modulation.pad if emotion_modulation else None,
                 "chain_id": _chain_id2,
             },
-            ttl=3600,
-            importance=2 if confidence > 0.7 else 1,
         )
     except Exception:
-        pass  # 不阻断判断主流程
+        pass
+
+    # [Hermes Orange-Book] Progressive Disclosure 渐进揭示
+    try:
+        from judgment.progressive_disclosure import apply_disclosure
+        _dr = apply_disclosure(
+            task_text,
+            base_result.get("answers", {}),
+            verdict_str,
+            confidence,
+            base_result,
+        )
+        base_result["disclosure"] = {
+            "layer": _dr.layer,
+            "needs_confirm": _dr.needs_user_confirm,
+            "user_prompt": _dr.user_prompt,
+            "suggestions": _dr.suggestions,
+            "reveal_dimensions": _dr.reveal_dimensions,
+        }
+        base_result["meta"]["disclosure_layer"] = _dr.layer
+    except Exception:
+        pass
 
     return base_result
 
