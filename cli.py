@@ -28,6 +28,7 @@ from causal_memory.causal_chain import get_recent_chains, get_chain_detail
 from config.env_loader import EnvVarLoader, create_env_template, JUHuo_USER_DIR, JUHuo_USER_ENV
 from judgment.benchmark import Benchmark, run_benchmark
 from judgment.biography import log, format_profile, get_all
+from judgment.experiences import rate_experience
 
 log = get_logger("juhuo.cli")
 
@@ -372,6 +373,39 @@ def cmd_behavior(args):
             print(f"  感知：{b['perception_summary'][:200]}")
 
 
+def cmd_experience(args):
+    """Hermes P0: experience quality_score user_rating 维度"""
+    if args.action == "rate":
+        if not args.id:
+            print("用法: juhuo experience rate <id> <1.0~5.0>")
+            print("示例: juhuo experience rate 12 5.0")
+            print("      juhuo experience rate 3 2.0")
+            return
+        if not args.rating:
+            print("用法: juhuo experience rate <id> <1.0~5.0>")
+            return
+        result = rate_experience(args.id, args.rating, getattr(args, "user_id", "default"))
+        if result.get("ok"):
+            print(f"\n[*] Experience #{result['experience_id']} 评分已更新")
+            print(f"  user_rating: {result['user_rating']}星")
+            print(f"  quality_score: {result['old_quality_score']} -> {result['new_quality_score']} (delta={result['user_delta']:+.1f})")
+        else:
+            print(f"Error: {result.get('error', 'unknown')}")
+    elif args.action == "list":
+        from judgment.experiences import find_similar
+        exps = find_similar("", limit=args.limit, user_id=getattr(args, "user_id", "default"))
+        if not exps:
+            print("(暂无经验记录，先做判断：juhuo judge \"要不要 all in 炒股？\")")
+            return
+        print(f"\n[*] Experience 列表（共 {len(exps)} 条）：")
+        for e in exps:
+            qs = e.get("quality_score", 50.0)
+            ur = ""  # user_rating 只在 DB 里有
+            outcome = e.get("outcome_score")
+            verdict = (e.get("conclusion") or "(无)")[:35]
+            print(f"  #{e['experience_id']} [qs={qs:.0f}] verdict={verdict} outcome={outcome}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="⚖️ Juhuo - Judgment System",
@@ -427,6 +461,14 @@ def main():
     beh_parser.add_argument("behavior_id", nargs="?", help="行为ID（show时用）")
     beh_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识（多用户隔离）")
 
+    # experience（Hermes P0: quality_score user_rating 维度）
+    exp_parser = subparsers.add_parser("experience", help="Experience 管理")
+    exp_parser.add_argument("action", choices=["rate", "list"], help="操作")
+    exp_parser.add_argument("id", nargs="?", type=int, help="Experience ID（rate时用）")
+    exp_parser.add_argument("rating", nargs="?", type=float, help="评分 1.0~5.0（rate时用）")
+    exp_parser.add_argument("-n", "--limit", type=int, default=10, help="列表数量")
+    exp_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识（多用户隔离）")
+
     args = parser.parse_args()
     
     if args.cmd == "judge":
@@ -453,6 +495,8 @@ def main():
         print(f"\n✅ Benchmark 完成")
     elif args.cmd == "behavior":
         cmd_behavior(args)
+    elif args.cmd == "experience":
+        cmd_experience(args)
     else:
         # 无参数时进入交互模式
         cmd_shell()

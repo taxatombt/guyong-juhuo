@@ -155,7 +155,7 @@ def receive_actual_choice(chain_id, actual_action, user_id: str = "default"):
         type_bonus = 0.0
         try:
             matched = c.execute(
-                "SELECT quality_score, outcome_score FROM experiences "
+                "SELECT quality_score, outcome_score, user_rating FROM experiences "
                 "WHERE task_text=? AND user_id=? AND actual_action IS NOT NULL "
                 "ORDER BY updated_at DESC LIMIT 3",
                 ((task_text or "")[:300], user_id)).fetchall()
@@ -168,7 +168,18 @@ def receive_actual_choice(chain_id, actual_action, user_id: str = "default"):
                     type_bonus = -5.0
         except Exception:
             type_bonus = 0.0
-        new_qs = max(0.0, min(100.0, 50.0 + outcome_delta + verified_delta + type_bonus))
+        # Hermes P0: user_rating delta in quality_score formula
+        user_rating_delta = 0.0
+        try:
+            row_ur = c.execute(
+                "SELECT user_rating FROM experiences WHERE task_text=? AND user_id=? LIMIT 1",
+                ((task_text or "")[:300], user_id)).fetchone()
+            if row_ur and row_ur[0] and row_ur[0] > 0:
+                ur = row_ur[0]
+                user_rating_delta = ((ur - 3.0) / 2.0) * 15.0  # 1→-15, 3→0, 5→+15
+        except Exception:
+            user_rating_delta = 0.0
+        new_qs = max(0.0, min(100.0, 50.0 + outcome_delta + verified_delta + type_bonus + user_rating_delta))
         c.execute(
             "UPDATE experiences SET quality_score=? "
             "WHERE task_text=? AND user_id=?",

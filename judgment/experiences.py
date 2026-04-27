@@ -211,6 +211,9 @@ def init():
         behavior_cols = ["action_channel", "tool_calls", "execution_result",
                          "perception_summary", "behavior_id", "source", "task_embedding",
                          "chain_id"]
+        # Hermes quality_score P0: user_rating column (1-5星，用户显式评分)
+        if "user_rating" not in existing_cols:
+            conn.execute("ALTER TABLE experiences ADD COLUMN user_rating REAL DEFAULT 0")
         missing = [c for c in behavior_cols if c not in existing_cols]
         if missing:
             print(f"[experiences.init] 闂傚倷绀侀幖锟介柨鐔绘�勫Λ娆忊枍閸愶拷閺屻倝鎼归敓钘夛耿閸︼拷閼洪亶鏁撻敓锟� experiences 闂傚倷娴囧畷鐢稿磻閻愬搫绀冨┑鐘宠壘缁狅拷闂佺粯鍨兼慨銈夋偂閵夛妇绠鹃柟瀵稿剳閹风兘鎳栭埡浣感為梻浣藉Г閿熺晫鍘ч弸娑㈡煛鐏炲墽锟芥牜绮诲☉銏犵�婚柡澶嬪灦閿熸枻缍佸�婃椽妫冮埡鍌氾拷褰掓⒑鐠恒劌娅愰柟鍑ゆ嫹: {missing}")
@@ -561,3 +564,45 @@ def seed_initial_experiences(user_id: str = "default") -> int:
         eid = save_experience(case["task"], case["verdict"], case["confidence"], user_id=user_id)
         if eid != -1: added += 1
     return added
+
+
+def rate_experience(exp_id: int, rating: float, user_id: str = "default") -> dict:
+    """
+    Hermes P0: 用户对某条 experience 评分（1-5星），驱动 quality_score 更新。
+
+    Formula: quality_score += user_rating_delta
+      user_rating_delta = ((rating - 3) / 2) * 15
+        1星 -> -15, 2星 -> -7.5, 3星 -> 0, 4星 -> +7.5, 5星 -> +15
+    """
+    init()
+    if not (1.0 <= rating <= 5.0):
+        return {"ok": False, "error": "Rating must be 1.0~5.0"}
+    conn = _get_conn()
+    c = conn.cursor()
+    row = c.execute(
+        "SELECT quality_score, user_rating FROM experiences WHERE id=? AND user_id=?",
+        (exp_id, user_id)).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "error": "Experience not found"}
+    old_qs = row[0] or 50.0
+    old_rating = row[1] or 0.0
+    user_delta = ((rating - 3.0) / 2.0) * 15.0  # 1->-15, 3->0, 5->+15
+    # 如果已有评分，用新旧评分的差异
+    if old_rating > 0:
+        old_delta = ((old_rating - 3.0) / 2.0) * 15.0
+        user_delta = user_delta - old_delta
+    new_qs = max(0.0, min(100.0, old_qs + user_delta))
+    c.execute(
+        "UPDATE experiences SET quality_score=?, user_rating=? WHERE id=?",
+        (new_qs, rating, exp_id))
+    conn.commit()
+    conn.close()
+    return {
+        "ok": True,
+        "experience_id": exp_id,
+        "old_quality_score": round(old_qs, 1),
+        "new_quality_score": round(new_qs, 1),
+        "user_rating": rating,
+        "user_delta": round(user_delta, 1),
+    }
