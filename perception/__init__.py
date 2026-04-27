@@ -44,6 +44,15 @@ from .email_adapter import (
     fetch_inbox_to_judgment_input,
 )
 
+from .scraping_adapter import (
+    ScrapedPage,
+    SpiderItem,
+    scrape_url,
+    scrape,
+    spider_crawl,
+    save_to_intents,
+)
+
 __all__ = [
     # attention_filter
     "AttentionFilter",
@@ -70,4 +79,11 @@ __all__ = [
     "EmailMessage",
     "ExtractedEmail",
     "fetch_inbox_to_judgment_input",
+    # scraping_adapter
+    "ScrapedPage",
+    "SpiderItem",
+    "scrape_url",
+    "scrape",
+    "spider_crawl",
+    "save_to_intents",
 ]
