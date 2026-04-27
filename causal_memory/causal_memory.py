@@ -60,11 +60,6 @@ DECAY_HALF_LIFE = 365
 # 个人因果权重加成 → 亲身经历加成50%
 PERSONAL_CAUSAL_BONUS = 0.5
 
-# JSONL 备份路径（供导出/调试，不作主力存储）
-_CAUSAL_DIR = Path(__file__).parent
-CAUSAL_EVENTS_FILE = str(_CAUSAL_DIR / "causal_events.jsonl")
-CAUSAL_LINKS_FILE  = str(_CAUSAL_DIR / "causal_links.jsonl")
-
 
 def init():
     """初始化 SQLite 表（幂等）"""
@@ -356,12 +351,6 @@ def log_causal_event(task: str, result: Dict, decision: str, feedback: Optional[
 
     # 主力写 SQLite（与 load_all_events / find_similar_events 共用同一存储）
     _record_event_to_sqlite(event)
-    # JSONL 备份（不依赖，可选）
-    try:
-        with open(CAUSAL_EVENTS_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(event, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
 
     # 立即搜索相似历史事件，如果找到就建立潜在因果链接
     similar_events = find_similar_events(task, max_results=3)
@@ -797,13 +786,6 @@ def update_link_quality_for_event(event_id: int, outcome: bool):
     if updated:
         for link in all_links:
             _save_link(link)  # 主力写 SQLite
-        # JSONL 备份（不阻塞主流程）
-        try:
-            with open(CAUSAL_LINKS_FILE, "w", encoding="utf-8") as f:
-                for link in all_links:
-                    f.write(json.dumps(link.to_dict(), ensure_ascii=False) + "\n")
-        except Exception:
-            pass
     return updated
 
 
