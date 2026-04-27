@@ -53,6 +53,13 @@ from .scraping_adapter import (
     save_to_intents,
 )
 
+from .summary import (
+    PerceptionEntry,
+    PerceptionSummary,
+    get_perception_summary,
+    get_recent_topics,
+)
+
 __all__ = [
     # attention_filter
     "AttentionFilter",
@@ -86,4 +93,9 @@ __all__ = [
     "scrape",
     "spider_crawl",
     "save_to_intents",
+    # summary
+    "PerceptionEntry",
+    "PerceptionSummary",
+    "get_perception_summary",
+    "get_recent_topics",
 ]

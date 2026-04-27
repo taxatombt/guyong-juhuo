@@ -145,6 +145,35 @@ def receive_actual_choice(chain_id, actual_action, user_id: str = "default"):
     conn.commit()
     conn.close()
 
+    # ── 4. Update quality_score for matched experiences ─────────────────────
+    if n_exp > 0 and score is not None:
+        # ZeusHammer SkillLearner: quality_score = outcome_delta(±30) + verified_delta(+15) + consistency_delta(±5)
+        # Base = 50, outcome_score 1.0→+30, 0.0→-30, verified(+actual_action)→+15
+        outcome_delta = (score - 0.5) * 40       # 1.0→+20, 0.0→-20
+        verified_delta = 15.0 if (actual_action and len(actual_action.strip()) > 0) else 0.0
+        # Consistency: look at nearby experiences with same situation_type
+        type_bonus = 0.0
+        try:
+            matched = c.execute(
+                "SELECT quality_score, outcome_score FROM experiences "
+                "WHERE task_text=? AND user_id=? AND actual_action IS NOT NULL "
+                "ORDER BY updated_at DESC LIMIT 3",
+                ((task_text or "")[:300], user_id)).fetchall()
+            if len(matched) >= 2:
+                consistent = sum(1 for r in matched
+                                 if (r["outcome_score"] or 0.5) >= 0.5) / len(matched)
+                if consistent >= 0.8:
+                    type_bonus = 5.0
+                elif consistent <= 0.2:
+                    type_bonus = -5.0
+        except Exception:
+            type_bonus = 0.0
+        new_qs = max(0.0, min(100.0, 50.0 + outcome_delta + verified_delta + type_bonus))
+        c.execute(
+            "UPDATE experiences SET quality_score=? "
+            "WHERE task_text=? AND user_id=?",
+            (new_qs, (task_text or "")[:300], user_id))
+
     # Trigger belief update via receive_verdict (uses outcome_score to drive dimension beliefs)
     # receive_verdict is already imported at module top
     try:
@@ -168,6 +197,7 @@ def receive_actual_choice(chain_id, actual_action, user_id: str = "default"):
         "hit": hit,
         "experiences_updated": n_exp,
         "lessons_extracted": lesson_ids,
+        "quality_score_delta": round(new_qs - 50.0, 1) if n_exp > 0 else 0.0,
     }
 
 
