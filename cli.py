@@ -66,6 +66,25 @@ def cmd_judge(task: str, verbose: bool = False, user_id: str = "default"):
             print(f"  → 预测你会选择: 【{pred_act}】 (置信度 {pred_conf*100:.0f}%, 来源: {src_ch})")
         print(f"→ Chain ID: {chain_id}")
 
+        # [Hermes Orange-Book] Progressive Disclosure - 揭示层级输出
+        disclosure = result.get("disclosure", {})
+        if disclosure:
+            layer = disclosure.get("layer", 0)
+            layer_names = {0:"精简",1:"摘要",2:"标准",3:"完整"}
+            layer_emoji = {0:"🔹",1:"🔸",2:"🟡",3:"🟠"}
+            ln = layer_names.get(layer, str(layer))
+            le = layer_emoji.get(layer, "🔵")
+            needs_confirm = disclosure.get("needs_confirm", False)
+            user_prompt = disclosure.get("user_prompt", "")
+            suggestions = disclosure.get("suggestions", [])
+            confirm_str = "【需确认】" if needs_confirm else ""
+            print(f"  {le} 揭示层级: L{layer} {ln} {confirm_str}")
+            if user_prompt:
+                print(f"  ┗ {user_prompt[:80]}")
+            if suggestions:
+                sugg_text = " | ".join(suggestions[:3])
+                print(f"  ┗ 操作: {sugg_text}")
+
     # P0 #1: 反馈入口 — 闭环的开关
     if chain_id:
         try:

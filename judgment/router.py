@@ -447,6 +447,16 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         _perception_ctx = _ps.to_prompt() if _ps else ""
     except Exception:
         _perception_ctx = ""
+
+    # [Hermes Orange-Book] Honcho 软画像注入
+    try:
+        from judgment.honcho_soft_profile import soft_profile_to_prompt
+        _soft_ctx = soft_profile_to_prompt(user_id) or ""
+        if _soft_ctx:
+            _perception_ctx = (_soft_ctx + chr(10) + _perception_ctx).strip()
+    except Exception:
+        pass
+
     answers = _answer_questions(
         ctx.merge_prompt_context(),  # unified_context 优先 + 三路已合并
         questions,
