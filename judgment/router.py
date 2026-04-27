@@ -440,6 +440,13 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     _profile_entries, _lessons_ctx, _hist_ctx, _was_compact = _maybe_compact_ctx(
         _profile_entries, _lessons_ctx, ctx.history_context or ""
     )
+    # L3 感知层汇聚（web/scraping/rss/email/experiences 外部信号）
+    try:
+        from perception.summary import get_perception_summary
+        _ps = get_perception_summary(task_topic=ctx.task_text, limit=10)
+        _perception_ctx = _ps.to_prompt() if _ps else ""
+    except Exception:
+        _perception_ctx = ""
     answers = _answer_questions(
         ctx.merge_prompt_context(),  # unified_context 优先 + 三路已合并
         questions,
@@ -449,6 +456,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         "",  # 不再单独传 bio_context（已合并到 unified_context）
         _profile_entries,  # UnifiedProfile.to_prompt() 标注注入
         _lessons_ctx,      # 历史教训注入（因果链教训，被压缩时为摘要）
+        _perception_ctx,   # L3 感知层外部信号
         pet_to_prompt(user_id),  # 宠物状态注入
     )
 
@@ -674,9 +682,16 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     _profile_entries, _lessons_ctx, _hist_ctx, _was_compact = _maybe_compact_ctx(
         _profile_entries, _lessons_ctx, base_result.get("history_context", "") or ""
     )
+    # L3 感知层汇聚（web/scraping/rss/email/experiences 外部信号）
+    try:
+        from perception.summary import get_perception_summary
+        _ps = get_perception_summary(task_topic=task_text, limit=10)
+        _perception_ctx = _ps.to_prompt() if _ps else ""
+    except Exception:
+        _perception_ctx = ""
     answers = _answer_questions(_merged_prompt, all_questions, agent_profile,
                                 _prior_adj, _hist_ctx, "", _profile_entries, _lessons_ctx,
-                                pet_to_prompt(user_id))
+                                _perception_ctx, pet_to_prompt(user_id))
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])

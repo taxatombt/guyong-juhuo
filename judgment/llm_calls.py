@@ -39,6 +39,7 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
                          bio_context: str = "",
                          profile_entries: list = None,
                          lessons_context: str = "",
+                         perception_context: str = "",
                          pet_context: str = "") -> str:
     """构造LLM回答问题的prompt"""
     dim_labels = {
@@ -104,6 +105,10 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
     if lessons_context:
         parts.insert(1, lessons_context)
 
+    # 感知层汇聚注入（L3: web/scraping/rss/email/experiences 外部信号）
+    if perception_context:
+        parts.insert(1, perception_context)
+
     return "\n".join(parts)
 
 
@@ -113,6 +118,7 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
                       bio_context: str = "",
                       profile_entries: list = None,
                       lessons_context: str = "",
+                      perception_context: str = "",
                       pet_context: str = "") -> dict:
     """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
     adapter = get_adapter()
@@ -124,7 +130,7 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
 
     prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj,
                                   history_context, bio_context, profile_entries,
-                                  lessons_context, pet_context)
+                                  lessons_context, perception_context, pet_context)
 
     # 截断prompt（LLM context limit）
     if len(prompt) > 6000:
