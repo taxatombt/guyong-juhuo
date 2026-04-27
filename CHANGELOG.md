@@ -289,6 +289,29 @@ juhuo/
 
 ---
 
+## [2.3.0] - 2026-04-27
+
+### Added
+- **宠物系统 (pets.py)** — 五维性格 + 情绪联动
+  - `judgment/pets.py`（9KB，零依赖）
+  - `pets` 表：pet_id/name/species/personality/mood/affection/health/energy
+  - 主人情绪低落时猫安静陪、狗主动蹭
+  - router.py：`update_from_emotion()` 情绪驱动宠物状态同步
+  - llm_calls.py：`pet_context` 注入 prompt，result 返回 pet 状态
+  - CLI：`hub.py pet create/status/interact/evolve`
+
+- **Scrapling 感知层** — 网页爬取三模式
+  - `perception/scraping_adapter.py`（懒加载，零依赖降级）
+  - `http`(Fetcher) → `dynamic`(JS渲染) → `stealth`(Cloudflare绕过)
+  - CSS selector 精确提取，Spider 多页爬取
+  - `save_to_intents()` → `perception_intents` 表 → UnifiedProfile L3
+  - `perception/__init__.py` 导出接口
+
+### Changed
+- `judgment/_schema_tables.py`：pets 表注册
+- `judgment/router.py`：emotion_detection 后调用 `update_from_emotion()`
+- `judgment/llm_calls.py`：`_build_answer_prompt` + `_answer_questions` 加 pet_context 参数
+
 ## [2.2.2] - 2026-04-25
 
 ### Added
@@ -299,4 +322,4 @@ juhuo/
   - verification_score综合评分 + low_quality_verdict标记
   - 集成到 `judgment/router.py` 的 `check10d_run()`
 
-_Last updated: 2026-04-25_
+_Last updated: 2026-04-27_
