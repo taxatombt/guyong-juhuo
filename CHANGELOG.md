@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.0] - 2026-04-28
+
+### Added
+
+- **ProgressiveDisclosure 渐进揭示** — 判断结果分层展示，Layer0-3 自动识别用户意图
+  - `judgment/progressive_disclosure.py`：Layer0-3 四层逻辑 + `apply_disclosure()` + `format_disclosure()`
+  - 集成到 `check10d()` 和 `check10d_run()` 返回结果
+  - CLI disclosure 输出：`cmd_judge` 显示揭示层级 emoji + 涉及维度 + 展开提示
+
+- **Honcho 软画像推断** — 从 experiences 表推断用户行为模式
+  - `judgment/honcho_soft_profile.py`：`infer_soft_profile()` + `soft_profile_to_prompt()`
+  - 特质推断：冒险型/谨慎型/学术型等，决策风格：快速决断/深思熟虑/平衡型
+  - 注入 router.py `_perception_ctx`，通过 MiniMax 推断真实行为模式
+
+- **perception/summary L3 汇聚** — 感知层接入判断 pipeline
+  - `llm_calls.py`：`_build_answer_prompt` 增加 `perception_context` 参数
+  - 注入顺序：lessons_context → perception_context → soft_profile → pet_context
+
+### Fixed
+
+- **Hermes Orange-Book P0** — quality_score 加 user_rating 维度
+  - `experiences.py`：`rate_experience()` + user_rating 列迁移
+  - 质量评分公式加入用户评分反馈
+
 ## [2.2.1] - 2026-04-24
 
 ### Added
