@@ -449,11 +449,15 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         _perception_ctx = ""
 
     # [Hermes Orange-Book] Honcho 软画像注入
+    _decision_style = ""
     try:
-        from judgment.honcho_soft_profile import soft_profile_to_prompt
+        from judgment.honcho_soft_profile import soft_profile_to_prompt, infer_soft_profile
         _soft_ctx = soft_profile_to_prompt(user_id) or ""
         if _soft_ctx:
             _perception_ctx = (_soft_ctx + chr(10) + _perception_ctx).strip()
+        # [P1] Honcho 软画像深度绑定 — decision_style 影响 prompt 结构
+        _profile = infer_soft_profile(user_id)
+        _decision_style = _profile.get("decision_style", "")
     except Exception:
         pass
 
@@ -468,6 +472,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         _lessons_ctx,      # 历史教训注入（因果链教训，被压缩时为摘要）
         _perception_ctx,   # L3 感知层外部信号
         pet_to_prompt(user_id),  # 宠物状态注入
+        decision_style=_decision_style,  # [P1] 影响 prompt 结构
     )
 
     _ret = {
@@ -720,9 +725,17 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
         _perception_ctx = _ps.to_prompt() if _ps else ""
     except Exception:
         _perception_ctx = ""
+    # [P1] Honcho 软画像 — decision_style 影响 prompt 结构
+    _decision_style_run = ""
+    try:
+        from judgment.honcho_soft_profile import infer_soft_profile
+        _decision_style_run = infer_soft_profile(user_id).get("decision_style", "")
+    except Exception:
+        pass
     answers = _answer_questions(_merged_prompt, all_questions, agent_profile,
                                 _prior_adj, _hist_ctx, "", _profile_entries, _lessons_ctx,
-                                _perception_ctx, pet_to_prompt(user_id))
+                                _perception_ctx, pet_to_prompt(user_id),
+                                decision_style=_decision_style_run)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])

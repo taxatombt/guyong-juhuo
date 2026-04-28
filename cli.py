@@ -107,6 +107,8 @@ def cmd_judge(task: str, verbose: bool = False, user_id: str = "default"):
         except (KeyboardInterrupt, EOFError):
             print()  # 换行，避免 Ctrl+C 后残留提示符
 
+    return result  # [P2] 供 cmd_shell 存储，支持"展开"命令
+
 
 def cmd_shell():
     """交互模式"""
@@ -114,23 +116,51 @@ def cmd_shell():
     print("⚖️  Juhuo Interactive Shell")
     print("="*50)
     print("输入问题让 Juhuo 帮助判断")
-    print("输入 quit / exit 退出\n")
-    
+    print("输入 quit / exit 退出，输入 展开 对上一条结果展开\n")
+
+    # [P2] 存储最近一条判断结果，供"展开"命令使用
+    _last_judgment = None
+
     while True:
         try:
             task = input("问题> ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\n再见!")
             break
-        
+
         if task.lower() in ("quit", "exit", "q"):
             print("再见!")
             break
-        
+
         if not task:
             continue
-        
-        cmd_judge(task)
+
+        # [P2] "展开"命令 — 复用 ProgressiveDisclosure 的 Layer1→Layer2 路径
+        if task in ("展开", "展开详细", "展开全部", "expand"):
+            if not _last_judgment:
+                print("⚠️  没有最近的判断结果，请先输入问题")
+                continue
+            try:
+                from judgment.progressive_disclosure import apply_disclosure
+                answers = _last_judgment.get("answers", {})
+                verdict = _last_judgment.get("verdict", "")
+                confidence = _last_judgment.get("confidence", 0.0)
+                task_text = _last_judgment.get("task", "")
+                dr = apply_disclosure(
+                    task_text=task_text,
+                    answers=answers,
+                    verdict=verdict,
+                    confidence=confidence,
+                    full_result=_last_judgment,
+                    user_wants_full=True,
+                )
+                from judgment.progressive_disclosure import format_disclosure
+                print("\n" + format_disclosure(dr))
+            except Exception as e:
+                print(f"❌ 展开失败: {e}")
+            continue
+
+        _last_judgment = cmd_judge(task)  # [P2] 捕获结果供"展开"用
 
 
 def cmd_status():

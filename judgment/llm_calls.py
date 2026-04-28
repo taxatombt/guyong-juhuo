@@ -40,7 +40,8 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
                          profile_entries: list = None,
                          lessons_context: str = "",
                          perception_context: str = "",
-                         pet_context: str = "") -> str:
+                         pet_context: str = "",
+                         decision_style: str = "") -> str:
     """构造LLM回答问题的prompt"""
     dim_labels = {
         "cognitive": "认知维度",
@@ -81,6 +82,26 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
     parts.append("## 最终结论：你的判断（10-20字，直接说行动，不说分析）")
     parts.append("例如：## 最终结论：建议先做市场调研再决定是否创业。")
 
+    # [P1] Honcho 软画像 — 根据 decision_style 调整输出结构
+    _ds = (decision_style or "").lower()
+    if _ds in ("谨慎型", "cautious", "谨慎"):
+        parts.append("")
+        parts.append("【对谨慎型用户的特别要求】")
+        parts.append("- 结论必须包含'如果失败了/不及预期时的备选方案'")
+        parts.append("- 结论后加一行'前提条件：...'（什么条件下才成立）")
+        parts.append("- 结论后加一行'止损线：...'（损失多大时必须撤退'")
+    elif _ds in ("实战派", "pragmatic", "实战"):
+        parts.append("")
+        parts.append("【对实战派用户的特别要求】")
+        parts.append("- 跳过理论分析，直给结论+执行步骤")
+        parts.append("- 先说'第一步做什么'，再说'为什么'")
+        parts.append("- 结论结构：行动→步骤→风险点")
+    elif _ds in ("debug导向", "debug", "debug-oriented"):
+        parts.append("")
+        parts.append("【对 debug 导向用户的特别要求】")
+        parts.append("- 结论后跟验证方法：'如何验证这个判断对不对'")
+        parts.append("- 结论后跟反例：'什么情况下这个判断会失效'")
+
     # 历史经历参考（如果有）
     if history_context:
         parts.insert(1, history_context)
@@ -119,7 +140,8 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
                       profile_entries: list = None,
                       lessons_context: str = "",
                       perception_context: str = "",
-                      pet_context: str = "") -> dict:
+                      pet_context: str = "",
+                      decision_style: str = "") -> dict:
     """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
     adapter = get_adapter()
 
@@ -130,7 +152,8 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
 
     prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj,
                                   history_context, bio_context, profile_entries,
-                                  lessons_context, perception_context, pet_context)
+                                  lessons_context, perception_context, pet_context,
+                                  decision_style=decision_style)
 
     # 截断prompt（LLM context limit）
     if len(prompt) > 6000:

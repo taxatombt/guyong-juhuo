@@ -31,12 +31,74 @@ def get_verdict_stats() -> dict:
 
 def mark_verdict_correct(chain_id: str, notes: str = "", user_id: str = "default") -> bool:
     """标记某条判断为正确"""
-    return receive_verdict(chain_id=chain_id, correct=True, notes=notes, user_id=user_id)
+    ok = receive_verdict(chain_id=chain_id, correct=True, notes=notes, user_id=user_id)
+    _update_quality_from_feedback(chain_id, correct=True, user_id=user_id)
+    return ok
 
 
 def mark_verdict_wrong(chain_id: str, notes: str = "", user_id: str = "default") -> bool:
     """标记某条判断为错误"""
-    return receive_verdict(chain_id=chain_id, correct=False, notes=notes, user_id=user_id)
+    ok = receive_verdict(chain_id=chain_id, correct=False, notes=notes, user_id=user_id)
+    _update_quality_from_feedback(chain_id, correct=False, user_id=user_id)
+    return ok
+
+
+def _update_quality_from_feedback(chain_id: str, correct: bool, user_id: str = "default") -> None:
+    """
+    根据用户 y/n 反馈更新 experiences 表的 quality_score。
+    被 mark_verdict_correct / mark_verdict_wrong / receive_actual_choice 调用。
+    """
+    import sqlite3, json
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # 读取 task_text 和 verdict
+    row = c.execute(
+        "SELECT task_text, verdict, outcome_score FROM judgment_snapshots WHERE chain_id=?",
+        (chain_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return
+    task_text, verdict, outcome_score = row
+    score = outcome_score if outcome_score is not None else (1.0 if correct else 0.0)
+
+    # 找匹配的 experience
+    exp_row = c.execute(
+        "SELECT quality_score, situation_type FROM experiences "
+        "WHERE task_text=? AND user_id=? LIMIT 1",
+        ((task_text or "")[:300], user_id)
+    ).fetchone()
+    if not exp_row:
+        conn.close()
+        return
+
+    old_qs = exp_row[0] or 50.0
+    situation_type = exp_row[1]
+
+    # ZeusHammer SkillLearner 公式
+    outcome_delta = (score - 0.5) * 40.0          # 1.0→+20, 0.0→-20
+    verified_delta = 15.0                          # 显式验证永远+15（y/n反馈本身就是显式验证）
+    consistency_delta = 0.0
+    if situation_type:
+        recent = c.execute(
+            "SELECT outcome_score FROM experiences WHERE situation_type=? AND user_id=? "
+            "AND outcome_score IS NOT NULL ORDER BY updated_at DESC LIMIT 3",
+            (situation_type, user_id)
+        ).fetchall()
+        if len(recent) >= 2:
+            n_consistent = sum(1 for r in recent if abs((r[0] or 0.5) - score) < 0.3)
+            consistency_delta = (n_consistent / max(len(recent), 1)) * 5.0
+
+    delta = outcome_delta + verified_delta + consistency_delta
+    new_qs = max(0.0, min(100.0, (old_qs or 50.0) + delta))
+
+    c.execute(
+        "UPDATE experiences SET quality_score=? WHERE task_text=? AND user_id=?",
+        (new_qs, (task_text or "")[:300], user_id)
+    )
+    conn.commit()
+    conn.close()
 
 
 def remove_verdict(chain_id: str) -> bool:
