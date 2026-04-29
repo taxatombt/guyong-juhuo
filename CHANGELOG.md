@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.1] - 2026-04-29
+
+### Added
+
+- **Darwin Skill 评分引擎** — 8维评估 SKILL.md 质量，总分100分
+  - `judgment/skill_judge.py`：Frontmatter质量/工作流/边界条件/检查点/指令具体性/资源整合/架构/实测 8维评分
+  - 来源：alchaincyf/darwin-skill 啃读落地
+  - CLI用法：`python -c "from judgment.skill_judge import score_all_skills; print(score_all_skills(['./skills']))"`
+
+- **Darwin.skill 啃读落地** — Skill无限进化系统
+  - `docs/darwin-skill/result-card*.html`：3种风格成果卡片模板（warm swiss / dark terminal / newspaper）
+  - `docs/darwin-skill/screenshot.mjs`：Playwright 2x高清截图自动化
+  - 核心：Karpathy autoresearch × Skill质量优化，棘轮机制只保留改进
+
+### Fixed
+
+- **P0 - quality_score 反馈闭环**：mark_verdict_correct/wrong 调用 `_update_quality_from_feedback()`，quality_score 动态更新
+- **P0 - closed_loop.py**：budget.exit() 缺 fn_name 参数
+- **P1 - Honcho 软画像深度绑定**：`_build_answer_prompt()` 加 decision_style 参数，谨慎型/实战派/debug导向各影响 prompt 结构
+- **P2 - Progressive Disclosure 与 CLI 分层统一**：`cmd_shell()` 存储 `_last_judgment`，'展开'命令复用 apply_disclosure 路径
+
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
 ## [2.3.0] - 2026-04-28
 
 ### Added
