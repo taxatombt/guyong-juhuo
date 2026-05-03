@@ -29,14 +29,56 @@ def get_verdict_stats() -> dict:
     }
 
 
+def _update_experience_quality(chain_id: str, correct: bool, user_id: str) -> dict:
+    """根据 verdict correct/wrong 更新 experiences.quality_score"""
+    import sqlite3
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # 找 task_text
+    c.execute("SELECT task_text FROM judgment_snapshots WHERE chain_id=?", (chain_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "reason": "chain_id not found"}
+    task_text = (row[0] or "")[:300]
+
+    # 找对应 experience
+    c.execute(
+        "SELECT id, quality_score FROM experiences "
+        "WHERE task_text=? AND user_id=? AND (actual_action IS NULL OR actual_action='') "
+        "ORDER BY created_at DESC LIMIT 1",
+        (task_text, user_id))
+    exp = c.fetchone()
+    if not exp:
+        conn.close()
+        return {"ok": False, "reason": "no matching experience"}
+
+    old_qs = exp[1] if exp[1] is not None else 50.0
+    # correct=True → +15；correct=False → -20（错误代价更高）
+    delta = 15.0 if correct else -20.0
+    new_qs = max(0.0, min(100.0, (old_qs or 50.0) + delta))
+    c.execute("UPDATE experiences SET quality_score=?, updated_at=datetime('now') WHERE id=?", (new_qs, exp[0]))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "old_qs": old_qs, "new_qs": new_qs, "delta": delta}
+
+
 def mark_verdict_correct(chain_id: str, notes: str = "", user_id: str = "default") -> bool:
-    """标记某条判断为正确"""
-    return receive_verdict(chain_id=chain_id, correct=True, notes=notes, user_id=user_id)
+    """标记某条判断为正确（同时更新 experiences.quality_score）"""
+    # 更新 quality_score
+    qs_result = _update_experience_quality(chain_id, correct=True, user_id=user_id)
+    # 触发 belief 更新
+    ok = receive_verdict(chain_id=chain_id, correct=True, notes=notes, user_id=user_id)
+    return ok
 
 
 def mark_verdict_wrong(chain_id: str, notes: str = "", user_id: str = "default") -> bool:
-    """标记某条判断为错误"""
-    return receive_verdict(chain_id=chain_id, correct=False, notes=notes, user_id=user_id)
+    """标记某条判断为错误（同时更新 experiences.quality_score）"""
+    # 更新 quality_score
+    qs_result = _update_experience_quality(chain_id, correct=False, user_id=user_id)
+    # 触发 belief 更新
+    ok = receive_verdict(chain_id=chain_id, correct=False, notes=notes, user_id=user_id)
+    return ok
 
 
 def remove_verdict(chain_id: str) -> bool:

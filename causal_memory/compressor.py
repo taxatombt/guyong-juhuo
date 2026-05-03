@@ -342,3 +342,164 @@ def hermes_compress(messages: List[Dict], budget: int = 15250) -> HermesCompress
 
 def compress_for_context(events: List[Dict], max_events: int = 3) -> List[Dict]:
     return get_compressor().compress_for_context(events, max_events)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ml-intern 启发：Token 阈值检测 + LLM 摘要压缩
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Token 估算：中文 ≈ 0.25 char/token，英文 ≈ 0.33 char/token
+_CHARS_PER_TOKEN = 0.28
+
+# 默认触发阈值（ml-intern 用 model_max_tokens * 0.85）
+# Juhuo 用 15 万 token 阈值
+DEFAULT_TOKEN_THRESHOLD = 150_000  # 15 万 token
+COMPACTION_TRIGGER_RATIO = 0.85    # 达到 85% 触发压缩
+
+
+class TokenBudget:
+    """
+    Token 预算追踪器（ml-intern ContextManager 启发）。
+
+    跟踪当前上下文 token 消耗，当接近阈值时触发压缩。
+    """
+
+    def __init__(
+        self,
+        max_tokens: int = DEFAULT_TOKEN_THRESHOLD,
+        trigger_ratio: float = COMPACTION_TRIGGER_RATIO,
+    ):
+        self.max_tokens = max_tokens
+        self.trigger_ratio = trigger_ratio
+        self.current_tokens = 0
+        self.compactions = 0
+        self.last_compaction_tokens = 0
+
+    @property
+    def trigger_threshold(self) -> int:
+        return int(self.max_tokens * self.trigger_ratio)
+
+    @property
+    def needs_compaction(self) -> bool:
+        return self.current_tokens >= self.trigger_threshold
+
+    def estimate_tokens(self, text: str) -> int:
+        """估算文本 token 数（简化版，非精确）"""
+        return int(len(str(text)) * _CHARS_PER_TOKEN)
+
+    def estimate_messages_tokens(self, messages: list) -> int:
+        """估算消息列表总 token 数"""
+        total = 0
+        for msg in messages:
+            if isinstance(msg, dict):
+                content = str(msg.get("content", ""))
+            else:
+                content = str(getattr(msg, "content", ""))
+            total += self.estimate_tokens(content)
+        return total
+
+    def update_from_messages(self, messages: list) -> None:
+        """从消息列表更新 token 计数"""
+        self.current_tokens = self.estimate_messages_tokens(messages)
+
+    def report(self) -> dict:
+        return {
+            "current_tokens": self.current_tokens,
+            "max_tokens": self.max_tokens,
+            "trigger_threshold": self.trigger_threshold,
+            "usage_ratio": self.current_tokens / self.max_tokens if self.max_tokens > 0 else 0,
+            "needs_compaction": self.needs_compaction,
+            "compactions": self.compactions,
+        }
+
+
+# ml-intern 的 _COMPACT_PROMPT（翻译为中文场景适配）
+_COMPACT_PROMPT_CN = (
+    "请对以上对话进行简洁摘要，重点关注：\n"
+    "  1. 关键决策及其原因\n"
+    "  2. 已解决的问题\n"
+    "  3. 后续开发所需的重要上下文\n"
+    "  4. 当前判断的核心分歧点\n"
+    "你的摘要将给一个新的判断者阅读，让他们能快速接手当前工作。"
+)
+
+
+async def compact_with_llm(
+    messages: list,
+    llm_callable,
+    model: str = "MiniMax-M2.7",
+    max_output_tokens: int = 2048,
+) -> tuple[list, str]:
+    """
+    用 LLM 对历史消息进行摘要压缩（ml-intern ContextManager 思路）。
+
+    Args:
+        messages: 原始消息列表
+        llm_callable: LLM 调用函数，签名同 judgment.llm_calls 中的实现
+        model: 使用的模型
+        max_output_tokens: 摘要最大 token 数
+
+    Returns:
+        (compressed_messages, summary) — 压缩后消息列表 + 摘要文本
+    """
+    if not messages:
+        return [], ""
+
+    # 构造摘要消息
+    summary_request = [
+        {"role": "user", "content": _COMPACT_PROMPT_CN},
+    ]
+    # 把历史消息拼进去
+    history_text = ""
+    for msg in messages:
+        if isinstance(msg, dict):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+        else:
+            role = getattr(msg, "role", "unknown")
+            content = getattr(msg, "content", "")
+        history_text += f"\n[{role}] {content[:500]}"
+    summary_request[0]["content"] = _COMPACT_PROMPT_CN + history_text
+
+    try:
+        result = await llm_callable(
+            messages=summary_request,
+            model=model,
+            max_tokens=max_output_tokens,
+            temperature=0.3,  # 低温度，保持准确性
+        )
+        summary = result if isinstance(result, str) else (result.get("content", "") or "")
+    except Exception as e:
+        summary = f"[摘要失败: {e}]"
+
+    # 保留最近 3 条消息 + 摘要
+    keep_tail = messages[-3:] if len(messages) >= 3 else messages
+    compressed = [
+        {
+            "role": "system",
+            "content": f"[对话摘要] {summary}",
+            "_compacted": True,
+            "_original_count": len(messages),
+        }
+    ] + keep_tail
+
+    return compressed, summary
+
+
+# ── 便捷函数 ──────────────────────────────────────────────────────
+_token_budget: TokenBudget | None = None
+
+
+def get_token_budget() -> TokenBudget:
+    global _token_budget
+    if _token_budget is None:
+        _token_budget = TokenBudget()
+    return _token_budget
+
+
+def check_token_budget(messages: list) -> dict:
+    """快速检查当前 token 预算状态。"""
+    budget = get_token_budget()
+    budget.update_from_messages(messages)
+    return budget.report()
+

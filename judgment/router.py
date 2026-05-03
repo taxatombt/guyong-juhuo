@@ -77,6 +77,14 @@ from judgment.router_utils import (
     format_structured,
 )
 
+# LLM 编排层（从 router.py 提取）
+from judgment.llm_orchestrator import (
+    _inject_profile_questions,
+    _quick_status_response,
+    _quick_answer_response,
+    _quick_confirm_response,
+)
+
 
 # MiniMind 长上下文压缩：超长 prompt 时自动摘要
 # 调用位置：check10d 和 check10d_run 中，_answer_questions 调用之前
@@ -209,60 +217,6 @@ def _get_self_review():
     if global_self_review is None:
         global_self_review = SelfReviewSystem()
     return global_self_review
-
-def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = None, prior_adj: dict = None) -> str:
-    """构造LLM回答问题的prompt"""
-    dim_labels = {
-        "cognitive": "认知维度",
-        "game_theory": "博弈维度",
-        "economic": "经济维度",
-        "dialectical": "辩证维度",
-        "emotional": "情绪维度",
-        "intuitive": "直觉维度",
-        "moral": "道德维度",
-        "social": "社会维度",
-        "temporal": "时间维度",
-        "metacognitive": "元认知维度",
-    }
-
-    profile_context = ""
-    if agent_profile:
-        name = agent_profile.get("name", "通用AI")
-        profile_context = f"\n你是{name}的判断分身。价值取向：{', '.join(agent_profile.get('values', []))}。"
-
-    # ── 注入维度权重上下文（Self-Evolver 闭环关键）─────────────────
-    # prior_adj = {dim_id: belief}，belief 越高表示该维度判断越准确
-    # 让 LLM 知道在哪些维度上可以更信任自己的分析
-    weight_context = ""
-    if prior_adj:
-        dim_weights = {k: v for k, v in prior_adj.items() if k in dim_labels}
-        if dim_weights:
-            strong = [dim_labels[k] for k, v in dim_weights.items() if v >= 0.7]
-            weak = [dim_labels[k] for k, v in dim_weights.items() if v <= 0.45]
-            hints = []
-            if strong:
-                hints.append(f"对[{', '.join(strong)}]的分析可以更自信深入")
-            if weak:
-                hints.append(f"对[{', '.join(weak)}]的分析需更谨慎，补充更多依据")
-            if hints:
-                weight_context = "\n[判断背景] " + "；".join(hints) + "。"
-
-    parts = [
-        f"任务：{task_text}{profile_context}{weight_context}\n",
-        "请针对以下问题给出简短而深刻的回答（每条回答不超过50字）：\n",
-    ]
-
-    for dim_id, qs in questions.items():
-        label = dim_labels.get(dim_id, dim_id)
-        if not qs:
-            continue
-        parts.append(f"【{label}】")
-        for i, q in enumerate(qs, 1):
-            parts.append(f"  Q{i}. {q}")
-        parts.append("")
-
-    return "\n".join(parts)
-
 
 def route(text):
     """旧接口，保持兼容"""
@@ -448,9 +402,12 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     except Exception:
         _perception_ctx = ""
 
-    # [Hermes Orange-Book] Honcho 软画像注入
+    # [Hermes Orange-Book] Honcho 软画像注入（P1: decision_style结构化影响）
+    _decision_style = ""
     try:
-        from judgment.honcho_soft_profile import soft_profile_to_prompt
+        from judgment.honcho_soft_profile import infer_soft_profile, soft_profile_to_prompt
+        _soft_profile = infer_soft_profile(user_id)
+        _decision_style = _soft_profile.get("decision_style", "") or ""
         _soft_ctx = soft_profile_to_prompt(user_id) or ""
         if _soft_ctx:
             _perception_ctx = (_soft_ctx + chr(10) + _perception_ctx).strip()
@@ -468,6 +425,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         _lessons_ctx,      # 历史教训注入（因果链教训，被压缩时为摘要）
         _perception_ctx,   # L3 感知层外部信号
         pet_to_prompt(user_id),  # 宠物状态注入
+        _decision_style,    # P1: DecisionStyle结构化影响
     )
 
     _ret = {
@@ -537,6 +495,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
             "checked": checked,
             "skipped_count": len(skipped),
             "prior_adjustments": prior_adj,
+            "decision_style": _decision_style,  # P1: Honcho软画像结构化影响
         }
     }
 
@@ -720,9 +679,17 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
         _perception_ctx = _ps.to_prompt() if _ps else ""
     except Exception:
         _perception_ctx = ""
+    # P1: DecisionStyle结构化影响（从base_result传入或重新推断）
+    _decision_style = base_result.get("meta", {}).get("decision_style", "") or ""
+    if not _decision_style:
+        try:
+            from judgment.honcho_soft_profile import infer_soft_profile
+            _decision_style = infer_soft_profile(user_id).get("decision_style", "") or ""
+        except Exception:
+            _decision_style = ""
     answers = _answer_questions(_merged_prompt, all_questions, agent_profile,
                                 _prior_adj, _hist_ctx, "", _profile_entries, _lessons_ctx,
-                                _perception_ctx, pet_to_prompt(user_id))
+                                _perception_ctx, pet_to_prompt(user_id), _decision_style)
     base_result["questions"] = all_questions
     base_result["answers"] = answers
     base_result["meta"]["checked"] = len([d.id for d in DIMENSIONS if d.id not in skipped])
@@ -906,185 +873,3 @@ def check10d_and_execute(task_text: str, channel: str = "auto",
         "match": execution_result.get("match", False),
     }
 
-
-def _synthesize_verdict(task_text: str, answers: dict) -> tuple:
-    """
-    基于各维度回答合成 verdict 和 confidence
-    返回 (verdict_str, confidence_float)
-    """
-    if not answers:
-        return ("需要更多信息才能判断", 0.3)
-    try:
-        raw = ""
-        for dim, ans in answers.items():
-            if isinstance(ans, dict) and "content" in ans:
-                raw += ans["content"]
-            elif isinstance(ans, str):
-                raw += ans
-        raw = raw.strip()
-        if not raw:
-            raise ValueError("No content")
-
-        def score_sent(sent: str) -> float:
-            chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-            if chinese < 4:
-                return 0.0
-            len_score = min(chinese / 30.0, 1.0) * 0.3
-            action_kw = {"先", "应该", "可以", "建议", "推荐", "值得", "不要",
-                        "考虑", "评估", "权衡", "控制", "分散", "调研",
-                        "辞职", "创业", "买房", "移民", "借", "读研", "读博", "分手",
-                        "all in", "炒股", "考证", "考公", "健身", "换城市",
-                        "断舍离", "领养", "回老家", "原谅", "接受", "拒绝",
-                        "审慎", "谨慎", "果断", "立即", "保守", "激进"}
-            action_cnt = sum(1 for kw in action_kw if kw in sent)
-            action_score = min(action_cnt / 2.0, 1.0) * 0.4
-            vague_kw = {"不确定", "很难说", "更多信息", "无法判断",
-                         "具体情况具体分析", "基于", "给出判断", "需要更多信息",
-                         "再给出判断", "再综合考虑", "综合给出", "多维分析给出"}
-            vague_penalty = sum(0.3 for kw in vague_kw if kw in sent)
-            return max(0.0, len_score + action_score - vague_penalty)
-
-        def extract_sentences(text: str) -> list:
-            """句子提取：句号 + 省略号分隔（处理无句号段落）"""
-            # 先清理残留的 thinking 标签
-            text = re.sub(r'^好了?\s*', '', text)
-            text = re.sub(r'好了?\s*$', '', text)
-            text = re.sub(r'^<think>\s*', '', text)
-            text = re.sub(r'<think>\s*$', '', text)
-            text = re.sub(r'@\d{10,}', '', text)  # 去掉 @时间戳
-            SEP = '<<<SEP>>>'
-            text2 = text.replace('...', SEP)
-            parts = re.split(r"([。！？])", text2)
-            sents = []
-            for i in range(0, len(parts) - 1, 2):
-                part = parts[i].strip()
-                sep = parts[i + 1]
-                sent = part + (sep if sep else '')
-                if sent.strip():
-                    sents.append(sent.strip().replace(SEP, '...'))
-            if len(parts) % 2 == 1 and parts[-1].strip():
-                last = parts[-1].strip().replace(SEP, '...')
-                if last:
-                    sents.append(last)
-            return sents
-
-        # Step 1: 清理正文残留 thinking 标签
-        after = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-
-        # Step 2: 从正文（非 thinking block）提取句子
-        best_score = -1.0
-        best_sent = ""
-        if after:
-            for sent in extract_sentences(after):
-                chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-                if chinese >= 4 and chinese / max(len(sent), 1) > 0.5:
-                    s = score_sent(sent)
-                    if s > best_score:
-                        best_score = s
-                        best_sent = sent[:50]
-        if best_score >= 0.15:
-            confidence = min(0.88, 0.35 + len(answers) * 0.08)
-            return (best_sent, confidence)
-
-        # Step 3: 从所有 thinking blocks 扫描，选最佳句子（句子级，非 block 级）
-        blocks = re.findall(r"<think>.*?</think>", raw, re.DOTALL)
-        for block in blocks:
-            # 提取 thinking block 的文本内容（去掉标签）
-            block_text = re.sub(r'^<think>', '', block)
-            block_text = re.sub(r'</think>$', '', block_text)
-            block_clean = re.sub(r'^\s*(好的|嗯|下面|综合|根据|经过).*?[:：]', "", block_text)
-            block_clean = re.sub(r'Count[:：].*$', "", block_clean, flags=re.DOTALL)
-            block_clean = re.sub(r'字数[:：].*$', "", block_clean, flags=re.DOTALL)
-            block_clean = re.sub(r'[A-Za-z\u4e00-\u9fff]\s*\(\d+\)', "", block_clean)
-            # 逐句评分
-            for sent in extract_sentences(block_clean):
-                chinese = len(re.findall(r'[\u4e00-\u9fff]', sent))
-                if chinese >= 4 and chinese / max(len(sent), 1) > 0.5:
-                    s = score_sent(sent)
-                    if s > best_score:
-                        best_score = s
-                        best_sent = sent[:50]
-        if best_sent:
-            confidence = min(0.88, 0.35 + len(answers) * 0.08)
-            return (best_sent, confidence)
-
-        # Step 4: Fallback
-        total_expected = len(answers) + 3
-        confidence = min(0.9, len(answers) / total_expected + 0.2)
-        return (f"基于{len(answers)}个维度的分析给出了判断", confidence)
-    except Exception:
-        return ("需要更多信息才能判断", 0.3)
-
-def _inject_profile_questions(profile, task_text):
-    """根据 agent_profile 注入个性化追问"""
-    if not profile:
-        return []
-    extra = []
-    name = profile.get("name", "")
-    values = profile.get("values", [])
-    biases = profile.get("biases", [])
-
-    if name:
-        extra.append(f"【{name}会怎么想这个问题？】")
-    if biases:
-        for b in biases:
-            extra.append(f"【{name}容易在{b}上犯错，我有没有犯同样的错？】")
-    if values:
-        val_str = " > ".join(values[:3])
-        extra.append(f"【{name}的价值排序是{val_str}，这个判断符合吗？】")
-
-    return extra
-
-
-
-
-# ──────────────────────────────────────────────
-# P1 IntentRouter：快速响应函数（ZeusHammer LocalBrain 启发）
-# ──────────────────────────────────────────────
-
-def _quick_status_response(task_text):
-    """STATUS_QUERY：直接返回状态，无需LLM调用"""
-    try:
-        from subsystems.judgment.judgment_db import get_recent_judgments
-        recent = get_recent_judgments(limit=5) or []
-        chains = [r for r in recent if isinstance(r, dict)]
-        verdict_count = len(chains)
-        confidence_avg = sum(r.get("confidence", 0) for r in chains) / max(len(chains), 1)
-        verdict = f"判断系统正常运行。近期判断{verdict_count}次，平均置信度{confidence_avg:.0%}。"
-    except Exception:
-        verdict = "判断系统正常运行。"
-    return {
-        "task": task_text,
-        "verdict": verdict,
-        "confidence": 1.0,
-        "dimensions": [],
-        "intent": "status_query",
-        "skipped_llm": True,
-        "chain_id": None,
-    }
-
-
-def _quick_answer_response(task_text):
-    """SHORT_ANSWER：简单问答，不走完整十维"""
-    return {
-        "task": task_text,
-        "verdict": "这是一个简单问题，但我需要更多信息才能给出有价值的回答。请描述更多背景。",
-        "confidence": 0.4,
-        "dimensions": [],
-        "intent": "short_answer",
-        "skipped_llm": True,
-        "chain_id": None,
-    }
-
-
-def _quick_confirm_response(task_text):
-    """CONFIRM：确认类（是不是/要不要），走轻量路径"""
-    return {
-        "task": task_text,
-        "verdict": "这是一个确认类问题，建议用更详细的描述来获取准确判断。请补充更多背景信息。",
-        "confidence": 0.5,
-        "dimensions": [],
-        "intent": "confirm",
-        "skipped_llm": True,
-        "chain_id": None,
-    }

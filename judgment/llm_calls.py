@@ -40,7 +40,8 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
                          profile_entries: list = None,
                          lessons_context: str = "",
                          perception_context: str = "",
-                         pet_context: str = "") -> str:
+                         pet_context: str = "",
+                         decision_style: str = "") -> str:
     """构造LLM回答问题的prompt"""
     dim_labels = {
         "cognitive": "认知维度",
@@ -109,6 +110,44 @@ def _build_answer_prompt(task_text: str, questions: dict, agent_profile: dict = 
     if perception_context:
         parts.insert(1, perception_context)
 
+    # [P1 Honcho软画像] DecisionStyle 结构化影响
+    if decision_style and decision_style != "未知":
+        style_suffix_map = {
+            "谨慎型": (
+                '\n【回答风格（谨慎型）】\n'
+                '1. 风险提示必须放在首位，先说「最坏情况是什么」和「预案是什么」\n'
+                '2. 每个建议末尾必须加一句风险提醒\n'
+                '3. 结论前必须回答：「如果这个判断错了，我能承受吗？」\n'
+            ),
+            "实战派": (
+                '\n【回答风格（实战派）】\n'
+                '1. 结论先行，给出明确的「做/不做/先做X再做Y」判断\n'
+                '2. 直接给步骤：第一步做什么（什么时候），第二步做什么（什么时候）\n'
+                '3. 跳过理论分析，直奔「下一步具体行动是什么」\n'
+            ),
+            "分析型": (
+                '\n【回答风格（分析型）】\n'
+                '1. 先量化对比：给出概率、比例、数值范围\n'
+                '2. 每个维度用「胜率X%/赔率Y:Z」格式\n'
+                '3. 结论用加权公式：优势Σ - 劣势Σ = 建议\n'
+            ),
+            "快速决断": (
+                '\n【回答风格（快速决断）】\n'
+                '1. 30秒内给出方向，不求完美但求有行动\n'
+                '2. 一句话说清楚「做还是不做，为什么」\n'
+                '3. 有不确定性时直接说「70%概率这样做，另外情况做B」\n'
+            ),
+            "深思熟虑": (
+                '\n【回答风格（深思熟虑型）】\n'
+                '1. 列出最关键的2-3个变量，逐一分析\n'
+                '2. 考虑时间维度：1周后/1月后/1年后的变化\n'
+                '3. 给出「如果条件变化了，决策怎么调整」\n'
+            ),
+        }
+        style_suffix = style_suffix_map.get(decision_style, "")
+        if style_suffix:
+            parts.append(style_suffix)
+
     return "\n".join(parts)
 
 
@@ -119,7 +158,8 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
                       profile_entries: list = None,
                       lessons_context: str = "",
                       perception_context: str = "",
-                      pet_context: str = "") -> dict:
+                      pet_context: str = "",
+                      decision_style: str = "") -> dict:
     """调用MiniMax LLM回答所有维度问题，返回 {dim_id: answer_text, ...}"""
     adapter = get_adapter()
 
@@ -130,7 +170,8 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
 
     prompt = _build_answer_prompt(task_text, questions, agent_profile, prior_adj,
                                   history_context, bio_context, profile_entries,
-                                  lessons_context, perception_context, pet_context)
+                                  lessons_context, perception_context, pet_context,
+                                  decision_style)
 
     # 截断prompt（LLM context limit）
     if len(prompt) > 6000:
