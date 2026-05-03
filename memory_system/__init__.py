@@ -28,7 +28,22 @@ from .memory_engine import (
     recall_memories,
 )
 
+# MAGMA 四路检索
+from .query_engine import (
+    QueryIntent,
+    QueryType,
+    RetrievalResult,
+    classify,
+    get_top_k_types,
+    fuse_results,
+)
+
+from .four_graph import FourGraphIndex, SearchResult
+
+from .topology import CausalTopology, TopoPath
+
 __all__ = [
+    # 原有
     "MemoryType",
     "BaseMemory",
     "UserMemory",
@@ -45,4 +60,15 @@ __all__ = [
     "save_project_memory",
     "save_reference_memory",
     "recall_memories",
+    # MAGMA 四路检索
+    "QueryIntent",
+    "QueryType",
+    "RetrievalResult",
+    "classify",
+    "get_top_k_types",
+    "fuse_results",
+    "FourGraphIndex",
+    "SearchResult",
+    "CausalTopology",
+    "TopoPath",
 ]

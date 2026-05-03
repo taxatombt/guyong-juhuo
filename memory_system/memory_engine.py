@@ -39,6 +39,14 @@ from .memory_types import (
     generate_id, load_memories, save_memory,
 )
 
+# MAGMA 四路检索
+from .query_engine import (
+    QueryIntent, QueryType, classify, get_top_k_types,
+    RetrievalResult, fuse_results,
+)
+from .four_graph import FourGraphIndex, SearchResult
+from .topology import CausalTopology
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 4类记忆保存函数
@@ -199,42 +207,125 @@ def recall_memories(
     limit: int = 5,
 ) -> List[Dict]:
     """
-    根据查询召回相关记忆
-    
+    MAGMA 四路检索召回
+
+    流程：
+    1. query_engine 分类查询意图
+    2. 四图谱并行检索（语义/时间/因果/实体）
+    3. 加权融合结果
+    4. 返回 top_k
+
     Args:
         query: 当前上下文/任务描述
         memory_types: 要召回的类型列表，默认全部
         limit: 最大召回数量
-        
+
     Returns:
         相关记忆列表，按相关性排序
     """
     if memory_types is None:
         memory_types = list(MemoryType)
-    
+
+    # Step 1: 查询意图分类
+    intent = classify(query)
+    top_types = get_top_k_types(intent, top_k=2)
+
+    # Step 2: 加载记忆
     all_memories = []
-    
     for mtype in memory_types:
-        memories = load_memories(mtype)
-        
-        for m in memories:
-            # 计算简单相关性分数
-            score = _calculate_relevance(query, m)
-            if score > 0:
-                all_memories.append({
-                    **m,
-                    "relevance_score": score,
-                })
-    
-    # 按相关性排序
-    all_memories.sort(key=lambda x: x["relevance_score"], reverse=True)
-    
+        all_memories.extend(load_memories(mtype))
+
+    # Step 3: 四图谱并行检索
+    results_by_graph: Dict[str, List[RetrievalResult]] = {}
+    graph_index = FourGraphIndex()
+
+    # 语义检索（始终启用）
+    semantic_results = graph_index.semantic_search(query, all_memories, top_k=limit)
+    results_by_graph["semantic"] = [
+        RetrievalResult(
+            memory_id=r.memory_id,
+            content=r.content,
+            graph_type="semantic",
+            raw_score=r.score,
+            weighted_score=r.score * intent.weights.get("semantic", 0.7),
+            metadata={"reason": r.reason},
+        )
+        for r in semantic_results
+    ]
+
+    # 时间检索（根据意图启用）
+    if intent.weights.get("temporal", 0) > 0.05:
+        temporal_results = graph_index.temporal_search(query, all_memories, top_k=3)
+        results_by_graph["temporal"] = [
+            RetrievalResult(
+                memory_id=r.memory_id,
+                content=r.content,
+                graph_type="temporal",
+                raw_score=r.score,
+                weighted_score=r.score * intent.weights.get("temporal", 0.0),
+                metadata={"reason": r.reason},
+            )
+            for r in temporal_results
+        ]
+
+    # 因果检索（根据意图启用）
+    if intent.weights.get("causal", 0) > 0.05:
+        causal_results = graph_index.causal_search(
+            query, all_memories, intent.traversal_path, top_k=3
+        )
+        results_by_graph["causal"] = [
+            RetrievalResult(
+                memory_id=r.memory_id,
+                content=r.content,
+                graph_type="causal",
+                raw_score=r.score,
+                weighted_score=r.score * intent.weights.get("causal", 0.0),
+                metadata={"reason": r.reason},
+            )
+            for r in causal_results
+        ]
+
+    # 实体检索（根据意图启用）
+    if intent.weights.get("entity", 0) > 0.05:
+        entity_results = graph_index.entity_search(query, all_memories, top_k=3)
+        results_by_graph["entity"] = [
+            RetrievalResult(
+                memory_id=r.memory_id,
+                content=r.content,
+                graph_type="entity",
+                raw_score=r.score,
+                weighted_score=r.score * intent.weights.get("entity", 0.0),
+                metadata={"reason": r.reason},
+            )
+            for r in entity_results
+        ]
+
+    # Step 4: 融合结果
+    fused = fuse_results(results_by_graph, intent)
+
+    # Step 5: 构建返回（合并原始记忆数据）
+    memory_map = {m["id"]: m for m in all_memories}
+    scored = []
+    for fr in fused[:limit]:
+        original = memory_map.get(fr.memory_id, {})
+        scored.append({
+            **original,
+            "relevance_score": round(fr.weighted_score, 3),
+            "graph_type": fr.graph_type,
+            "query_intent": intent.query_type.value,
+            "intent_confidence": round(intent.confidence, 2),
+        })
+
     # 增加被使用次数
-    for m in all_memories[:limit]:
+    for m in scored:
         from .memory_types import increment_used_count
-        increment_used_count(m["id"], MemoryType(m["type"]))
-    
-    return all_memories[:limit]
+        if "type" in m:
+            try:
+                increment_used_count(m["id"], MemoryType(m["type"]))
+            except (ValueError, KeyError):
+                pass
+
+    return scored
 
 
 def _calculate_relevance(query: str, memory: Dict) -> float:
