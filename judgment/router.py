@@ -57,6 +57,7 @@ from judgment.llm_calls import (
     MUST_CHECK,
     predict_user_choice,
     _verify_judgment,
+    _score_verdict_candidate,
 )
 
 # P1 IntentRouter：ZeusHammer LocalBrain 启发，80%% 任务不需要LLM
@@ -336,7 +337,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     elif complexity == "complex":
         must = MUST_CHECK + ["emotional", "temporal"]
         important = ["intuitive", "moral"]
-        skipped = ["metacognitive"]
+        skipped = []  # metacognitive 由 post-hoc 标准差计算，不需要跳过
     elif complexity == "critical":
         must = [d.id for d in DIMENSIONS]
         important = []
@@ -439,6 +440,35 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         pet_to_prompt(user_id),  # 宠物状态注入
         _decision_style,    # P1: DecisionStyle结构化影响
     )
+
+    # ── Metacognitive：9维置信度标准差 → 元监控 ────────────────────
+    # Review #3: metacognitive 不是第10个独立维度，而是对前9维的元监控
+    _non_mc_dims = [d.id for d in DIMENSIONS if d.id != "metacognitive"]
+    _dim_scores = []
+    for _dim in _non_mc_dims:
+        _ans_text = answers.get(_dim, "") or ""
+        if _ans_text:
+            _s = _score_verdict_candidate(_ans_text)
+            if _s > 0:
+                _dim_scores.append(_s)
+
+    if len(_dim_scores) >= 2:
+        import statistics
+        _std = statistics.stdev(_dim_scores)
+        _mean = statistics.mean(_dim_scores)
+        # 标准差大 → 维度间判断不一致 → metacognitive 警告
+        # 标准差小 → 维度一致 → metacognitive 稳定
+        _mc_confidence = max(0.1, 1.0 - (_std * 2.5))  # 方差越大，置信度越低
+        _instability = _std > 0.15
+        _mc_reasoning = (
+            f"9维判断标准差={_std:.3f}，均值={_mean:.3f}。"
+            f"{'【告警】各维度判断不一致，判断不稳定，建议重新审视核心假设。' if _instability else '各维度判断基本一致，判断稳定。'}"
+        )
+    else:
+        _mc_confidence = 0.5
+        _mc_reasoning = "维度答案不足，无法计算元监控置信度。"
+
+    answers["metacognitive"] = _mc_reasoning
 
     _ret = {
         "task": ctx.task_text,

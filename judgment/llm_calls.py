@@ -389,7 +389,7 @@ def _answer_questions(task_text: str, questions: dict, agent_profile: dict = Non
 # - economic / cognitive 基础维度
 MUST_CHECK = ["game_theory", "emotional", "cognitive", "economic"]
 IMPORTANT = ["dialectical", "intuitive", "moral", "social"]
-NICE_TO_HAVE = ["temporal", "metacognitive"]
+NICE_TO_HAVE = ["temporal"]  # metacognitive 由 post-hoc 9维标准差计算
 
 
 
