@@ -54,11 +54,18 @@ PROJECT_ENV = PROJECT_ROOT / ".env.example"
 
 
 def load_env_files() -> list[Path]:
-    """加载 .env 文件"""
+    """加载 .env 文件（优先级：用户目录 > 项目根目录 > 项目模板）"""
     loaded = []
-    for path in [JUHuo_USER_ENV, PROJECT_ENV]:
+    # 加载顺序：用户目录(.env) > 项目根目录(.env) > 项目模板(.env.example)
+    # 优先级高的文件用 override=True 确保覆盖低优先级
+    paths_to_load = [
+        (PROJECT_ROOT / ".env", False),       # 项目根目录 .env（次低优先级）
+        (PROJECT_ENV, False),                   # 项目模板 .env.example（最低）
+        (JUHuo_USER_ENV, True),               # 用户目录 .env（最高，override）
+    ]
+    for path, override in paths_to_load:
         if path.exists():
-            load_dotenv(path, override=(path == JUHuo_USER_ENV))
+            load_dotenv(path, override=override)
             loaded.append(path)
     return loaded
 

@@ -25,7 +25,10 @@ from judgment.pipeline import check10d_full, PipelineConfig, format_full_report
 from judgment.self_model.belief import get_belief_status
 from judgment.verdict_collector import get_verdict_stats, mark_verdict_correct, mark_verdict_wrong
 from correlation_memory.correlation_chain import get_recent_chains, get_chain_detail
-from config.env_loader import EnvVarLoader, create_env_template, JUHuo_USER_DIR, JUHuo_USER_ENV
+from config.env_loader import EnvVarLoader, create_env_template, JUHuo_USER_DIR, JUHuo_USER_ENV, load_env_files
+
+# 启动时加载 .env（优先：用户目录 > 项目根目录 > 项目模板）
+load_env_files()
 from judgment.benchmark import Benchmark, run_benchmark
 from judgment.biography import log, format_profile, get_all
 from judgment.experiences import rate_experience
