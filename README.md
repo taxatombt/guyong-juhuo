@@ -23,7 +23,7 @@ guyong-juhuo 是一个 **12子系统 AI Agent 框架**，基于 LLM 后端（Min
 | # | 子系统 | 功能 |
 |---|--------|------|
 | 1 | **Judgment** | 十维并行评估（认知 · 博弈论 · 经济 · 辩证 · 情绪 · 直觉 · 道德 · 社会 · 时间折扣 · 元认知） |
-| 2 | **Causal Memory** | 快慢双通道：即时记录 + 批量因果推理 |
+| 2 | **Correlation Memory** | 时序关联记忆：记录事件序列 + 模式匹配推断"先后关系"（非反事实因果） |
 | 3 | **Curiosity Engine** | 双随机游走（80% 目标驱动 / 20% 自由探索），Ralph 循环终止 |
 | 4 | **Goal System** | 洋葱分层：5年 → 年度 → 月度 → 周 → 今日 |
 | 5 | **Self-Model** | 贝叶斯盲点追踪：积累"我容易在这里犯错" |
@@ -45,6 +45,64 @@ guyong-juhuo 是一个 **12子系统 AI Agent 框架**，基于 LLM 后端（Min
 | **Transcend Mode** | 10个通用维度；无 profile — 系统基于纯推理判断，闭环直到超越人类 |
 
 **铁律：** _模仿具体个人，超越人类整体。_
+
+---
+
+## 第三层：模仿 → 超越 的转换机制
+
+这是整个系统的核心闭环，也是之前缺失的一层。
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      模仿阶段（学你）                          │
+│                                                             │
+│  biography（你是谁）                                          │
+│  experiences（你过去怎么做）    ──→  预测：遇到X会这么做        │
+│  behavior patterns（行为风格）                                │
+└────────────────────────────┬────────────────────────────────┘
+                             │ 差值
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    反馈阶段（修正）                           │
+│                                                             │
+│  实际：遇到X，你实际做了Y          ──→  error = 预测 vs 实际    │
+│  差值驱动权重更新                ──→  修正对这个人的判断模型    │
+│  下次判断更准                                             │
+└────────────────────────────┬────────────────────────────────┘
+                             │ 积累足够多差值
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    超越阶段（比你更懂你）                      │
+│                                                             │
+│  在这个人的判断维度上，预测精度超过他自己  ──→  比他更知道      │
+│  什么是对的                                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**关键点：** 超越不是凭空发生的。是在"预测→实际→差值→修正"的循环中，积累出对这个人的判断优势。当系统对这个人的预测比他自己还准时，就是超越的时刻。
+
+这条链路，也是 Self-Evolver 的输入来源——每次 verdict 后的实际结果，都在喂养进化引擎。
+
+---
+
+## 最小可行出口
+
+当前优先级：**早晨决策场景** — 每天早上问一次"今天最适合做什么"。
+
+这个场景完整串通以下闭环：
+
+```
+输入（精力/情绪/待办）
+  → Judgment 10维判断
+  → 推荐今日行动
+  → 实际执行
+  → verdict反馈（判断对了还是错了）
+  → Correlation Memory 记录
+  → Evolver 更新权重
+  → 明天判断更准
+```
+
+先把这个场景完全跑通，再扩展到其他场景。不是一次性建完所有子系统，而是用这个闭环来验证架构。
 
 ---
 
@@ -94,19 +152,71 @@ python hub.py test
 
 ## 架构
 
+```mermaid
+flowchart TB
+    subgraph Perception["感知层"]
+        P[Perception Layer]
+    end
+
+    subgraph Cognitive["认知处理"]
+        AF[Attention Filter]
+        J[Judgment 10D]
+        EM[Emotion Adapter]
+        CM[Correlation Memory]
+        SM[Self-Model]
+    end
+
+    subgraph Output["输出层"]
+        OS[Output System]
+        AS[Action System]
+    end
+
+    subgraph Evolution["进化层"]
+        EV[Evolver]
+        SE[Skill Evolution]
+        G[Goal System]
+        CU[Curiosity Engine]
+    end
+
+    P --> AF
+    AF --> J
+    J --> EM
+    CM -->|输入上下文| J
+    SM -->|盲点权重| J
+    EM -->|情绪调制| J
+    J -->|输出| OS
+    J -->|执行信号| AS
+
+    AS -->|实际行为| CM
+    CM -->|关联模式| SM
+    SM -->|自我认知| G
+    G -->|目标| CU
+
+    OS -->|verdict| EV
+    EV -->|权重更新| SM
+    EV -->|规则生成| SE
+    SE -->|技能改进| J
+
+    style J fill:#e1f5fe
+    style EV fill:#fff3e0
+    style CM fill:#f3e5f5
+    style SM fill:#e8f5e9
 ```
-Perception  →  Attention Filter  →  Judgment (10D)
-                                           ↓
-                                    Causal Memory
-                                           ↓
-                                     Self-Model
-                                           ↓
-                                   Closed Feedback Loop
-                                    ↕ (verdict signals)
-                                   Evolver
-                                           ↓
-                                   Skill Evolution
-```
+
+**数据流说明：**
+
+| 调用链 | 触发条件 | 数据内容 |
+|--------|----------|----------|
+| Perception → Judgment | 每条输入 | 原始消息 / 上下文 |
+| Judgment → Emotion | 每轮判断 | 情绪状态 |
+| Emotion → Judgment | 每轮判断 | 情绪调制后的维度权重 |
+| Correlation Memory → Judgment | 判断前 | 相关事件上下文（时序相关，非因果） |
+| Self-Model → Judgment | 判断前 | 权重偏见（"我容易在这里犯错"） |
+| Judgment → Output | 判断后 | verdict + confidence |
+| Output → Evolver | 用户反馈后 | verdict + actual choice |
+| Evolver → Self-Model | 验证通过 | 更新的维度权重 |
+| Self-Model → Goal | 定期 | 自我认知更新目标 |
+| Goal → Curiosity | 定期 | 目标驱动探索 |
 
 闭环：判断 → 记录链 → 用户反馈 verdict → 信念更新 → 下次判断改善
 
