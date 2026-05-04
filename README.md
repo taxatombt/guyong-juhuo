@@ -390,6 +390,43 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 
 ## 版本更新
 
+### v2.3 (2026-05-05) — 三个结构性修复 + LLM 真实调用
+
+**LLM 真实调用（根因：API key 从未加载）：**
+- `load_env_files()` 定义了但从未被调用 → `cli.py` 入口处调用
+- `.env` 在 `E:\juhuo\.env`，loader 只读 `~/.juhuo/.env`（不存在）
+- 修复：`env_loader.py` 加载路径加入 `PROJECT_ROOT/.env`
+- 影响：之前所有判断都是低置信度 fallback，现在真正调用 MiniMax-M2
+
+**biography 真正接入 10 维判断（结构性修复 #1）：**
+- `llm_orchestrator.py`：`inject_profile_into_dimensions()` → 返回 `{weights, prompts}`
+- 10 维各有专属追问模板：`temporal→"5年后回头看？"`、`emotional→"做后情绪状态？"` 等
+- biography 特征词→权重推断：`长期主义`→`temporal×1.8`、`保守`→`game_theory×1.5`
+- 高权重维度从 `important` 升级到 `must`（确保分析）
+
+**慢路径因果推断（结构性修复 #2）：**
+- `correlation_memory.py`：`batch_causal_inference()` 扫描已完成 judgment，统计 action→outcome 共现
+- `>=2次共现+avg_score>0.6` → 建立 `CausalLink`
+- 新增 `run_slow_path()`：cron 入口，批量推断+深度压缩+自模型通知
+
+**verdict 真正改变行为（结构性修复 #3）：**
+- `router.py` `check10d_run` 末尾：调用 `predict_outcome()` 标记 pending
+- `morning_routine.py`：早晨询问昨天 pending judgments 的执行结果
+- `receive_actual_choice` → `receive_verdict` → 维度权重更新 → 下次判断改善
+
+**空链修复（4 条）：**
+- Self-Model → Goal System：高置信度偏差(≥0.5) → 目标建议
+- Goal System → Curiosity：新目标建议 → 探索实现路径
+- Evolver → Skill Evolution：进化完成且 lessons_added>0 → 生成改进建议
+
+**morning_routine.py（最小可用闭环）：**
+- 精力/情绪/待办 → 10 维判断 → 推荐 → 实际执行 → verdict 反馈
+- `_follow_up_pending_outcomes()`：早晨自动 follow-up
+
+**causal_memory → correlation_memory（诚实命名）：**
+- 内部类/函数名保留 "Causal" 前缀（降低影响范围）
+- 33 处 import 全部更新
+
 ### v2.2.1 (2026-04-24) — Hermes Guide P0 落地
 
 **JudgmentBudget 预算保护：**
