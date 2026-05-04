@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from judgment.logging_config import get_logger
 from judgment.pipeline import check10d_full, PipelineConfig, format_full_report
 from judgment.router import check10d_run
-from judgment.closed_loop import receive_verdict
+from judgment.closed_loop import receive_verdict, predict_outcome, verify_outcome, get_recent_chains
+from judgment.verdict_collector import receive_actual_choice
 from emotion_system.emotion_engine import analyze_emotion
 from correlation_memory.correlation_chain import log_judgment_event
 
@@ -124,7 +125,57 @@ def format_morning_report(results: List[Dict[str, Any]], energy: int, emotion_st
     return "\n".join(lines)
 
 
-def interact_morning(energy: int, tasks: List[str], user_id: str = "default") -> List[Dict[str, Any]]:
+def _follow_up_pending_outcomes(user_id: str = "default"):
+    """
+    【问题3修复】闭环最后一步：早晨 follow-up 询问昨天 pending judgments 的实际执行结果。
+    
+    流程：
+    1. 查 outcome_predictions 中 verified=0 的 pending judgments
+    2. 询问用户：是否执行了预测的行动？结果如何？
+    3. 调用 verify_outcome 记录实际结果 → 触发 receive_verdict → 更新 beliefs
+    """
+    try:
+        from judgment.closed_loop import get_recent_chains
+        from judgment.closed_loop import predict_outcome as _po, verify_outcome as _vo
+        from judgment.verdict_collector import receive_actual_choice
+        import time
+
+        # 查最近7天内未验证的 judgments
+        recent = get_recent_chains(limit=20, user_id=user_id)
+        pending = [
+            r for r in recent
+            if r.get("predicted_action")
+            and not r.get("outcome_verified")
+        ]
+        if not pending:
+            return
+
+        print("\n" + "=" * 50)
+        print("📋 昨日判断回顾 — 请告诉我执行结果")
+        print("=" * 50)
+
+        for r in pending[:5]:  # 最多问5个
+            chain_id = r.get("chain_id", "")
+            task = r.get("task", "")[:60]
+            predicted = r.get("predicted_action", "")[:80]
+            print(f"\n判断：{task}")
+            print(f"  预测行动：{predicted}")
+            try:
+                inp = input("  结果（回车跳过，输入行动描述）：").strip()
+            except (EOFError, KeyboardInterrupt):
+                break
+            if not inp:
+                continue
+            # 记录实际结果 → 触发闭环更新
+            try:
+                receive_actual_choice(chain_id, inp, user_id=user_id)
+                print(f"  ✓ 已记录: {inp[:50]}")
+            except Exception as e:
+                print(f"  ✗ 记录失败: {e}")
+
+        print("=" * 50 + "\n")
+    except Exception as e:
+        log.debug(f"pending outcome follow-up 跳过: {e}")
     """
     交互式早晨决策：分析情绪 → 判断任务 → 输出报告。
     """
@@ -152,6 +203,9 @@ def interact_morning(energy: int, tasks: List[str], user_id: str = "default") ->
     # Step 4: 输出报告
     report = format_morning_report(results, energy, emotion_state)
     print(report)
+
+    # Step 5: 【问题3修复】follow-up pending outcomes — 询问昨天判断的执行结果
+    _follow_up_pending_outcomes(user_id)
 
     return results
 

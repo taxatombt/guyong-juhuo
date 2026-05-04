@@ -80,6 +80,7 @@ from judgment.router_utils import (
 # LLM 编排层（从 router.py 提取）
 from judgment.llm_orchestrator import (
     _inject_profile_questions,
+    inject_profile_into_dimensions,
     _quick_status_response,
     _quick_answer_response,
     _quick_confirm_response,
@@ -349,10 +350,21 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     for dim in DIMENSIONS:
         questions[dim.id] = dim.questions[:]
 
+    # 核心问题1修复：biography → 每个维度个性化追问
     if agent_profile:
+        _, dim_prompts = inject_profile_into_dimensions(agent_profile, task_text)
+        # 兼容旧 cognitive 追加
         extra = _inject_profile_questions(agent_profile, task_text)
         if extra:
             questions["cognitive"].extend(extra)
+        # 新：每个维度个性化追问
+        for dim_id, extra_prompts in dim_prompts.items():
+            if dim_id in questions:
+                questions[dim_id].extend(extra_prompts)
+        # 维度权重注入到 prior_adjustments
+        weights, _ = inject_profile_into_dimensions(agent_profile, task_text)
+        for dim_id, w in weights.items():
+            ctx.prior_adjustments[dim_id] = ctx.prior_adjustments.get(dim_id, 1.0) * w
 
     checked = len([d.id for d in DIMENSIONS if d.id not in skipped])
 
@@ -625,19 +637,28 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
     return _ret
 
 
-async def _analyze_dim(dim, task_text, agent_profile):
+async def _analyze_dim(dim, task_text, agent_profile, dim_prompts: dict = None):
     """分析单个维度（asyncio协程）。所有维度同时执行，互不阻塞。"""
     await asyncio.sleep(0)  # 让出控制，允许其他协程并发执行
-    return _analyze_dim_sync(dim, task_text, agent_profile)
+    return _analyze_dim_sync(dim, task_text, agent_profile, dim_prompts)
 
 
-def _analyze_dim_sync(dim, task_text, agent_profile):
-    """分析单个维度（同步版）。与 asyncio 版逻辑相同。"""
+def _analyze_dim_sync(dim, task_text, agent_profile, dim_prompts: dict = None):
+    """
+    分析单个维度（同步版）。与 asyncio 版逻辑相同。
+
+    核心问题1修复：biography → 每个维度的个性化追问，不只是 cognitive。
+    dim_prompts: {dim_id: [追加追问列表]}，由 inject_profile_into_dimensions 生成。
+    """
     questions = dim.questions[:]
+    # 兼容旧接口：cognitive 维度的追加
     if agent_profile:
         extra = _inject_profile_questions(agent_profile, task_text)
         if extra:
             questions = questions + extra
+    # 新：每个维度都有个性化追问
+    if dim_prompts and dim.id in dim_prompts:
+        questions = questions + dim_prompts[dim.id]
     return {dim.id: questions}
 
 
@@ -655,12 +676,29 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     important = base_result["important"]
     skipped = base_result["skipped"]
     dims_to_analyze = [d for d in DIMENSIONS if d.id in must or d.id in important]
+
+    # 核心问题1修复：biography/experiences → 每个维度个性化
+    # 1. 计算权重和追问（一次计算，所有维度共享）
+    _profile_weights, _dim_prompts = inject_profile_into_dimensions(agent_profile, task_text)
+    # 2. 高权重维度从 important 升级到 must（确保分析）
+    if _profile_weights:
+        boosted = [d_id for d_id, w in _profile_weights.items() if w >= 1.4 and d_id in important]
+        for d_id in boosted:
+            must = set(must)
+            must.add(d_id)
+            must = list(must)
+    # 3. 每个维度使用个性化追问
     all_questions = {}
     for dim in dims_to_analyze:
-        dim_result = _analyze_dim_sync(dim, task_text, agent_profile)
+        dim_result = _analyze_dim_sync(dim, task_text, agent_profile, _dim_prompts)
         all_questions.update(dim_result)
+
     # Pipeline 编排（同步版，复用 check10d 已构建的 ctx）
     _prior_adj = base_result.get("meta", {}).get("prior_adjustments", {})
+    # 核心问题1修复：合并 biography 推断的权重到 prior_adjustments
+    for dim_id, weight in _profile_weights.items():
+        existing = _prior_adj.get(dim_id, 1.0)
+        _prior_adj[dim_id] = existing * weight  # 乘数叠加
     # P0 FIX: base_result["task"] 是 merge_prompt_context() 的结果（含 unified_context）
     # 不再传 merge_prompt_context() 的拼接结果
     # 三路数据统一通过 inject_unified_profile → _profile_entries
@@ -807,6 +845,17 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
         base_result["meta"]["disclosure_layer"] = _dr.layer
     except Exception:
         pass
+
+    # 【问题3修复】闭环最后一步：记录 predicted_action 为 pending outcome
+    # 这样下次早晨或 cron 可以 follow-up 确认实际执行情况
+    try:
+        from judgment.closed_loop import predict_outcome
+        _chain_id3 = base_result.get("meta", {}).get("chain_id", "")
+        _pred_action = base_result.get("predicted_action", "")
+        if _chain_id3 and _pred_action:
+            predict_outcome(_chain_id3, _pred_action)
+    except Exception:
+        pass  # 不阻断返回
 
     return base_result
 

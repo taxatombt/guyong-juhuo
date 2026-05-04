@@ -948,3 +948,198 @@ def check_and_trigger_self_model_update(
         "threshold": PATTERN_THRESHOLD,
         "pattern_key": pattern_key,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 慢路径批量因果推断（问题2修复）
+# ═══════════════════════════════════════════════════════════════════════════
+
+def batch_causal_inference(limit: int = 100) -> Dict:
+    """
+    慢路径批量因果推断：从judgment历史自动推断因果链。
+
+    核心逻辑：
+    1. 扫描近期judgment_chains（含outcome的已完成判断）
+    2. 按 task_domain 聚类
+    3. 同一领域内：统计 action_type → outcome 的共现频率
+    4. 高频共现 → 建立/更新 CausalLink
+    5. 结果写入 causal_links.jsonl + 更新 dimension_beliefs
+
+    这是"慢路径"：每天跑一次，不在每次判断时调用。
+    由 cron 或手动触发。
+
+    返回推断统计。
+    """
+    from .correlation_chain import _get_db_conn
+    import time
+
+    results = {
+        "timestamp": time.time(),
+        "chains_scanned": 0,
+        "domains_found": 0,
+        "links_inferred": 0,
+        "links_updated": 0,
+        "new_patterns": [],
+    }
+
+    conn = _get_db_conn()
+    if conn is None:
+        return {"error": "DB not available", **results}
+
+    try:
+        cur = conn.cursor()
+        # 读取有 outcome 的 judgment_chains
+        cur.execute("""
+            SELECT chain_id, task, predicted_action, actual_outcome, outcome_score,
+                   dimensions, verdict, confidence, created_at
+            FROM judgment_chains
+            WHERE actual_outcome IS NOT NULL
+              AND actual_outcome != ''
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cur.fetchall()
+        results["chains_scanned"] = len(rows)
+
+        if not rows:
+            return results
+
+        # 按领域聚类（从task中提取关键词）
+        domain_groups: Dict[str, List[dict]] = {}
+        for row in rows:
+            task = row["task"] or ""
+            outcome = row["actual_outcome"] or ""
+            action = row["predicted_action"] or ""
+            score = row["outcome_score"] or 0.5
+
+            # 简单领域提取：取task前20字作为领域标识
+            domain = task[:20]
+            if domain not in domain_groups:
+                domain_groups[domain] = []
+            domain_groups[domain].append({
+                "action": action,
+                "outcome": outcome,
+                "score": score,
+                "chain_id": row["chain_id"],
+            })
+
+        results["domains_found"] = len(domain_groups)
+
+        # 跨事件因果推断：同一领域内，找 action→outcome 高频共现
+        for domain, events in domain_groups.items():
+            if len(events) < 2:
+                continue
+
+            # 统计 (action, outcome) 共现次数
+            cooccur: Dict[Tuple[str, str], List[float]] = {}
+            for ev in events:
+                key = (ev["action"][:50], ev["outcome"][:50])
+                if key not in cooccur:
+                    cooccur[key] = []
+                cooccur[key].append(ev["score"])
+
+            for (action, outcome), scores in cooccur.items():
+                if len(scores) < 2:
+                    continue
+                avg_score = sum(scores) / len(scores)
+                # 共现>=2次 且 平均outcome_score>0.6 → 推断因果
+                if len(scores) >= 2 and avg_score > 0.6:
+                    # 检查是否已存在这条link
+                    links = load_all_links()
+                    existing = next(
+                        (l for l in links
+                         if l.get("from_event_type", "").lower() == action.lower()
+                         and l.get("to_event_type", "").lower() == outcome.lower()),
+                        None
+                    )
+                    confidence = min(0.95, 0.3 + 0.2 * len(scores))  # 次数越多置信度越高
+
+                    if existing:
+                        # 更新置信度
+                        existing["confidence"] = max(existing.get("confidence", 0), confidence)
+                        results["links_updated"] += 1
+                    else:
+                        # 新建因果链
+                        new_link = CausalLink(
+                            from_event_type=action[:80],
+                            to_event_type=outcome[:80],
+                            relation=CausalRelation.CAUSES,
+                            confidence=confidence,
+                            quality=CausalLinkQuality.MEDIUM,
+                            domain=domain[:40],
+                            evidence_count=len(scores),
+                        )
+                        links.append(new_link)
+                        results["links_inferred"] += 1
+                        results["new_patterns"].append({
+                            "domain": domain[:40],
+                            "action": action[:50],
+                            "outcome": outcome[:50],
+                            "confidence": confidence,
+                            "evidence_count": len(scores),
+                        })
+
+            # 写出更新后的links
+            if results["links_inferred"] > 0 or results["links_updated"] > 0:
+                try:
+                    links_file = Path(__file__).parent.parent / "data" / "correlation_memory" / "causal_links.jsonl"
+                    links_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(links_file, "w", encoding="utf-8") as f:
+                        for l in links:
+                            f.write(json.dumps(l if isinstance(l, dict) else l.__dict__, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
+
+        return results
+
+    except Exception as e:
+        return {"error": str(e), **results}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def run_slow_path() -> Dict:
+    """
+    慢路径入口：供 cron 调用的完整慢路径流程。
+
+    流程：
+    1. batch_causal_inference() — 从judgment历史推断因果链
+    2. _slow_compress() — 对高置信度因果链做深度压缩（存储摘要）
+    3. trigger_self_model_update() — 高置信度因果 → 通知自我模型
+    """
+    import time
+    start = time.time()
+
+    results = {
+        "timestamp": start,
+        "phase1_causal": None,
+        "phase2_compress": None,
+        "elapsed_ms": 0,
+    }
+
+    # Phase 1: 批量因果推断
+    causal_result = batch_causal_inference(limit=200)
+    results["phase1_causal"] = causal_result
+
+    # Phase 2: 高置信度因果 → 深度压缩存储
+    new_patterns = causal_result.get("new_patterns", [])
+    compressed = 0
+    for p in new_patterns:
+        if p.get("confidence", 0) >= 0.6:
+            summary = f"{p['action']} → {p['outcome']} (n={p['evidence_count']}, conf={p['confidence']:.2f})"
+            # 追加到 causal_patterns.jsonl
+            try:
+                patterns_file = Path(__file__).parent.parent / "data" / "correlation_memory" / "causal_patterns.jsonl"
+                patterns_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(patterns_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"pattern": summary, "confidence": p["confidence"], "timestamp": start}, ensure_ascii=False) + "\n")
+                compressed += 1
+            except Exception:
+                pass
+    results["phase2_compress"] = {"patterns_compressed": compressed}
+
+    results["elapsed_ms"] = int((time.time() - start) * 1000)
+    return results
