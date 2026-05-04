@@ -20,11 +20,11 @@ from llm_adapter.minimax import get_adapter
 from llm_adapter.base import CompletionRequest
 
 from .correlation_memory import load_all_events, load_all_links, find_similar_events
-from .types import CausalRelation
+from .types import CorrelationRelation
 
 
 @dataclass
-class CausalHypothesis:
+class CorrelationHypothesis:
     cause: str
     effect: str
     confidence: float
@@ -35,22 +35,22 @@ class CausalHypothesis:
 
 
 @dataclass
-class CausalInferenceResult:
+class CorrelationInferenceResult:
     situation: str
-    hypotheses: List[CausalHypothesis]
+    hypotheses: List[CorrelationHypothesis]
     best_explanation: str
     reasoning_chain: str
     confidence: float
     needs_more_data: bool
 
 
-class CausalInferenceEngine:
+class CorrelationInferenceEngine:
     """因果推断引擎 - 给judgment提供推理底座"""
     
     def __init__(self):
         self.adapter = get_adapter()
     
-    def infer(self, situation: str, judgment_dimensions: List[str] = None) -> CausalInferenceResult:
+    def infer(self, situation: str, judgment_dimensions: List[str] = None) -> CorrelationInferenceResult:
         """
         因果推断主入口
         给定情境，输出因果假设和最佳解释
@@ -66,7 +66,7 @@ class CausalInferenceEngine:
         best = hypotheses[0] if hypotheses else None
         best_explanation = self._generate_best_explanation(best, situation)
         
-        return CausalInferenceResult(
+        return CorrelationInferenceResult(
             situation=situation,
             hypotheses=hypotheses,
             best_explanation=best_explanation,
@@ -75,7 +75,7 @@ class CausalInferenceEngine:
             needs_more_data=len(similar_events) < 2
         )
     
-    def _generate_hypotheses(self, situation: str, similar_events: List[dict]) -> List[CausalHypothesis]:
+    def _generate_hypotheses(self, situation: str, similar_events: List[dict]) -> List[CorrelationHypothesis]:
         """从历史事件生成因果假设"""
         hypotheses = []
         
@@ -88,7 +88,7 @@ class CausalInferenceEngine:
             effect = f"结果={outcome}"
             similarity = event.get("similarity", 0.7)
             
-            hypotheses.append(CausalHypothesis(
+            hypotheses.append(CorrelationHypothesis(
                 cause=cause,
                 effect=effect,
                 confidence=similarity * 0.8,
@@ -100,7 +100,7 @@ class CausalInferenceEngine:
         
         return hypotheses
     
-    def _llm_refine_hypotheses(self, situation: str, hypotheses: List[CausalHypothesis]) -> List[CausalHypothesis]:
+    def _llm_refine_hypotheses(self, situation: str, hypotheses: List[CorrelationHypothesis]) -> List[CorrelationHypothesis]:
         """用LLM精化因果假设"""
         prompt = f"""你是因果推理专家。分析当前情境的因果关系。
 
@@ -140,7 +140,7 @@ class CausalInferenceEngine:
                     data = json.loads(json_match.group())
                     refined = data.get("refined_hypotheses", [])
                     return [
-                        CausalHypothesis(
+                        CorrelationHypothesis(
                             cause=h["cause"],
                             effect=h["effect"],
                             confidence=h.get("confidence", 0.5),
@@ -156,7 +156,7 @@ class CausalInferenceEngine:
         
         return hypotheses
     
-    def _build_reasoning_chain(self, hypotheses: List[CausalHypothesis], similar_events: List[dict]) -> str:
+    def _build_reasoning_chain(self, hypotheses: List[CorrelationHypothesis], similar_events: List[dict]) -> str:
         """构建推理链"""
         if not hypotheses:
             return "缺乏历史数据，无法建立因果推理链。"
@@ -170,7 +170,7 @@ class CausalInferenceEngine:
         
         return "\n".join(parts)
     
-    def _generate_best_explanation(self, hypothesis: CausalHypothesis, situation: str) -> str:
+    def _generate_best_explanation(self, hypothesis: CorrelationHypothesis, situation: str) -> str:
         """生成最佳解释"""
         if not hypothesis:
             return f"情境「{situation[:50]}」: 缺乏历史数据"
@@ -190,7 +190,7 @@ class CausalInferenceEngine:
         return explanation
 
 
-def infer_causal_chain(situation: str, dimensions: List[str] = None) -> CausalInferenceResult:
+def infer_correlation_chain(situation: str, dimensions: List[str] = None) -> CorrelationInferenceResult:
     """快捷函数：因果推断"""
-    engine = CausalInferenceEngine()
+    engine = CorrelationInferenceEngine()
     return engine.infer(situation, dimensions)

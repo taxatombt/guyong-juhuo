@@ -188,7 +188,7 @@ from judgment.biography import get_context as get_bio_context, extract_from_text
 from judgment.pets import update_from_emotion, pet_to_prompt, get_status_summary, interact as _pet_interact, get_pet as _get_pet
 
 # P0改进：因果推断引擎 - 给judgment提供推理底座
-from correlation_memory.correlation_inference import CausalInferenceEngine, infer_causal_chain
+from correlation_memory.correlation_inference import CorrelationInferenceEngine, infer_causal_chain
 
 # P3改进：十维推理规则引擎
 from .judgment_rules import rule_based_precheck, get_rule_scores
@@ -556,7 +556,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
             _ret["meta"]["verification"] = verification
             
             # P0改进：因果推断 - 给判断提供推理底座
-            inference_engine = CausalInferenceEngine()
+            inference_engine = CorrelationInferenceEngine()
             causal_infer = inference_engine.infer(
                 situation=ctx.original_task,
                 judgment_dimensions=must + important

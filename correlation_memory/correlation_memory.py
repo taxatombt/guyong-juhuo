@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-correlation_memory.py — 聚活因果记忆模块
+correlation_memory.py — 聚活关联记忆模块
 **独特技术设计（聚活独有）：**
 
 1. **快慢双流架构**
-   - 快路径：每次判断完成 → 即时写入因果事件节点
-   - 慢路径：每日一次批量扫描 → 自动推断跨事件因果链
+   - 快路径：每次判断完成 → 即时写入关联事件节点
+   - 慢路径：每日一次批量扫描 → 自动推断跨事件关联链
    - 快负责记录，慢负责推理，符合人类记忆形成规律
 
 2. **时间衰减置信度**
@@ -14,15 +14,15 @@ correlation_memory.py — 聚活因果记忆模块
    - 衰减公式：`confidence *= exp(-days / 365)` → 一年衰减一半
    - 经常被访问的记忆不衰减（复习强化）
 
-3. **个人因果优先级**
-   - 你的个人因果链接权重 = 通用知识 × 1.5 → 优先相信你亲身经历
-   - 哪怕这个因果在通用知识里是错的，只要它是你踩坑总结的，就优先用它
+3. **个人关联优先级**
+   - 你的个人关联链接权重 = 通用知识 × 1.5 → 优先相信你亲身经历
+   - 哪怕这个关联在通用知识里是错的，只要它是你踩坑总结的，就优先用它
    - 这才是"你的"记忆，不是通用知识库
 
 Reference:
 - MAGMA Temporal Resonant Graph Memory + 顾庸x方案
 - OpenSpace (HKUDS) 启发：三级进化模式 / 质量监控 / 级联更新
-- 核心设计：这是**你的个人因果记忆**，不是通用知识图谱
+- 核心设计：这是**你的个人关联记忆**，不是通用知识图谱
 """
 
 import json
@@ -34,13 +34,13 @@ from typing import List, Dict, Optional, Tuple
 import difflib
 
 from .types import (
-    CausalEvent,
-    CausalLink,
-    CausalLinkQuality,
-    CausalRelation,
+    CorrelationEvent,
+    CorrelationLink,
+    CorrelationLinkQuality,
+    CorrelationRelation,
     EvolutionType,
     EvolutionSuggestion,
-    CausalStats,
+    CorrelationStats,
 )
 
 # P3改进：四道压缩叠加（借鉴Claude Code TS）
@@ -139,12 +139,12 @@ def _init_db():
         conn.close()
 
 
-def _links_from_rows(rows: List) -> List[CausalLink]:
-    """将 SQLite rows 转换为 CausalLink 对象"""
+def _links_from_rows(rows: List) -> List[CorrelationLink]:
+    """将 SQLite rows 转换为 CorrelationLink 对象"""
     links = []
     for r in rows:
         quality_data = json.loads(r["quality_json"]) if r["quality_json"] else {}
-        quality = CausalLinkQuality(
+        quality = CorrelationLinkQuality(
             applied_count=quality_data.get("applied_count", 0),
             success_count=quality_data.get("success_count", 0),
             failed_count=quality_data.get("failed_count", 0),
@@ -152,7 +152,7 @@ def _links_from_rows(rows: List) -> List[CausalLink]:
             needs_revalidation=quality_data.get("needs_revalidation", False),
             dependent_link_ids=quality_data.get("dependent_link_ids", []),
         )
-        links.append(CausalLink(
+        links.append(CorrelationLink(
             link_id=r["link_id"],
             from_event_id=r["from_event_id"],
             to_event_id=r["to_event_id"],
@@ -167,7 +167,7 @@ def _links_from_rows(rows: List) -> List[CausalLink]:
     return links
 
 
-def load_all_links() -> List[CausalLink]:
+def load_all_links() -> List[CorrelationLink]:
     """从 SQLite 加载所有因果链接"""
     _init_db()
     import sqlite3
@@ -180,7 +180,7 @@ def load_all_links() -> List[CausalLink]:
         conn.close()
 
 
-def _save_link(link: CausalLink):
+def _save_link(link: CorrelationLink):
     """保存单条链接到 SQLite"""
     import sqlite3
     _init_db()
@@ -205,7 +205,7 @@ def _save_link(link: CausalLink):
         conn.close()
 
 
-def _rewrite_links(links: List[CausalLink]):
+def _rewrite_links(links: List[CorrelationLink]):
     """全量重写 causal_links 表"""
     import sqlite3
     _init_db()
@@ -327,7 +327,7 @@ def _record_event_to_sqlite(event: dict):
         conn.close()
 
 
-def log_causal_event(task: str, result: Dict, decision: str, feedback: Optional[str] = None, outcome: Optional[bool] = None) -> Dict:
+def log_correlation_event(task: str, result: Dict, decision: str, feedback: Optional[str] = None, outcome: Optional[bool] = None) -> Dict:
     """
     快路径：记录一次判断作为因果事件
     - outcome: True=决策成功/正确, False=决策失败/错误
@@ -359,7 +359,7 @@ def log_causal_event(task: str, result: Dict, decision: str, feedback: Optional[
             add_causal_link(
                 from_event_id=prev_event["event_id"],
                 to_event_id=event["event_id"],
-                relation=CausalRelation.SIMILAR_TASK.value,
+                relation=CorrelationRelation.SIMILAR_TASK.value,
                 confidence=_task_similarity(prev_event["task"], task),
                 inferred=False,
             )
@@ -371,16 +371,16 @@ def log_causal_event(task: str, result: Dict, decision: str, feedback: Optional[
     return event
 
 
-def add_causal_link(
+def add_correlation_link(
     from_event_id: int,
     to_event_id: int,
     relation: str,
     confidence: float,
     inferred: bool = False,
-) -> CausalLink:
+) -> CorrelationLink:
     """Add a new causal link"""
     init()
-    link = CausalLink(
+    link = CorrelationLink(
         link_id=_next_link_id(),
         from_event_id=from_event_id,
         to_event_id=to_event_id,
@@ -389,20 +389,20 @@ def add_causal_link(
         timestamp=datetime.now().isoformat(),
         inferred=inferred,
         evolution_type=EvolutionType.CAPTURED.value,
-        quality=CausalLinkQuality(),
+        quality=CorrelationLinkQuality(),
     )
 
     _save_link(link)
     return link
 
 
-def capture_causal_link(
+def capture_correlation_link(
     from_event_id: int,
     to_event_id: int,
     relation: str,
     confidence: float,
     inferred: bool = True,
-) -> CausalLink:
+) -> CorrelationLink:
     """Capture a new causal link (alias for add_causal_link, matches OpenSpace naming)"""
     return add_causal_link(from_event_id, to_event_id, relation, confidence, inferred)
 
@@ -462,11 +462,11 @@ def mark_cascade_revalidation(link_id: int):
     _rewrite_links(all_links)
 
 
-def fix_causal_link(
+def fix_correlation_link(
     link_id: int,
     new_confidence: Optional[float] = None,
     new_relation: Optional[str] = None,
-) -> CausalLink:
+) -> CorrelationLink:
     """
     FIX 模式：就地修正现有因果链接
     对应 OpenSpace FIX 进化模式
@@ -492,13 +492,13 @@ def fix_causal_link(
     return link
 
 
-def derive_causal_link(
+def derive_correlation_link(
     parent_link_id: int,
     from_event_id: int,
     to_event_id: int,
     relation: str,
     confidence: float,
-) -> CausalLink:
+) -> CorrelationLink:
     """
     DERIVED 模式：从父链接衍生特定场景版本
     对应 OpenSpace DERIVED 进化模式
@@ -560,7 +560,7 @@ def suggest_evolution() -> List[EvolutionSuggestion]:
     return suggestions
 
 
-def get_links_needing_revalidation() -> List[CausalLink]:
+def get_links_needing_revalidation() -> List[CorrelationLink]:
     """获取所有需要重新验证的链接"""
     all_links = load_all_links()
     return [l for l in all_links if l.quality.needs_revalidation]
@@ -583,7 +583,7 @@ def _apply_time_decay(confidence: float, last_used: str) -> float:
         return confidence
 
 
-def _calculate_effective_confidence(link: CausalLink) -> float:
+def _calculate_effective_confidence(link: CorrelationLink) -> float:
     """
     聚活独特技术：计算有效置信度
     - 应用时间衰减
@@ -601,7 +601,7 @@ def _calculate_effective_confidence(link: CausalLink) -> float:
     return min(conf, 1.0)
 
 
-def recall_causal_history(task: str, max_events: int = 3) -> Dict:
+def recall_correlation_history(task: str, max_events: int = 3) -> Dict:
     """
     聚活因果召回（独特技术：时间衰减+个人优先级）
     
@@ -693,7 +693,7 @@ def recall_causal_history(task: str, max_events: int = 3) -> Dict:
     }
 
 
-def infer_daily_causal_chains() -> int:
+def infer_daily_correlation_chains() -> int:
     """
     聚活独特技术：快慢双流 → 慢路径每日扫描推断跨事件因果链
     快路径只记录事件和直接链接，慢路径批量找潜在因果关系，自动补全图谱
@@ -735,7 +735,7 @@ def infer_daily_causal_chains() -> int:
                     capture_causal_link(
                         from_event_id=e1["event_id"],
                         to_event_id=e2["event_id"],
-                        relation=CausalRelation.INFLUENCES.value,
+                        relation=CorrelationRelation.INFLUENCES.value,
                         confidence=sim * 0.8,  # 推断置信度打八折
                         inferred=True,  # 慢路径推断标记
                     )
@@ -745,11 +745,11 @@ def infer_daily_causal_chains() -> int:
     return new_links
 
 
-def get_stats() -> CausalStats:
+def get_stats() -> CorrelationStats:
     """获取因果记忆统计信息"""
     events = load_all_events()
     links = load_all_links()
-    return CausalStats(
+    return CorrelationStats(
         total_events=len(events),
         total_links=len(links),
         inferred_links=sum(1 for l in links if l.inferred),
@@ -759,12 +759,12 @@ def get_stats() -> CausalStats:
     )
 
 
-def get_statistics() -> CausalStats:
+def get_statistics() -> CorrelationStats:
     """别名兼容 __init__.py 导出"""
     return get_stats()
 
 
-def scan_low_quality_links() -> List[CausalLink]:
+def scan_low_quality_links() -> List[CorrelationLink]:
     """扫描低质量链接（对应 OpenSpace 指标监控）"""
     all_links = load_all_links()
     return [
@@ -962,7 +962,7 @@ def batch_causal_inference(limit: int = 100) -> Dict:
     1. 扫描近期judgment_chains（含outcome的已完成判断）
     2. 按 task_domain 聚类
     3. 同一领域内：统计 action_type → outcome 的共现频率
-    4. 高频共现 → 建立/更新 CausalLink
+    4. 高频共现 → 建立/更新 CorrelationLink
     5. 结果写入 causal_links.jsonl + 更新 dimension_beliefs
 
     这是"慢路径"：每天跑一次，不在每次判断时调用。
@@ -1059,13 +1059,13 @@ def batch_causal_inference(limit: int = 100) -> Dict:
                         existing["confidence"] = max(existing.get("confidence", 0), confidence)
                         results["links_updated"] += 1
                     else:
-                        # 新建因果链
-                        new_link = CausalLink(
+                        # 新建关联链
+                        new_link = CorrelationLink(
                             from_event_type=action[:80],
                             to_event_type=outcome[:80],
-                            relation=CausalRelation.CAUSES,
+                            relation=CorrelationRelation.CAUSES,
                             confidence=confidence,
-                            quality=CausalLinkQuality.MEDIUM,
+                            quality=CorrelationLinkQuality(),
                             domain=domain[:40],
                             evidence_count=len(scores),
                         )

@@ -28,7 +28,7 @@ from openspace_evolution import (
 )
 from execution_analyzer import ExecutionAnalyzer
 from feedback_system.feedback_system import Feedback
-# CausalMemory module doesn't have a class CausalMemory, use module-level functions
+# CorrelationMemory module doesn't have a class CorrelationMemory, use module-level functions
 from correlation_memoryNone import find_similar_events
 
 

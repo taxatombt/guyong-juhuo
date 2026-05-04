@@ -74,7 +74,7 @@ def main():
     print("  - Chat")
     print("  - Judgment (10D)")
     print("  - LLM Console")
-    print("  - Causal Memory")
+    print("  - Correlation Memory")
     print("  - OpenSpace")
     print()
     print("  Press Ctrl+C to stop")

@@ -65,7 +65,7 @@ def build_causal_chain(result):
     }
 
 def format_causal_report(chain_result):
-    lines = ["=== Causal Chain Report ===", ""]
+    lines = ["=== Correlation Chain Report ===", ""]
     lines.append("Task: " + chain_result.get("task", "")[:60])
     lines.append("Summary: " + chain_result.get("summary", ""))
     lines.append("")
