@@ -20,24 +20,26 @@ guyong-juhuo 是一个 **12子系统 AI Agent 框架**，基于 LLM 后端（Min
 
 ## 12 个子系统
 
-| # | 子系统 | 功能 |
-|---|--------|------|
-| 1 | **Judgment** | 十维并行评估（认知 · 博弈论 · 经济 · 辩证 · 情绪 · 直觉 · 道德 · 社会 · 时间折扣 · 元认知）；biography 个性化注入 + intent router 意图分流 |
-| 2 | **Correlation Memory** | 时序关联记忆：快路径日志 + 慢路径因果推断（聚类→共现统计→CausalLink）；morning_routine follow-up 触发 outcome 闭环 |
-| 3 | **Curiosity Engine** | 双随机游走（80% 目标驱动 / 20% 自由探索），Ralph 循环终止 |
-| 4 | **Goal System** | 洋葱分层：5年 → 年度 → 月度 → 周 → 今日 |
-| 5 | **Self-Model** | 贝叶斯盲点追踪：积累"我容易在这里犯错" |
-| 6 | **Emotion System** | PAD 三维模型（愉悦 × 唤醒 × 支配）；情绪是信号，不是噪音 |
-| 7 | **Self-Evolution** | 闭环：receive_actual_choice → receive_verdict → 维度权重更新；predict_outcome + morning follow-up 确保 verdict 真正改变行为 |
-| 8 | **Output System** | 决定什么时候说话、什么时候沉默；P0-P4 优先级格式化 |
-| 9 | **Action System** | 四象限紧急度 × 重要性排序 + 执行信号生成 |
-| 10 | **Perception Layer** | 注意力过滤器 + Web + PDF + RSS + 邮件适配器 |
-| 11 | **Skill Evolution** | 自动检测技能冲突 + 自主改进低性能技能 |
-| 12 | **Feedback System** | 双循环：判断层 + 进化层，5层自我防御钩子 |
+**图例：** ✅ 核心（闭环跑通，有验证数据） · 🟡 优化（逻辑完整，参数/边界条件待调） · ⚪ 待验证（代码完成，未实际运行）
+
+| # | 状态 | 子系统 | 功能 |
+|---|------|--------|------|
+| 1 | ✅ | **Judgment** | 十维并行评估；biography 个性化注入 + intent router；metacognitive=9维标准差元监控 |
+| 2 | ✅ | **Correlation Memory** | 快路径日志 + 慢路径因果推断；morning_routine follow-up 触发 outcome 闭环 |
+| 6 | ✅ | **Emotion System** | PAD 三维模型；情绪是信号，调制10维信心度 |
+| 7 | ✅ | **Self-Evolution** | receive_actual_choice → receive_verdict → 维度权重更新；predict_outcome + morning follow-up |
+| 3 | 🟡 | **Curiosity Engine** | 双随机游走（80%目标驱动/20%自由探索），Ralph 循环终止 |
+| 4 | 🟡 | **Goal System** | 洋葱分层：5年 → 年度 → 月度 → 周 → 今日；自我模型驱动目标更新 |
+| 5 | 🟡 | **Self-Model** | 贝叶斯盲点追踪；积累"我容易在这里犯错"；关联记忆触发更新 |
+| 8 | 🟡 | **Output System** | 决定什么时候说话、什么时候沉默；P0-P4 优先级格式化 |
+| 9 | 🟡 | **Action System** | 四象限紧急度 × 重要性排序 + 执行信号生成 |
+| 12 | 🟡 | **Feedback System** | 双循环：判断层 + 进化层，5层自我防御钩子 |
+| 11 | ⚪ | **Skill Evolution** | 自动检测技能冲突 + 自主改进低性能技能；待实际运行验证 |
+| 10 | ⚪ | **Perception Layer** | 注意力过滤器 + Web + PDF + RSS + 邮件适配器；适配器待接入真实数据 |
+
+**三档说明：** ✅ 核心 = 闭环跑通，有验证数据 · 🟡 优化 = 逻辑完整，参数/边界条件待调 · ⚪ 待验证 = 代码完成，未实际运行
 
 ---
-
-## 两种模式
 
 | 模式 | 说明 |
 |------|------|
@@ -406,7 +408,7 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 
 **慢路径因果推断（结构性修复 #2）：**
 - `correlation_memory.py`：`batch_causal_inference()` 扫描已完成 judgment，统计 action→outcome 共现
-- `>=2次共现+avg_score>0.6` → 建立 `CausalLink`
+- `>=2次共现+avg_score>0.6` → 建立 `CorrelationLink`
 - 新增 `run_slow_path()`：cron 入口，批量推断+深度压缩+自模型通知
 
 **verdict 真正改变行为（结构性修复 #3）：**
@@ -423,9 +425,10 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 - 精力/情绪/待办 → 10 维判断 → 推荐 → 实际执行 → verdict 反馈
 - `_follow_up_pending_outcomes()`：早晨自动 follow-up
 
-**causal_memory → correlation_memory（诚实命名）：**
-- 内部类/函数名保留 "Causal" 前缀（降低影响范围）
-- 33 处 import 全部更新
+**causal_memory → correlation_memory（彻底重命名）：**
+- 所有类/函数/变量名：`Causal*` → `Correlation*`（CausalRelation / CausalLink / CausalInferenceEngine 等）
+- `__init__.py` 向后兼容别名：`CausalInferenceEngine` → `CorrelationInferenceEngine`
+- 外部引用（router.py / hermes_integration / juhuo.py）全部更新
 
 ### v2.2.1 (2026-04-24) — Hermes Guide P0 落地
 
