@@ -28,6 +28,9 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
+import logging
+
+_log = logging.getLogger("goal_system")
 from pathlib import Path
 
 # 文件路径
@@ -289,6 +292,87 @@ def format_hierarchy(gs: GoalSystem) -> str:
 
 # 单例
 _goal_system_instance = None
+
+
+def notify_self_model_update(bias_dimension: str, bias_description: str, confidence: float, is_new: bool = True):
+    """
+    空链修复：Self-Model → Goal System
+    当自我模型发现新偏差或高置信度偏差时，通知目标系统建议调整目标。
+    
+    例如：发现"temporal"维度频繁失误 → 建议添加"改善时间管理"的目标
+    """
+    try:
+        gs = get_goal_system()
+        # 高置信度偏差（>=0.6）→ 建议添加对齐目标
+        if confidence >= 0.6:
+            suggestion = _build_bias_goal_suggestion(bias_dimension, bias_description)
+            if suggestion:
+                _log.info(f"[GoalSystem] 收到自我模型偏差通知: {bias_dimension} (置信度={confidence:.2f})")
+                # 将建议追加到目标文件（人工确认后可激活）
+                _append_goal_suggestion(suggestion)
+    except Exception as e:
+        _log.debug(f"[GoalSystem] 自我模型通知跳过: {e}")
+
+
+def _build_bias_goal_suggestion(dim: str, desc: str) -> Optional[dict]:
+    """根据偏差维度生成目标建议"""
+    goal_templates = {
+        "temporal": {
+            "description": f"改善时间管理能力（{desc}）",
+            "keywords": ["时间管理", "deadline", "长期规划"],
+            "type": "annual",
+        },
+        "emotional": {
+            "description": f"提升情绪管理能力（{desc}）",
+            "keywords": ["情绪", "压力", "心态"],
+            "type": "annual",
+        },
+        "cognitive": {
+            "description": f"增强认知分析能力（{desc}）",
+            "keywords": ["认知", "分析", "信息处理"],
+            "type": "annual",
+        },
+        "moral": {
+            "description": f"完善价值观判断（{desc}）",
+            "keywords": ["道德", "价值观", "伦理"],
+            "type": "five_year",
+        },
+    }
+    template = goal_templates.get(dim)
+    if not template:
+        template = {
+            "description": f"改善{dim}维度判断能力（{desc}）",
+            "keywords": [dim, "判断力", "能力提升"],
+            "type": "annual",
+        }
+    return template
+
+
+def _append_goal_suggestion(suggestion: dict):
+    """将目标建议追加到待确认列表"""
+    suggestions_file = Path(__file__).parent / "goal_suggestions.json"
+    suggestions = []
+    if suggestions_file.exists():
+        try:
+            suggestions = json.loads(suggestions_file.read_text(encoding="utf-8"))
+        except Exception:
+            suggestions = []
+    # 去重
+    for s in suggestions:
+        if s.get("description") == suggestion.get("description"):
+            return
+    suggestions.append(suggestion)
+    suggestions_file.write_text(json.dumps(suggestions, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 空链修复：Goal System → Curiosity
+    # 新目标建议 → 触发好奇心引擎探索实现路径
+    try:
+        from curiosity.curiosity_engine import trigger_from_goal
+        goal_desc = suggestion.get("description", "")
+        trigger_from_goal(goal_desc, suggestion.get("keywords"))
+        _log.info(f"[GoalSystem] 触发好奇心探索: {goal_desc[:50]}")
+    except Exception as e:
+        _log.debug(f"[GoalSystem] 好奇心触发跳过: {e}")
 
 
 def get_goal_system() -> GoalSystem:

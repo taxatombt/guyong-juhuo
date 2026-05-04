@@ -872,3 +872,46 @@ def activate_from_emotion(emotion_result: Dict) -> Optional[CuriosityItem]:
     except Exception as e:
         print(f"[Curiosity] activate_from_emotion 错误: {e}")
         return None
+
+
+def trigger_from_goal(goal_description: str, goal_keywords: Optional[List[str]] = None) -> Optional[CuriosityItem]:
+    """
+    空链修复：Goal System → Curiosity
+    当新目标建议生成时，触发好奇心探索实现路径。
+    
+    例如：发现"temporal"维度频繁失误 → 建议"改善时间管理"
+           → 好奇心探索"如何改善时间管理？关键步骤和常见陷阱"
+    """
+    try:
+        keywords = goal_keywords or []
+        # 提取主题：从关键词列表取第一个，或从描述前30字
+        topic = keywords[0] if keywords else goal_description[:30]
+        
+        question = f"如何实现目标：{goal_description}？有哪些关键步骤和常见陷阱？"
+        
+        engine = CuriosityEngine()
+        # 使用对齐目标路径（goal_aligned），优先级高
+        aligned = engine._check_relevance(topic) if hasattr(engine, '_check_relevance') else True
+        
+        item = CuriosityItem(
+            id=int(time.time() * 1000) % 1000000,
+            question=question,
+            topic=topic,
+            trigger=TriggerInfo(
+                trigger_type="goal_aligned",
+                description=f"目标系统建议: {goal_description[:50]}",
+            ),
+            priority_level=3,  # 高优先级：目标对齐
+            aligned_to_long_term=True,
+            serves_current_task=None,
+            created_at=datetime.now().isoformat(),
+            status="open",
+        )
+        
+        engine.items.append(item)
+        engine._sort()
+        engine._save()
+        return item
+    except Exception as e:
+        print(f"[Curiosity] trigger_from_goal 错误: {e}")
+        return None

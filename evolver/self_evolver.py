@@ -317,6 +317,17 @@ class SelfEvolver:
         # Phase 4: 输出
         summary = self.summarize()
 
+        # 空链修复：Evolver → Skill Evolution
+        # 进化后生成新规则 → 检查是否有技能需要相应调整
+        if lessons_added > 0:
+            try:
+                from skills.skill_evolver import generate_suggestions
+                suggestions = generate_suggestions()
+                if suggestions:
+                    summary += f"\n[Evolver→SkillEvolution] 发现 {len(suggestions)} 条技能改进建议"
+            except Exception:
+                pass
+
         return EvolutionResult(
             timestamp=time.time(),
             phase="complete",

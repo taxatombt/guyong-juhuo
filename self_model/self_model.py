@@ -232,6 +232,21 @@ def update_from_feedback(event) -> Optional[KnownBias]:
                 )
 
     save_model(model)
+
+    # 空链修复：Self-Model → Goal System
+    # 高置信度偏差（>=0.5）→ 通知目标系统建议调整目标
+    if updated_bias is not None and updated_bias.confidence >= 0.5:
+        try:
+            from goal_system.goal_system import notify_self_model_update
+            notify_self_model_update(
+                bias_dimension=updated_bias.dimension,
+                bias_description=updated_bias.description,
+                confidence=updated_bias.confidence,
+                is_new=(updated_bias.mistake_count == 1),
+            )
+        except Exception:
+            pass  # goal_system 可能未初始化，不阻塞 self_model
+
     return updated_bias
 
 
