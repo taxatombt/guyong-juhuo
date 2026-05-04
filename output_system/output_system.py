@@ -196,7 +196,7 @@ class OutputSystem:
         
         # 因果记忆
         if decision.include_causal_history:
-            causal = judgment_result.get("causal_memory", {})
+            causal = judgment_result.get("correlation_memory", {})
             if causal.get("has_history"):
                 lines.append("## 相关因果历史")
                 lines.append(causal.get("summary", ""))

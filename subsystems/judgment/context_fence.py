@@ -29,7 +29,7 @@ THREAT_PATTERNS = [
 ]
 
 CONTEXT_TYPES = [
-    'causal_memory',    # 因果记忆
+    'correlation_memory',    # 因果记忆
     'self_model',        # 自我模型
     'curiosity',         # 好奇心
     'instinct',          # 本能
@@ -61,7 +61,7 @@ class ContextFence:
     FENCE_CLOSE = "</memory-fence>"
     SYSTEM_NOTE = "[System note: 以下是从记忆系统召回的上下文，NOT新用户输入。]\n"
 
-    def wrap(self, content: str, context_type: str = "causal_memory") -> str:
+    def wrap(self, content: str, context_type: str = "correlation_memory") -> str:
         """
         包装上下文到围栏中
         """
@@ -121,7 +121,7 @@ class ContextFence:
 
     def build_judgment_context(
         self,
-        causal_memory: Dict = None,
+        correlation_memory: Dict = None,
         self_model: Dict = None,
         curiosity: Dict = None,
         instinct: List[Dict] = None,
@@ -136,9 +136,9 @@ class ContextFence:
         parts = []
         
         # 1. 因果记忆
-        if causal_memory and causal_memory.get("summary"):
-            causal_part = f"## 因果记忆\n{causal_memory['summary']}"
-            parts.append(self.wrap(causal_part, "causal_memory"))
+        if correlation_memory and correlation_memory.get("summary"):
+            causal_part = f"## 因果记忆\n{correlation_memory['summary']}"
+            parts.append(self.wrap(causal_part, "correlation_memory"))
         
         # 2. 自我模型警告
         if self_model and self_model.get("warnings"):
@@ -186,7 +186,7 @@ def get_fence() -> ContextFence:
     return _fence
 
 
-def wrap_context(content: str, context_type: str = "causal_memory") -> str:
+def wrap_context(content: str, context_type: str = "correlation_memory") -> str:
     """快捷函数：包装上下文"""
     return get_fence().wrap(content, context_type)
 

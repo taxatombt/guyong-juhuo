@@ -126,11 +126,11 @@ class LifeCycleHooks:
         
         # 因果记忆召回
         try:
-            from causal_memory.causal_memory import recall_causal_history
+            from correlation_memory.correlation_memory import recall_causal_history
             causal = recall_causal_history(query, max_events=3)
-            context["causal_memory"] = causal
+            context["correlation_memory"] = causal
         except:
-            context["causal_memory"] = {}
+            context["correlation_memory"] = {}
         
         # Fitness召回
         try:
@@ -153,7 +153,7 @@ class LifeCycleHooks:
         try:
             from .context_fence import build_judgment_context
             fenced_context = build_judgment_context(
-                causal_memory=context.get("causal_memory"),
+                correlation_memory=context.get("correlation_memory"),
                 instinct=context.get("instinct"),
                 fitness=context.get("fitness"),
             )

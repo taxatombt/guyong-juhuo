@@ -12,7 +12,7 @@
 |------|------|
 | 检索方式 | `difflib.SequenceMatcher` 字符串相似度 |
 | 阈值 | `SIMILARITY_THRESHOLD = 0.65` |
-| 数据源 | `causal_memory/events.db` (SQLite) |
+| 数据源 | `correlation_memory/events.db` (SQLite) |
 | 函数 | `find_similar_events(task, max_results=3)` |
 
 ---

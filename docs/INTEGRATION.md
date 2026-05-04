@@ -17,10 +17,10 @@ router/check10d(task_text)
         task, complexity, must_check, important, skipped,
         questions, answers, conclusion,
         meta: {checked, total_dims},
-        causal_memory: {events},
+        correlation_memory: {events},
     }
     ↓
-causal_memory/log_causal_event(task, result, decision)
+correlation_memory/log_causal_event(task, result, decision)
     ↓
     Event {event_id, task, timestamp, ...} → 写入 causal_events.jsonl (快路径)
     ↓
@@ -89,11 +89,11 @@ mark_action_completed(
 
 ---
 
-### feedback_system → causal_memory / self_model / emotion_system
+### feedback_system → correlation_memory / self_model / emotion_system
 
 **更新路径：**
 
-1. **到 causal_memory：**
+1. **到 correlation_memory：**
 ```python
 # feedback_system/update_causal_event_feedback
 # 直接重写 causal_events.jsonl，给对应 event 加上 feedback 字段
@@ -173,7 +173,7 @@ sys.path.insert(0, '.')
 
 from perception.attention_filter import AttentionFilter, IncomingMessage
 from router import check10d
-from causal_memory import log_causal_event
+from correlation_memory import log_causal_event
 from self_model import get_self_warnings
 from curiosity.curiosity_engine import CuriosityEngine
 from goal_system.goal_system import get_goal_system
@@ -224,7 +224,7 @@ add_feedback(
     feedback_text="这次判断不对，因为...",
     is_correct=False,
 )
-# → 自动更新 causal_memory / self_model / emotion_system
+# → 自动更新 correlation_memory / self_model / emotion_system
 # → 闭环完成
 ```
 

@@ -28,7 +28,7 @@ except ImportError:
     import os
     PATHS = {"DATA": os.path.join(os.path.dirname(__file__), "..", "data")}
 from judgment.dimensions import DIMENSIONS
-from causal_memory import recall_causal_history, inject_to_judgment_input, find_similar_events, init
+from correlation_memoryNone import recall_causal_history, inject_to_judgment_input, find_similar_events, init
 from judgment.closed_loop import start_verdict_listener
 from judgment.self_evolver import start_evolver_scheduler
 
@@ -155,13 +155,13 @@ def _ensure_started():
 
 # 兼容旧接口命名
 class _CausalMemoryCompat:
-    """兼容层：让 causal_memory 作为可调用对象访问模块级函数"""
+    """兼容层：让 correlation_memory 作为可调用对象访问模块级函数"""
     def recall_causal_history(self, task, max_events=3):
         return recall_causal_history(task, max_events)
     def inject_to_judgment_input(self, task):
         return inject_to_judgment_input(task)
 
-causal_memory = _CausalMemoryCompat()
+correlation_memory = _CausalMemoryCompat()
 from self_model.self_model import get_self_warnings
 from curiosity.curiosity_engine import CuriosityEngine, trigger_from_low_confidence
 from emotion_system.emotion_system import EmotionSystem
@@ -187,7 +187,7 @@ from judgment.biography import get_context as get_bio_context, extract_from_text
 from judgment.pets import update_from_emotion, pet_to_prompt, get_status_summary, interact as _pet_interact, get_pet as _get_pet
 
 # P0改进：因果推断引擎 - 给judgment提供推理底座
-from causal_memory.causal_inference import CausalInferenceEngine, infer_causal_chain
+from correlation_memory.correlation_inference import CausalInferenceEngine, infer_causal_chain
 
 # P3改进：十维推理规则引擎
 from .judgment_rules import rule_based_precheck, get_rule_scores
@@ -443,7 +443,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         "answers": answers,
         "agent_profile": agent_profile,
         # causal_result 可能为空字典（run_pipeline 未填充 → 用 .get() 兜底）
-        "causal_memory": (causal_result if isinstance(causal_result, dict) else {}) and {
+        "correlation_memory": (causal_result if isinstance(causal_result, dict) else {}) and {
             "has_history": (causal_result.get("summary") if isinstance(causal_result, dict) else None) is not None,
             "similar_events": (causal_result.get("similar_events") if isinstance(causal_result, dict) else None) or [],
             "causal_chains": (causal_result.get("causal_chains") if isinstance(causal_result, dict) else None) or [],
@@ -461,7 +461,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
         "fenced_context": fenced_context,
         # Hermes启发：Hook召回的上下文
         "hook_context": {
-            "causal_memory": hook_context.get("causal_memory"),
+            "correlation_memory": hook_context.get("correlation_memory"),
             "fitness": hook_context.get("fitness"),
             "instinct": hook_context.get("instinct"),
             "low_confidence_dims": hook_context.get("low_confidence_dims"),
@@ -549,7 +549,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
                 situation=ctx.original_task,
                 judgment_dimensions=must + important
             )
-            _ret["causal_memory"]["causal_inference"] = {
+            _ret["correlation_memory"]["causal_inference"] = {
                 "best_explanation": causal_infer.best_explanation,
                 "reasoning_chain": causal_infer.reasoning_chain,
                 "confidence": causal_infer.confidence,

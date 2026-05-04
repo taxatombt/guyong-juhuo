@@ -14,7 +14,7 @@
 |---|------|------|------|---------|------|
 | ① | **底座层** | 信息接收 | `perception/` | 怎么知道世界在发生什么？ | ✅ 完成 |
 | ② | **底座层** | 判断系统 | `judgment/` | 遇到两难怎么想？ | ✅ 完成 |
-| ③ | **底座层** | 因果记忆 | `causal_memory/` | 过去如何影响现在？ | ✅ 完成 |
+| ③ | **底座层** | 因果记忆 | `correlation_memory/` | 过去如何影响现在？ | ✅ 完成 |
 | ④ | **生长层** | 自我模型 | `self_model/` | 我的盲区在哪？ | ✅ 完成 |
 | ⑤ | **生长层** | 好奇心引擎 | `curiosity/` | 主动探索什么？ | ✅ 完成 |
 | ⑥ | **生长层** | 目标系统 | `goal_system/` | 五年方向是什么？ | ✅ 完成 |
@@ -30,7 +30,7 @@
 ```mermaid
 flowchart LR
     A[perception/ 信息接收<br>注意力过滤，去掉噪音] --> B[judgment/ 判断<br>十维框架分析问题]
-    B --> C[causal_memory/ 因果记忆<br>记录当前判断 + 召回历史因果注入上下文]
+    B --> C[correlation_memory/ 因果记忆<br>记录当前判断 + 召回历史因果注入上下文]
     C --> D[self_model/ 自我模型<br>从历史提取偏差，带前因后果提醒]
     C --> E[emotion_system/ 情感系统<br>检测情绪信号，注入上下文]
     D --> F{触发好奇?<br>置信度低 / 因果不匹配 / 目标对齐}
@@ -76,8 +76,8 @@ guyong-juhuo/
 ├── judgment/            # ② 判断系统：十维分析框架
 │   ├── dimension_*.py  # 十个维度单独实现
 │   └── router.py       # 主入口 check10d()
-├── causal_memory/       # ③ 因果记忆系统：快慢双流
-│   └── causal_memory.py
+├── correlation_memory/       # ③ 因果记忆系统：快慢双流
+│   └── correlation_memory.py
 ├── self_model/          # ④ 自我模型：总结偏差和优势
 │   └── self_model.py
 ├── curiosity/           # ⑤ 好奇心引擎：触发+排序
@@ -105,7 +105,7 @@ guyong-juhuo/
 ## 依赖顺序（从上到下，下层不依赖上层）
 
 ```
-perception → judgment → causal_memory → self_model → curiosity ← goal_system
+perception → judgment → correlation_memory → self_model → curiosity ← goal_system
                                     ↓
                                emotion_system
                                     ↓
@@ -115,7 +115,7 @@ perception → judgment → causal_memory → self_model → curiosity ← goal_
                                     ↓
                                feedback_system
                                     ↓
-                               causal_memory  # 闭环回流
+                               correlation_memory  # 闭环回流
 ```
 
 ---

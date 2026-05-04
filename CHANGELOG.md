@@ -93,7 +93,7 @@ All notable changes to this project will be documented in this file.
   - `to_prompt()`: 结构化格式 `[PROFILE: priority=X, source=Y, recency=Z, claim="...", flag=Z]`
 
 ### Fixed
-- **pipeline.py 死代码清理** — `inject_biography`/`inject_experiences`/`inject_causal_memory` 定义删除，325→265行
+- **pipeline.py 死代码清理** — `inject_biography`/`inject_experiences`/`inject_correlation_memory` 定义删除，325→265行
 - **perception_intents 表路径** — `_pi_db == _juhuo_db` 确认，`perception_intents` 在 `data/juhuo.db`
 
 ### Changed
@@ -274,7 +274,7 @@ juhuo/
 │   ├── compactor_v2.py
 │   ├── openclaw_hooks.py
 │   └── session.py
-├── causal_memory/     # 因果记忆
+├── correlation_memory/     # 因果记忆
 ├── self_model/        # 自我模型
 ├── skills/           # Skills 自进化
 ├── llm_adapter/      # LLM 适配器 + 限流

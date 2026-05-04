@@ -426,7 +426,7 @@ class CuriosityEngine:
         
         # 回流因果记忆：把探索结果作为一个事件节点写入
         try:
-            from causal_memory.causal_memory import log_causal_event
+            from correlation_memory.correlation_memory import log_causal_event
         except ImportError:
             # 尝试绝对导入路径
             import sys, os
@@ -434,7 +434,7 @@ class CuriosityEngine:
             if pkg_dir not in sys.path:
                 sys.path.insert(0, pkg_dir)
             try:
-                from causal_memory.causal_memory import log_causal_event
+                from correlation_memory.correlation_memory import log_causal_event
             except ImportError:
                 log_causal_event = None  # 跳过因果记忆记录
         item = self._get_item(item_id)

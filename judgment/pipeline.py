@@ -1,7 +1,7 @@
 """
 pipeline.py — Judgment Pipeline 编排层
 
-单一汇聚：inject_unified_profile = 三路（biography + experiences + causal_memory）
+单一汇聚：inject_unified_profile = 三路（biography + experiences + correlation_memory）
           + 矛盾检测 + 时间衰减
 
 router.py 只调用 run_pipeline：
@@ -276,7 +276,7 @@ def run_pipeline(ctx: JudgmentContext) -> JudgmentContext:
       3. inject_self_model     — 动态权重 prior_adjustments
       4. inject_user_model     — 补全矛盾标记 + 向后兼容
 
-    注意：三个旧injector(inject_biography/inject_experiences/inject_causal_memory)
+    注意：三个旧injector(inject_biography/inject_experiences/inject_correlation_memory)
           已物理删除，仅通过 inject_unified_profile 调用。
     """
     ctx = inject_emotion(ctx)

@@ -6,7 +6,7 @@ topology.py — 因果链拓扑遍历层
 灵感来源：豆包 MAGMA 因果图谱 + Codex Matcher 拓扑路径
 
 功能：
-1. 从 causal_memory 加载因果链，构建拓扑图
+1. 从 correlation_memory 加载因果链，构建拓扑图
 2. 按拓扑顺序遍历，找出因果路径
 3. 对检索查询计算拓扑相关度分数
 """
@@ -69,14 +69,14 @@ class CausalTopology:
         self.nodes: Dict[int, CausalNode] = {}
         self.edges_out: Dict[int, List[CausalEdge]] = {}  # from_id -> edges
         self.edges_in: Dict[int, List[CausalEdge]] = {}   # to_id -> edges
-        self._load_from_causal_memory()
+        self._load_from_correlation_memory()
 
-    def _load_from_causal_memory(self):
-        """从 causal_memory 加载因果链，构建拓扑图"""
+    def _load_from_correlation_memory(self):
+        """从 correlation_memory 加载因果链，构建拓扑图"""
         try:
             import sqlite3
             from pathlib import Path as P
-            db_path = P(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+            db_path = P(__file__).parent.parent / "data" / "correlation_memory" / "events.db"
             if not db_path.exists():
                 return
             conn = sqlite3.connect(str(db_path))
@@ -117,7 +117,7 @@ class CausalTopology:
 
             conn.close()
         except Exception:
-            # causal_memory 可能还没初始化，优雅降级
+            # correlation_memory 可能还没初始化，优雅降级
             pass
 
     def _extract_tags(self, text: str) -> List[str]:

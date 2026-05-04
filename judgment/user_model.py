@@ -6,7 +6,7 @@ user_model.py — UserModel 汇聚层
 架构：
   biography.py (L1) ---+
   experiences.py (L2) --+---> UserModel.get_context() ---> router.py
-  causal_memory (L3) --+
+  correlation_memory (L3) --+
 
 主要能力：
 - 矛盾检测：L1 声称 vs L2 行为模式
@@ -189,7 +189,7 @@ class UserModel:
 
     def __init__(self, user_id: str = "default"):
         self.user_id = user_id
-        self._bio_db = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+        self._bio_db = Path(__file__).parent.parent / "data" / "correlation_memory" / "events.db"
         self._juhuo_db = Path(__file__).parent.parent / "data" / "juhuo.db"
         self._pi_db = self._juhuo_db
         self._profile_entries: List[ProfileEntry] = []
@@ -405,15 +405,15 @@ class UserModel:
             finally:
                 conn.close()
 
-        # 来源3：causal_memory（兜底）
+        # 来源3：correlation_memory（兜底）
         try:
-            from causal_memory import recall_causal_history
+            from correlation_memoryNone import recall_causal_history
             result = recall_causal_history(task_text)
             for chain in (result.get("causal_chains") or [])[:3]:
                 _add(
                     topic=chain.get("situation_type", "unknown"),
                     summary=chain.get("conclusion", ""),
-                    source="causal_memory",
+                    source="correlation_memory",
                     relevance=0.5,
                     recency=chain.get("created_at", ""),
                 )
@@ -740,7 +740,7 @@ def update_profile_on_contradiction(contradiction: Contradiction, ctx: UnifiedCo
     penalty = severity_map.get(contradiction.severity, 0)
     if not penalty:
         return False
-    bio_db = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+    bio_db = Path(__file__).parent.parent / "data" / "correlation_memory" / "events.db"
     if not bio_db.exists():
         return False
     conn = None

@@ -61,7 +61,7 @@ def tool_save_reference_memory(content: str, reference_type: str, source: str) -
 
 def tool_log_causal_event(event_type: str, description: str, metadata: Optional[Dict] = None) -> MemoryToolResult:
     try:
-        from causal_memory import log_causal_event
+        from correlation_memoryNone import log_causal_event
         event = log_causal_event(event_type, description, metadata)
         return MemoryToolResult(success=True, result={"id": event.id})
     except Exception as e:
@@ -70,7 +70,7 @@ def tool_log_causal_event(event_type: str, description: str, metadata: Optional[
 
 def tool_add_causal_link(cause_id: str, effect_id: str, relation: str) -> MemoryToolResult:
     try:
-        from causal_memory import add_causal_link
+        from correlation_memoryNone import add_causal_link
         link = add_causal_link(cause_id, effect_id, relation)
         return MemoryToolResult(success=True, result={"id": link.id})
     except Exception as e:
@@ -79,7 +79,7 @@ def tool_add_causal_link(cause_id: str, effect_id: str, relation: str) -> Memory
 
 def tool_recall_causal_history(event_id: str, depth: int = 3) -> MemoryToolResult:
     try:
-        from causal_memory import recall_causal_history
+        from correlation_memoryNone import recall_causal_history
         history = recall_causal_history(event_id, depth)
         return MemoryToolResult(success=True, result=history)
     except Exception as e:
@@ -88,7 +88,7 @@ def tool_recall_causal_history(event_id: str, depth: int = 3) -> MemoryToolResul
 
 def tool_get_memory_statistics() -> MemoryToolResult:
     try:
-        from causal_memory import get_statistics
+        from correlation_memoryNone import get_statistics
         stats = get_statistics()
         return MemoryToolResult(success=True, result=stats)
     except Exception as e:

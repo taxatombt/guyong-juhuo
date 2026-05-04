@@ -35,7 +35,7 @@ from pathlib import Path
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from causal_memory.causal_memory import load_all_events, load_all_links
+from correlation_memory.correlation_memory import load_all_events, load_all_links
 
 
 # 文件路径
@@ -154,7 +154,7 @@ def update_from_feedback(event) -> Optional[KnownBias]:
 
     兼容两种 event 格式：
     - 旧格式（其他模块）：feedback in ["坏","错"] + skipped=[dims]
-    - 新格式（causal_memory）：feedback_type="judgment_repeated_mistake/success"
+    - 新格式（correlation_memory）：feedback_type="judgment_repeated_mistake/success"
                            + wrong_dimensions=[dims]
 
     贝叶斯置信度公式：confidence = min(1.0, 0.2 + 0.16 * mistake_count)
@@ -183,7 +183,7 @@ def update_from_feedback(event) -> Optional[KnownBias]:
 
     # ── 提取维度列表 ─────────────────────────────────────────────
     if feedback_type.startswith("judgment_repeated"):
-        # 新格式：wrong_dimensions 来自 causal_memory 的 pattern 检测
+        # 新格式：wrong_dimensions 来自 correlation_memory 的 pattern 检测
         dims_to_blame = event.get("wrong_dimensions", [])
         dims_to_credit = [
             d for d in event.get("dimensions", []) if d not in dims_to_blame
@@ -235,7 +235,7 @@ def update_from_feedback(event) -> Optional[KnownBias]:
     return updated_bias
 
 
-def build_from_causal_memory():
+def build_from_correlation_memory():
     """
     聚活贝叶斯盲区追踪：从已有的因果记忆重建自我模型
     慢路径：每天跑一次，批量重建
@@ -295,7 +295,7 @@ def get_self_warnings(current_result, confidence_threshold: float = 0.5) -> Tupl
     - warnings: "你过去在这些维度容易错，注意" + 带出因果历史前因后果
     - strengths: "你过去在这些维度做得好"
     """
-    from causal_memory.causal_memory import find_similar_events
+    from correlation_memory.correlation_memory import find_similar_events
     
     model = load_model()
     warnings = []

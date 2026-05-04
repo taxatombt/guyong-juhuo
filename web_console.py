@@ -18,7 +18,7 @@ from judgment.logging_config import get_logger
 from judgment.pipeline import check10d_full, PipelineConfig, format_full_report
 from judgment.self_model.belief import get_belief_status
 from judgment.verdict_collector import get_verdict_stats
-from causal_memory.causal_chain import get_recent_chains
+from correlation_memory.correlation_chain import get_recent_chains
 
 log = get_logger("juhuo.web")
 

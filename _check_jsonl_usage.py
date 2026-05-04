@@ -1,6 +1,6 @@
 import os, re
 
-path = "E:\\juhuo\\causal_memory\\causal_memory.py"
+path = "E:\\juhuo\\correlation_memory\\correlation_memory.py"
 content = open(path, encoding="utf-8", errors="ignore").read()
 
 # Find all usages of CAUSAL_EVENTS_FILE / CAUSAL_LINKS_FILE / jsonl

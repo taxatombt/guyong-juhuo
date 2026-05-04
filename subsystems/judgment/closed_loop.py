@@ -323,9 +323,9 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
 
             pass
 
-        # 【闭环Step1】judgment → causal_memory
+        # 【闭环Step1】judgment → correlation_memory
 
-        _trigger_causal_memory(chain_id,task_text,dims_data.get("dims",[]),dims_data.get("weights",{}),correct,notes,1.0 if correct else 0.0)
+        _trigger_correlation_memory(chain_id,task_text,dims_data.get("dims",[]),dims_data.get("weights",{}),correct,notes,1.0 if correct else 0.0)
 
         
 
@@ -434,11 +434,11 @@ def _trigger_curiosity(chain_id,task_text,correct,changes):
 
 
 
-def _trigger_causal_memory(chain_id, task_text, dimensions, weights, correct, notes, outcome_value):
+def _trigger_correlation_memory(chain_id, task_text, dimensions, weights, correct, notes, outcome_value):
 
     """
 
-    【闭环Step1】judgment → causal_memory
+    【闭环Step1】judgment → correlation_memory
 
     把判定结果写入因果事件图，形成 judgment→outcome 闭环。
 
@@ -464,7 +464,7 @@ def _trigger_causal_memory(chain_id, task_text, dimensions, weights, correct, no
 
     try:
 
-        from causal_memory.causal_memory import record_event, check_and_trigger_self_model_update
+        from correlation_memory.correlation_memory import record_event, check_and_trigger_self_model_update
 
         event_type = "judgment_verdict"
 
@@ -510,7 +510,7 @@ def _trigger_causal_memory(chain_id, task_text, dimensions, weights, correct, no
 
 
 
-        # 【闭环Step2】causal_memory 内部检测 pattern 阈值 → 触发 self_model 更新
+        # 【闭环Step2】correlation_memory 内部检测 pattern 阈值 → 触发 self_model 更新
 
         check_and_trigger_self_model_update(
 
@@ -526,13 +526,13 @@ def _trigger_causal_memory(chain_id, task_text, dimensions, weights, correct, no
 
 
 
-        _logger.debug(f"[causal_memory] recorded verdict event_id={event_id}")
+        _logger.debug(f"[correlation_memory] recorded verdict event_id={event_id}")
 
         return event_id
 
     except Exception as e:
 
-        _logger.debug(f"[causal_memory] trigger skip: {e}")
+        _logger.debug(f"[correlation_memory] trigger skip: {e}")
 
         return None
 

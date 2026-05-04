@@ -1,7 +1,7 @@
-# causal_memory/__init__.py — Lazy-loading Shim
-# router.py: from causal_memory import recall_causal_history, inject_to_judgment_input, find_similar_events, init
-# cli.py: from causal_memory.causal_chain import get_recent_chains, get_chain_detail
-from .causal_memory import (
+# correlation_memory/__init__.py — Lazy-loading Shim
+# router.py: from correlation_memory import recall_causal_history, inject_to_judgment_input, find_similar_events, init
+# cli.py: from correlation_memory.correlation_chain import get_recent_chains, get_chain_detail
+from .correlation_memory import (
     init,
     load_all_events,
     load_all_links,
@@ -21,7 +21,7 @@ from .causal_memory import (
     fix_causal_link,
     check_and_trigger_self_model_update,
 )
-from .causal_chain import (
+from .correlation_chain import (
     build_causal_chain,
     format_causal_report,
     get_recent_chains,
@@ -30,7 +30,7 @@ from .causal_chain import (
 from subsystems.judgment.closed_loop import get_recent_chains as _grc_closed_loop
 
 
-# CausalMemoryCompat — 让 router.py 的 `causal_memory.recall_causal_history(task)` 语法工作
+# CausalMemoryCompat — 让 router.py 的 `correlation_memory.recall_causal_history(task)` 语法工作
 class _CausalMemoryCompat:
     def recall_causal_history(self, task):
         return recall_causal_history(task)
@@ -41,7 +41,7 @@ class _CausalMemoryCompat:
     def init(self):
         return init()
 
-causal_memory = _CausalMemoryCompat()
+correlation_memory = _CausalMemoryCompat()
 
 # ── Lazy-load causal_inference（触发 llm_adapter/SSL，不在顶层导入）────────
 _LAZY = {
@@ -55,7 +55,7 @@ def __getattr__(name):
         from importlib import import_module
         mod = import_module(mod_path, __package__)
         return getattr(mod, attr)
-    raise AttributeError(f"module 'causal_memory' has no attribute '{name}'")
+    raise AttributeError(f"module 'correlation_memory' has no attribute '{name}'")
 
 __all__ = [
     "init", "recall_causal_history", "inject_to_judgment_input",
@@ -63,6 +63,6 @@ __all__ = [
     "add_causal_link", "capture_causal_link", "get_recent_chains",
     "get_stats", "get_statistics",
     "build_causal_chain", "format_causal_report",
-    "causal_memory",
+    "correlation_memory",
     "get_chain_detail",
 ]

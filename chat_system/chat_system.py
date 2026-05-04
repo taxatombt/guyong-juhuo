@@ -34,7 +34,7 @@ from action_system.action_system import generate_action_plan, format_action_plan
 from action_signal import generate_action_signals, format_for_robot, save_to_file
 from curiosity.curiosity_engine import CuriosityEngine, trigger_from_low_confidence
 from goal_system.goal_system import get_goal_system
-from causal_memory.causal_memory import log_causal_event, recall_causal_history
+from correlation_memory.correlation_memory import log_causal_event, recall_causal_history
 from feedback_system.feedback_system import add_feedback
 from openspace import suggest_evolution, get_stats
 from llm_adapter import get_adapter
@@ -265,13 +265,13 @@ class ChatSystem:
         
         # 6. 记录因果事件
         # 用户输入就是一个事件，记录下来供后续因果推断
-        from causal_memory.causal_memory import log_causal_event
+        from correlation_memory.correlation_memory import log_causal_event
         log_causal_event(
             content=content,
             source="chat",
             context={"session_id": self.current_session.session_id},
         )
-        triggered.append("causal_memory")
+        triggered.append("correlation_memory")
         
         # 7. 组装完整回答
         full_response = report + "\n\n" + "=== 行动规划 ===\n" + action_report

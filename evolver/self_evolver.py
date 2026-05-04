@@ -103,9 +103,9 @@ class SelfEvolver:
         except ImportError:
             pass  # judgment.memory 不可用，优雅降级
 
-        # 也尝试从 causal_memory/diff_tracker 补充
+        # 也尝试从 correlation_memory/diff_tracker 补充
         try:
-            from causal_memory.diff_tracker import TurnDiffTracker
+            from correlation_memory.diff_tracker import TurnDiffTracker
             tracker = TurnDiffTracker()
             for turn_id, diff in list(tracker._turn_diffs.items())[:limit]:
                 # 如果已经在 records 中，跳过
@@ -128,7 +128,7 @@ class SelfEvolver:
         """从 TurnDiffTracker 收集近期文件变更。"""
         diffs = []
         try:
-            from causal_memory.diff_tracker import TurnDiffTracker
+            from correlation_memory.diff_tracker import TurnDiffTracker
             tracker = TurnDiffTracker()
             for turn_id, diff in list(tracker._turn_diffs.items())[:limit]:
                 diffs.append({

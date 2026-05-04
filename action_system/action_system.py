@@ -320,7 +320,7 @@ def save_action_plan(plan: ActionPlan):
 
 def mark_action_completed(action_id: int, result: str) -> bool:
     """标记行动完成，记录结果，并回流因果记忆"""
-    from ..causal_memory.causal_memory import log_causal_event
+    from ..correlation_memory.correlation_memory import log_causal_event
     
     # 重新写入全部（简单实现，文件不大可接受）
     all_plans = load_all_plans()

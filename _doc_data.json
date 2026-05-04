@@ -1,7 +1,7 @@
 {
   "sections": [
     {
-      "title": "一、因果记忆系统 causal_memory.py",
+      "title": "一、因果记忆系统 correlation_memory.py",
       "subs": [
         {"title": "1.1 核心设计 2026-04-10", "body": [
           "遵循t兄弟方案：快路径（每次判断写事件+找相似链接）+ 慢路径（每日批量推断因果）",
@@ -9,8 +9,8 @@
           "新判断自动召回相似历史因果注入上下文 → judgment 能看见自己的历史判断模式"
         ]},
         {"title": "1.2 核心文件", "code": [
-          "E:\juhuo\causal_memory\causal_memory.py   # 主模块",
-          "E:\juhuo\causal_memory\__init__.py        # 导出接口",
+          "E:\juhuo\correlation_memory\correlation_memory.py   # 主模块",
+          "E:\juhuo\correlation_memory\__init__.py        # 导出接口",
           "E:\juhuo\causal_events.jsonl               # 因果事件存储（JSONL）",
           "E:\juhuo\causal_links.jsonl                # 因果链接存储（JSONL）"
         ]},
@@ -24,7 +24,7 @@
           "CausalLink 类  from/to_event_id、cause、effect、quality 追踪"
         ], "bullets": true},
         {"title": "1.4 闭环流程", "body": [
-          "judgment → closed_loop._trigger_causal_memory()",
+          "judgment → closed_loop._trigger_correlation_memory()",
           "  ├─ record_event()  写 judgment_verdict（含 category + dimensions）",
           "  └─ check_and_trigger_self_model_update()  相似事件 >= 2 → self_model.update_from_feedback()",
           "inject_to_judgment_input()  注入相似历史因果 → judgment 上下文可见"
@@ -32,18 +32,18 @@
       ]
     },
     {
-      "title": "二、judgment 闭环 judgment-causal_memory-self_model",
+      "title": "二、judgment 闭环 judgment-correlation_memory-self_model",
       "subs": [
         {"title": "2.1 问题描述", "body": [
           "judgment 每做一个判断，需要知道判断对不对，然后把结果记到因果记忆，再更新自我模型",
-          "涉及三个模块的跨模块闭环：judgment → causal_memory → self_model"
+          "涉及三个模块的跨模块闭环：judgment → correlation_memory → self_model"
         ]},
-        {"title": "2.2 Step1：judgment → causal_memory", "body": [
-          "文件：E:\juhuo\judgment\closed_loop.py  函数：_trigger_causal_memory()",
+        {"title": "2.2 Step1：judgment → correlation_memory", "body": [
+          "文件：E:\juhuo\judgment\closed_loop.py  函数：_trigger_correlation_memory()",
           "核心调用：record_event() + check_and_trigger_self_model_update()"
         ]},
-        {"title": "2.3 Step2：causal_memory → self_model", "body": [
-          "文件：E:\juhuo\causal_memory\causal_memory.py  函数：check_and_trigger_self_model_update()",
+        {"title": "2.3 Step2：correlation_memory → self_model", "body": [
+          "文件：E:\juhuo\correlation_memory\correlation_memory.py  函数：check_and_trigger_self_model_update()",
           "PATTERN_THRESHOLD = 2（同一 pattern 出现 2 次触发）",
           "关键：延迟导入避免 circular import"
         ]},

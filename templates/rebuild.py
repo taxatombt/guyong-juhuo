@@ -77,7 +77,7 @@ textarea.input{min-height:100px;resize:vertical}
 <div class="nav-section">
 <div class="nav-section-title">个人成长</div>
 <div class="nav-item" data-page="goal" onclick="navigateTo('goal')"><div class="nav-icon">🎯</div><div class="nav-name">目标系统</div></div>
-<div class="nav-item" data-page="causal_memory" onclick="navigateTo('causal_memory')"><div class="nav-icon">🧠</div><div class="nav-name">因果记忆</div></div>
+<div class="nav-item" data-page="correlation_memory" onclick="navigateTo('correlation_memory')"><div class="nav-icon">🧠</div><div class="nav-name">因果记忆</div></div>
 <div class="nav-item" data-page="curiosity" onclick="navigateTo('curiosity')"><div class="nav-icon">✨</div><div class="nav-name">好奇心引擎</div></div>
 <div class="nav-item" data-page="openspace" onclick="navigateTo('openspace')"><div class="nav-icon">🔄</div><div class="nav-name">OpenSpace进化</div></div>
 </div>

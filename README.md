@@ -390,7 +390,7 @@ c315212 fix: record_outcome用task_text匹配，避免SHA256vsMD5哈希不匹配
 ### v2.0 (2026-04-22) — UnifiedProfile 单汇聚层 + P1 Review 全部完成
 
 **单汇聚点架构：**
-- `inject_unified_profile()` 是唯一汇聚点（移除 `inject_biography`/`inject_experiences`/`inject_causal_memory` 三个旧 injector）
+- `inject_unified_profile()` 是唯一汇聚点（移除 `inject_biography`/`inject_experiences`/`inject_correlation_memory` 三个旧 injector）
 - pipeline.py：325→265行死代码清理
 - router 只读 `_profile_entries`（不再拼接 `bio_context`/`history_context`/`causal_context`）
 

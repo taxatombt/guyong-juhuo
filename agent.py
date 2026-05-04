@@ -9,7 +9,7 @@ agent.py — guyong-juhuo Agent 主程序
 子系统矩阵：
   judgment/   → 判断系统（遇到两难怎么想）
   perception/ → 感知输入（注意力过滤，网页/PDF提取）
-  causal_memory/ → 因果记忆（过去如何影响现在）
+  correlation_memory/ → 因果记忆（过去如何影响现在）
   openspace/  → 自进化（错误→规则，三级进化）
   self_model/ → 自我模型（我的盲区在哪）
   emotion_system/ → 情感系统（情绪在说什么）

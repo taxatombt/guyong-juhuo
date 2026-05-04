@@ -3,7 +3,7 @@
 """
 causal_inference.py — Juhuo 因果推断引擎
 
-P0改进：causal_memory的核心缺失是因果推理，不是存储
+P0改进：correlation_memory的核心缺失是因果推理，不是存储
 
 核心能力：
 1. 给定当前情境 → 推理可能的因果链
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from llm_adapter.minimax import get_adapter
 from llm_adapter.base import CompletionRequest
 
-from .causal_memory import load_all_events, load_all_links, find_similar_events
+from .correlation_memory import load_all_events, load_all_links, find_similar_events
 from .types import CausalRelation
 
 

@@ -179,10 +179,10 @@ def process_evolution_feedback(skill_id: str, is_correct: bool) -> bool:
 
 def update_causal_event_feedback(event_id: int, feedback: str):
     """更新因果事件里的反馈字段"""
-    from causal_memory import load_all_events
+    from correlation_memoryNone import load_all_events
     from pathlib import Path
     
-    CAUSAL_EVENTS_FILE = Path(__file__).parent.parent / "causal_memory" / "causal_events.jsonl"
+    CAUSAL_EVENTS_FILE = Path(__file__).parent.parent / "correlation_memory" / "causal_events.jsonl"
     
     events = load_all_events()
     updated = False

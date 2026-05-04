@@ -15,7 +15,7 @@ if getattr(sys, 'frozen', False):
     BUNDLE_DIR = Path(sys._MEIPASS)
     APP_DIR = Path(sys.executable).parent
     # 把打包的 extra/ 模块目录加入 Python 路径
-    for subdir in ["judgment", "curiosity", "emotion_system", "causal_memory",
+    for subdir in ["judgment", "curiosity", "emotion_system", "correlation_memory",
                    "action_system", "output_system", "self_model", "goal_system",
                    "perception", "chat_system", "llm_adapter", "feedback_system",
                    "openspace", "harness", "workspace_modules", "data"]:

@@ -129,7 +129,7 @@ class SelfTest:
     def check_database(self) -> CheckResult:
         """检查数据库"""
         try:
-            from causal_memory.causal_chain import init_db
+            from correlation_memory.correlation_chain import init_db
             init_db()
             return CheckResult("数据库", "pass", "SQLite 正常")
         except Exception as e:

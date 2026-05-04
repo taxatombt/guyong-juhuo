@@ -29,7 +29,7 @@ from openspace_evolution import (
 from execution_analyzer import ExecutionAnalyzer
 from feedback_system.feedback_system import Feedback
 # CausalMemory module doesn't have a class CausalMemory, use module-level functions
-from causal_memory import find_similar_events
+from correlation_memoryNone import find_similar_events
 
 
 @dataclass
@@ -187,7 +187,7 @@ class RewardCalculator:
         self,
         experience: Experience,
         feedback: Optional[Feedback] = None,
-        causal_memory = None
+        correlation_memory = None
     ) -> float:
         """计算经验的奖励"""
         
@@ -205,7 +205,7 @@ class RewardCalculator:
         
         # 情况3：预测一致性奖励
         # 如果因果记忆中存在类似输入输出且用户接受 → 正奖励
-        if causal_memory is not None:
+        if correlation_memory is not None:
             similar = find_similar_events(experience.input_text)
             if similar:
                 # 类似经验得到正反馈 → 预测正奖励

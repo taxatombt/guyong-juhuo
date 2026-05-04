@@ -25,7 +25,7 @@
 | # | 子系统 | 核心文件 | 状态 |
 |---|--------|---------|------|
 | 1 | Judgment | `judgment/router.py` | ✅ |
-| 2 | Causal Memory | `causal_memory/causal_memory.py` | ✅ |
+| 2 | Causal Memory | `correlation_memory/correlation_memory.py` | ✅ |
 | 3 | Curiosity Engine | `curiosity/` | ✅ |
 | 4 | Goal System | `goal_system/` | ✅ |
 | 5 | Self-Model | `self_model/` | ✅ |
@@ -43,8 +43,8 @@
 
 | 途径 | 来源 | 文件 |
 |------|------|------|
-| biography | 用户自述生平（静态）| `causal_memory/biography.py` |
-| experiences | 做过的决策 + outcome（流式）| `causal_memory/` + `judgment/closed_loop.py` |
+| biography | 用户自述生平（静态）| `correlation_memory/biography.py` |
+| experiences | 做过的决策 + outcome（流式）| `correlation_memory/` + `judgment/closed_loop.py` |
 | behavior | juhuo实际工具调用（行为日志）| `judgment/behavior_logger.py` |
 
 ---
@@ -82,11 +82,11 @@ check10d_run()
 - `judgment/verdict_collector.py` — verdict提取
 
 ### 因果记忆
-- `causal_memory/biography.py` — 途径1：生平静态快照
-- `causal_memory/causal_chain.py` — 因果链提取
-- `causal_memory/causal_inference.py` — 因果推理
-- `causal_memory/causal_memory.py` — 主模块
-- `causal_memory/compressor.py` — 因果链压缩
+- `correlation_memory/biography.py` — 途径1：生平静态快照
+- `correlation_memory/causal_chain.py` — 因果链提取
+- `correlation_memory/causal_inference.py` — 因果推理
+- `correlation_memory/correlation_memory.py` — 主模块
+- `correlation_memory/compressor.py` — 因果链压缩
 
 ### 感知层
 - `perception/__init__.py` — 统一导出

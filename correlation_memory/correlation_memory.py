@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-causal_memory.py — 聚活因果记忆模块
+correlation_memory.py — 聚活因果记忆模块
 **独特技术设计（聚活独有）：**
 
 1. **快慢双流架构**
@@ -47,8 +47,8 @@ from .types import (
 from .compressor import fast_compress, slow_compress, compress_for_context
 
 # 集成自我模型更新（延迟导入，避免循环依赖）
-# self_model → causal_memory → self_model 循环
-# 用法：from causal_memory.causal_memory import update_from_feedback as _lazy_update
+# self_model → correlation_memory → self_model 循环
+# 用法：from correlation_memory.correlation_memory import update_from_feedback as _lazy_update
 _update_from_feedback = None  # 延迟初始化
 
 # 相似度阈值
@@ -90,7 +90,7 @@ def _task_similarity(a: str, b: str) -> float:
 def load_all_events() -> List[dict]:
     """从 SQLite 加载所有事件"""
     import sqlite3
-    db_path = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+    db_path = Path(__file__).parent.parent / "data" / "correlation_memory" / "events.db"
     if not db_path.exists():
         return []
     try:
@@ -104,7 +104,7 @@ def load_all_events() -> List[dict]:
 
 
 def _db_path():
-    return Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+    return Path(__file__).parent.parent / "data" / "correlation_memory" / "events.db"
 
 
 def _init_db():
@@ -229,12 +229,12 @@ def record_event(
     chain_id: str = None,
 ) -> int:
     """
-    【闭环Step1 专用】judgment verdict 写入 causal_memory（SQLite后端）
+    【闭环Step1 专用】judgment verdict 写入 correlation_memory（SQLite后端）
 
-    写入 {data}/causal_memory/events.db，字段满足 check_and_trigger_self_model_update 的查询条件。
+    写入 {data}/correlation_memory/events.db，字段满足 check_and_trigger_self_model_update 的查询条件。
     """
     import sqlite3
-    db_path = Path(__file__).parent.parent / "data" / "causal_memory" / "events.db"
+    db_path = Path(__file__).parent.parent / "data" / "correlation_memory" / "events.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 确保表存在
@@ -613,7 +613,7 @@ def recall_causal_history(task: str, max_events: int = 3) -> Dict:
     }
     
     数据源：
-    - causal_memory 自己的事件存储（历史积累、因果链接）
+    - correlation_memory 自己的事件存储（历史积累、因果链接）
     - closed_loop.get_recent_chains()（最新判断闭环数据，两者打通）
     """
     # Debug
@@ -636,7 +636,7 @@ def recall_causal_history(task: str, max_events: int = 3) -> Dict:
     except Exception:
         pass  # closed_loop 不可用则跳过
     
-    # ── 数据源 2：causal_memory 自己的事件存储 ─────────────────────────
+    # ── 数据源 2：correlation_memory 自己的事件存储 ─────────────────────────
     similar = find_similar_events(task, max_events)
     if not similar:
         parts = ["没有找到相似的历史事件，无法提供因果参考。"]
@@ -794,7 +794,7 @@ def inject_to_judgment_input(task: str) -> str:
     聚活因果记忆注入到判断输入：
     返回自然语言总结，注入到 judgment 输入
     
-    同时包含 causal_memory 历史积累和 closed_loop 最新判断链。
+    同时包含 correlation_memory 历史积累和 closed_loop 最新判断链。
     
     P3改进：使用四道压缩叠加
     安全：使用 ContextFence 围栏包装，防止记忆被误当用户输入
@@ -828,7 +828,7 @@ def inject_to_judgment_input(task: str) -> str:
         try:
             from judgment.context_fence import ContextFence
             fence = ContextFence()
-            return fence.wrap(content, context_type="causal_memory")
+            return fence.wrap(content, context_type="correlation_memory")
         except Exception:
             pass  # fallback: 返回原文
     return content
@@ -841,7 +841,7 @@ def check_and_trigger_self_model_update(
     pattern_key: str = None,
 ) -> dict:
     """
-    【闭环Step2】causal_memory → self_model 触发器
+    【闭环Step2】correlation_memory → self_model 触发器
 
     检查同类 verdict pattern（相同 dimensions + 相似 task 文本）
     是否累积达到阈值。达到阈值时触发 self_model.update_from_feedback，
@@ -886,7 +886,7 @@ def check_and_trigger_self_model_update(
 
         # 构建反馈事件，送给 self_model
         feedback_event = {
-            "source": "causal_memory_pattern_detector",
+            "source": "correlation_memory_pattern_detector",
             "pattern_key": pattern_key,
             "feedback_type": (
                 "judgment_repeated_mistake" if not correct else "judgment_repeated_success"

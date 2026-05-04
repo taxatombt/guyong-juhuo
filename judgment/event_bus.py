@@ -9,7 +9,7 @@ EventBus — 事件总线（ZeusHammer 启发）
 事件流示例：
     judgment.check10d_run()
       → EventBus.publish("judgment.started", {task_text, chain_id})
-          → causal_memory.subscribe → 加载上下文
+          → correlation_memory.subscribe → 加载上下文
           → perception.subscribe   → 预取感知数据
 
     judgment._synthesize_verdict()
@@ -289,14 +289,14 @@ def _setup_default_subscribers():
     def _on_action_blocked(event):
         """执行被阻止时记录到 causal memory"""
         try:
-            from causal_memory.causal_chain import log_causal_event
+            from correlation_memory.correlation_chain import log_causal_event
             log_causal_event(
                 event_type="permission_denied",
                 description=f"action.blocked: {event.data.get('reason','')}",
                 related_dimensions=["metacognitive"],
             )
         except Exception:
-            pass  # causal_memory 可能未初始化
+            pass  # correlation_memory 可能未初始化
 
     _log.info(f"[EventBus] default subscribers registered, "
               f"total: {event_bus.get_subscribers_count()}")
