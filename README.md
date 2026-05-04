@@ -22,13 +22,13 @@ guyong-juhuo 是一个 **12子系统 AI Agent 框架**，基于 LLM 后端（Min
 
 | # | 子系统 | 功能 |
 |---|--------|------|
-| 1 | **Judgment** | 十维并行评估（认知 · 博弈论 · 经济 · 辩证 · 情绪 · 直觉 · 道德 · 社会 · 时间折扣 · 元认知） |
-| 2 | **Correlation Memory** | 时序关联记忆：记录事件序列 + 模式匹配推断"先后关系"（非反事实因果） |
+| 1 | **Judgment** | 十维并行评估（认知 · 博弈论 · 经济 · 辩证 · 情绪 · 直觉 · 道德 · 社会 · 时间折扣 · 元认知）；biography 个性化注入 + intent router 意图分流 |
+| 2 | **Correlation Memory** | 时序关联记忆：快路径日志 + 慢路径因果推断（聚类→共现统计→CausalLink）；morning_routine follow-up 触发 outcome 闭环 |
 | 3 | **Curiosity Engine** | 双随机游走（80% 目标驱动 / 20% 自由探索），Ralph 循环终止 |
 | 4 | **Goal System** | 洋葱分层：5年 → 年度 → 月度 → 周 → 今日 |
 | 5 | **Self-Model** | 贝叶斯盲点追踪：积累"我容易在这里犯错" |
 | 6 | **Emotion System** | PAD 三维模型（愉悦 × 唤醒 × 支配）；情绪是信号，不是噪音 |
-| 7 | **Self-Evolution** | 闭环：每次错误 → 分析 → 写规则 → 防止下次再犯 |
+| 7 | **Self-Evolution** | 闭环：receive_actual_choice → receive_verdict → 维度权重更新；predict_outcome + morning follow-up 确保 verdict 真正改变行为 |
 | 8 | **Output System** | 决定什么时候说话、什么时候沉默；P0-P4 优先级格式化 |
 | 9 | **Action System** | 四象限紧急度 × 重要性排序 + 执行信号生成 |
 | 10 | **Perception Layer** | 注意力过滤器 + Web + PDF + RSS + 邮件适配器 |
@@ -113,17 +113,20 @@ git clone https://github.com/taxatombt/guyong-juhuo.git
 cd guyong-juhuo
 pip install -r requirements.txt
 
+# 配置 API key（复制 .env.example 为 .env 并填入 MINIMAX_API_KEY）
+# MiniMax API key 在 https://platform.minimaxi.com 获取
+
 # CLI 判断
-python hub.py "要不要辞职创业？"
+python -m juhuo "要不要辞职创业？"
+
+# 早晨决策闭环（精力/情绪/待办 → 10维判断 → verdict 反馈）
+python morning_routine.py
 
 # Web Console
-python hub.py web
+python -m juhuo web
 
 # 查看状态
-python hub.py status
-
-# 自检
-python hub.py test
+python -m juhuo status
 ```
 
 ---
@@ -146,6 +149,28 @@ python hub.py test
 
   → 建议: 谨慎考虑（置信度: 高, 81%）
   → chain_id: j_1776149590792
+```
+
+---
+
+## 早晨决策闭环
+
+```bash
+python morning_routine.py
+```
+
+完整串通：
+```
+精力/情绪/待办
+  → 10维判断（biography个性化 + 情绪调制）
+  → 推荐今日行动
+  → predict_outcome() 记录预测
+  → 实际执行
+  → 早晨 follow-up（询问昨天执行结果）
+  → receive_actual_choice → receive_verdict
+  → Correlation Memory 慢路径因果推断
+  → Evolver 更新维度权重
+  → 明天判断更准
 ```
 
 ---
@@ -245,7 +270,7 @@ flowchart TB
 
 ```bash
 pip install -r requirements.txt
-python hub.py web
+python -m juhuo web
 # 访问 http://localhost:18768
 ```
 
@@ -254,12 +279,13 @@ python hub.py web
 ## 配置
 
 ```
-~/.juhuo/.env       — API keys（最高优先级，不提交 git）
+E:\juhuo\.env        — API keys（项目根目录，本地优先）
+~/.juhuo/.env       — 用户目录（可覆盖，gitignore）
 ```
 
 首次配置：
 ```bash
-python hub.py config wizard  # 首次配置向导
+python -m juhuo config wizard  # 首次配置向导
 ```
 
 ---
@@ -267,23 +293,36 @@ python hub.py config wizard  # 首次配置向导
 ## CLI 命令
 
 ```bash
-python hub.py "问题"           # 单次判断
-python hub.py shell           # 交互模式
-python hub.py web             # Web Console（默认 port 18768）
-python hub.py status          # 状态查看
-python hub.py verdict list    # 判断历史
-python hub.py verdict correct <id>   # 标记正确
-python hub.py verdict wrong <id>     # 标记错误
-python hub.py config show     # 显示配置
-python hub.py config wizard   # 首次配置向导
-python hub.py bio show        # 查看用户画像
-python hub.py bio add "我30岁程序员"  # 添加生平信息
-python hub.py bio list        # 列出所有生平事实
-python hub.py behavior stats  # 行为统计（各通道）
-python hub.py behavior list   # 最近行为记录
-python hub.py behavior show <id>  # 行为详情
-python hub.py test            # 自检
-python hub.py benchmark       # Benchmark 测试
+# 核心
+python -m juhuo "问题"              # 单次判断
+python -m juhuo shell               # 交互模式
+python -m juhuo web                 # Web Console（默认 port 18768）
+
+# 判断反馈
+python -m juhuo verdict list        # 判断历史
+python -m juhuo verdict correct <id>   # 标记正确
+python -m juhuo verdict wrong <id>     # 标记错误
+
+# 画像 & 记忆
+python -m juhuo bio show           # 查看用户画像
+python -m juhuo bio add "我30岁程序员"  # 添加生平信息
+python -m juhuo bio list           # 列出所有生平事实
+
+# 行为 & 经验
+python -m juhuo behavior stats      # 行为统计
+python -m juhuo behavior list       # 最近行为记录
+python -m juhuo behavior show <id>  # 行为详情
+python -m juhuo experience list     # 经验列表
+python -m juhuo experience rate <id> # 评分经验
+
+# 早晨决策闭环（完整反馈回路）
+python morning_routine.py
+
+# 状态 & 工具
+python -m juhuo status              # 状态查看
+python -m juhuo benchmark            # GDPVal Benchmark 测试
+python -m juhuo config show         # 显示配置
+python -m juhuo config wizard        # 首次配置向导
 ```
 
 ---
