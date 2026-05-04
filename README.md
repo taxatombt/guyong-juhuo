@@ -430,6 +430,17 @@ python life_os.py 写报告 健身 见客户 --energy 80 --emotion P=0.5,A=0.6,D
 - `__init__.py` 向后兼容别名：`CausalInferenceEngine` → `CorrelationInferenceEngine`
 - 外部引用（router.py / hermes_integration / juhuo.py）全部更新
 
+**metacognitive 改为 9 维标准差元监控（Review #3 采纳）：**
+- `router.py` `check10d_run`：`_score_verdict_candidate` 提取 9 维各自评分 → `statistics.stdev()` 计算标准差
+- `标准差>0.15` → metacognitive 告警"判断不稳定"；≤0.15 → "判断稳定"
+- metacognitive 从第10独立维度改为前9维的元监控维度
+- `llm_calls.py`：`NICE_TO_HAVE` 移除 `metacognitive`
+
+**README 子系统三档标记（Review #6 采纳）：**
+- ✅ 核心（4个）：Judgment / Correlation Memory / Emotion System / Self-Evolution
+- 🟡 优化（8个）：Curiosity / Goal / Self-Model / Output / Action / Feedback / Skill Evolution
+- ⚪ 待验证（1个）：Perception Layer
+
 ### v2.2.1 (2026-04-24) — Hermes Guide P0 落地
 
 **JudgmentBudget 预算保护：**
