@@ -30,10 +30,31 @@ def _make_conn():
 
 def _get_db_conn():
     """返回当前线程的 DB 连接（各线程独立，永不 close）。"""
-    thread_id = threading.current_thread().ident
     if not hasattr(_tlocal, 'conn') or _tlocal.conn is None:
         _tlocal.conn = _make_conn()
     return _tlocal.conn
+
+
+class _DbConnCtx:
+    """
+    返回 connection 的 context-manager wrapper。
+    __enter__ 返回连接；__exit__ 提交事务（不断连接）。
+    模拟 sqlite3.Connection 原生 with 行为，同时保证连接不被关闭。
+    """
+    def __enter__(self):
+        conn = _get_db_conn()
+        return conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        conn = _get_db_conn()
+        if exc_type is None:
+            conn.commit()
+        else:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False  # 不吞异常
 
 
 def close_conn():

@@ -89,7 +89,7 @@ def infer_soft_profile(user_id: str = "default", limit: int = 50) -> dict:
             "WHERE user_id=? ORDER BY created_at DESC LIMIT ?",
             (user_id, limit)
         ).fetchall()
-        conn.close()
+        # 不调用 conn.close()：thread-local 连接永远不显式关闭
         for r in rows:
             if r[0]:
                 texts.append(r[0])

@@ -548,10 +548,10 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
             "item_id": curiosity_item.id if curiosity_item else None,
         },
         "emotion": {
-            "detected_emotions": [emotion_detection.emotion_label] if emotion_detection.emotion_label else [],
-            "need_attention": emotion_detection.is_signal,
-            "signal_type": emotion_detection.emotion_label,
-            "signal_description": emotion_detection.description,
+            "detected_emotions": [emotion_detection.emotion_label] if emotion_detection and emotion_detection.emotion_label else [],
+            "need_attention": emotion_detection.is_signal if emotion_detection else False,
+            "signal_type": emotion_detection.emotion_label if emotion_detection else None,
+            "signal_description": emotion_detection.description if emotion_detection else "",
             # Emotion × Judgment 集成：PAD调制信息
             "pad_modulation": {
                 "emotion_label": emotion_modulation.emotion_label if emotion_modulation else None,
@@ -597,7 +597,7 @@ def check10d(task_text, agent_profile=None, complexity="auto", emotion_state=Non
                 "complexity": complexity,
                 "dimensions": _dims_chosen,
                 "weights": _weights,
-                "emotion": emotion_detection.emotion_label if emotion_detection.emotion_label else None,
+                "emotion": emotion_detection.emotion_label if emotion_detection and emotion_detection.emotion_label else None,
             }
         )
         _save_auto_verdict(_auto_record)
@@ -918,6 +918,8 @@ def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str
     except Exception:
         pass  # 不阻断返回
 
+    # 【便捷】将 chain_id 提到顶层，方便 CLI 直接访问
+    base_result["chain_id"] = base_result.get("meta", {}).get("chain_id", "")
     return base_result
 
 

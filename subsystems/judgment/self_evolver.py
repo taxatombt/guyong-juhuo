@@ -43,12 +43,12 @@ except ImportError:
     VALIDATION_WINDOW = 10
 
 # P0-1: 统一用 judgment._schema._get_db_conn()
-from judgment._schema import _get_db_conn
+from judgment._schema import _get_db_conn, _DbConnCtx
 from judgment._schema_tables import init_schema
 
 def get_conn():
-    """P0-1: 委托给 judgment._schema._get_db_conn()"""
-    return _get_db_conn()
+    """返回 connection context-manager（不断连接）。"""
+    return _DbConnCtx()
 
 def sync_to_self_model(chain_id: str) -> Optional[Dict]:
     """Hook捕获的判断数据写入self_model（可选，跳过不影响主流程）"""

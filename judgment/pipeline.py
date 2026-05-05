@@ -112,6 +112,19 @@ def inject_emotion(ctx: JudgmentContext) -> JudgmentContext:
     from emotion_system.emotion_system import EmotionSystem
     
     if ctx.emotion_state:
+        # 如果是字符串（"happy"/"calm"/"anxious"），转换为 PAD dict
+        if isinstance(ctx.emotion_state, str):
+            _EMOTION_PAD = {
+                "happy": {"P": 0.8, "A": 0.4, "D": 0.5},
+                "sad": {"P": -0.7, "A": -0.2, "D": 0.3},
+                "anxious": {"P": -0.5, "A": 0.6, "D": -0.3},
+                "calm": {"P": 0.4, "A": -0.2, "D": 0.6},
+                "excited": {"P": 0.8, "A": 0.7, "D": 0.4},
+                "angry": {"P": -0.7, "A": 0.6, "D": -0.5},
+                "fear": {"P": -0.6, "A": 0.5, "D": -0.4},
+                "frustrated": {"P": -0.5, "A": 0.3, "D": -0.4},
+            }
+            ctx.emotion_state = _EMOTION_PAD.get(ctx.emotion_state.lower(), {"P": 0.0, "A": 0.0, "D": 0.0})
         emotion_modulation = get_emotion_modulation(ctx.emotion_state)
         ctx.emotion_modulation = emotion_modulation
         if emotion_modulation.prompt_hint:

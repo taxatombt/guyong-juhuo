@@ -6,8 +6,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 def _conn():
-    from judgment._schema import _get_db_conn
-    return _get_db_conn()
+    """返回当前线程的 DB 连接（context-manager，不断连接）。"""
+    from judgment._schema import _DbConnCtx
+    return _DbConnCtx()
 
 def _cl(v, lo=0.0, hi=100.0): return max(lo, min(hi, v))
 def _pct(v): return str(int(v)) + "%"
