@@ -328,6 +328,16 @@ _MAP = {
 
     "get_weighted_dimensions": ("dynamic_weights", "get_weighted_dimensions"),
 
+    # ── 感知层（Hermes channel 集成用）────────────────────────
+    "is_decision": ("perception", "is_decision"),
+    "detect_decision": ("perception", "detect_decision"),
+    "record_decision_context": ("perception", "record_decision_context"),
+    "record_outcome": ("perception", "record_outcome"),
+    "get_evolution_stage": ("perception", "get_evolution_stage"),
+    "can_recommend": ("perception", "can_recommend"),
+    "EVOLUTION_STAGES": ("perception", "EVOLUTION_STAGES"),
+    "TRANSCENDENCE_ACCURACY_THRESHOLD": ("perception", "TRANSCENDENCE_ACCURACY_THRESHOLD"),
+
     "import_from_chats": ("verdict_collector", "import_from_chats"),
 
     "import_from_jsonl": ("verdict_collector", "import_from_jsonl"),
