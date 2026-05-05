@@ -15,8 +15,9 @@ from typing import Dict, List, Optional, Any
 class TrajectoryRecorder:
     """Records execution trajectories for learning."""
     
-    def __init__(self, storage_dir: str = "E:\\juhuo\\hermes_evolution\\trajectories"):
-        self.storage_dir = Path(storage_dir)
+    def __init__(self, storage_dir: str = None):
+        _default = Path(__file__).parent / "trajectories"
+        self.storage_dir = Path(storage_dir) if storage_dir else _default
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.current_trajectory: Optional[Dict] = None
     

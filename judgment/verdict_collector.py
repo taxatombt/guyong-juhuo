@@ -10,7 +10,10 @@ from judgment.lessons import extract_and_save_from_case
 import json
 from pathlib import Path
 
-DB_PATH = r"E:\juhuo\data\juhuo.db"
+# P0-7修复：跨平台路径，用 __file__ 推导，不再硬编码 E:\juhuo
+DATA_ROOT = Path(__file__).parent.parent / "data"
+DATA_ROOT.mkdir(parents=True, exist_ok=True)
+DB_PATH = str(DATA_ROOT / "juhuo.db")
 
 _DATA_DIR = Path(__file__).parent.parent / "data" / "judgment_data"
 _DATA_DIR.mkdir(parents=True, exist_ok=True)

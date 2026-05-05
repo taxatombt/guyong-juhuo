@@ -27,8 +27,8 @@ guyong-juhuo 是一个 **12子系统 AI Agent 框架**，基于 LLM 后端（Min
 | 1 | ✅ | **Judgment** | 十维并行评估；biography 个性化注入 + intent router；metacognitive=9维标准差元监控 |
 | 2 | ✅ | **Correlation Memory** | 快路径日志 + 慢路径因果推断；morning_routine follow-up 触发 outcome 闭环 |
 | 6 | ✅ | **Emotion System** | PAD 三维模型；情绪是信号，调制10维信心度 |
-| 7 | ✅ | **Self-Evolution** | receive_actual_choice → receive_verdict → 维度权重更新；predict_outcome + morning follow-up |
-| 3 | 🟡 | **Curiosity Engine** | 双随机游走（80%目标驱动/20%自由探索），Ralph 循环终止 |
+| 7 | ✅ | **Self-Evolution** | receive_actual_choice → receive_verdict → **维度权重自动校准**（非真正自我进化）；predict_outcome + morning follow-up |
+| 3 | ⚪ | **Curiosity Engine** | 双随机游走（80%目标驱动/20%自由探索），Ralph 循环终止；**产出未接入判断pipeline，待真实场景验证** |
 | 4 | 🟡 | **Goal System** | 洋葱分层：5年 → 年度 → 月度 → 周 → 今日；自我模型驱动目标更新 |
 | 5 | 🟡 | **Self-Model** | 贝叶斯盲点追踪；积累"我容易在这里犯错"；关联记忆触发更新 |
 | 8 | 🟡 | **Output System** | 决定什么时候说话、什么时候沉默；P0-P4 优先级格式化 |
@@ -43,16 +43,18 @@ guyong-juhuo 是一个 **12子系统 AI Agent 框架**，基于 LLM 后端（Min
 
 | 模式 | 说明 |
 |------|------|
-| **Mimic Mode** | 传入 `agent_profile` — 系统强制对齐该人的判断风格 |
-| **Transcend Mode** | 10个通用维度；无 profile — 系统基于纯推理判断，闭环直到超越人类 |
+| **Mimic Mode** ✅ | 传入 `agent_profile` — 系统强制对齐该人的判断风格 |
+| **Transcend Mode** ⚠️ | 10个通用维度；无 profile — v3.0 目标，当前版本未实现 |
 
 **铁律：** _模仿具体个人，超越人类整体。_
 
 ---
 
-## 第三层：模仿 → 超越 的转换机制
+## 第三层：模仿 → 超越 的转换机制（⚠️ v3.0 目标）
 
-这是整个系统的核心闭环，也是之前缺失的一层。
+> **当前版本（v2.x）只实现 Mimic 模式**。Transcend 模式需要先积累足够的 verdict 数据（建议 >500 条），目前没有实现。
+
+这是整个系统的目标架构。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

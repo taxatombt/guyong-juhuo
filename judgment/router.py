@@ -28,7 +28,7 @@ except ImportError:
     import os
     PATHS = {"DATA": os.path.join(os.path.dirname(__file__), "..", "data")}
 from judgment.dimensions import DIMENSIONS
-from correlation_memoryNone import recall_causal_history, inject_to_judgment_input, find_similar_events, init
+from correlation_memory import recall_correlation_history as recall_causal_history, inject_to_judgment_input, find_similar_events, init
 from judgment.closed_loop import start_verdict_listener
 from judgment.self_evolver import start_evolver_scheduler
 
@@ -82,10 +82,41 @@ from judgment.router_utils import (
 from judgment.llm_orchestrator import (
     _inject_profile_questions,
     inject_profile_into_dimensions,
-    _quick_status_response,
-    _quick_answer_response,
-    _quick_confirm_response,
 )
+
+
+# P1 IntentRouter 快速响应（fast path，避免完整LLM调用）
+def _quick_status_response(task_text: str) -> dict:
+    """STATUS_QUERY intent → 简短状态查询"""
+    return {
+        "verdict": "状态查询",
+        "confidence": 0.95,
+        "intent_type": "STATUS_QUERY",
+        "summary": f"当前状态正常",
+        "dimensions": {},
+    }
+
+
+def _quick_answer_response(task_text: str) -> dict:
+    """SHORT_ANSWER intent → 一句话回答"""
+    return {
+        "verdict": "简短回答",
+        "confidence": 0.9,
+        "intent_type": "SHORT_ANSWER",
+        "summary": f"回答：{task_text[:50]}",
+        "dimensions": {},
+    }
+
+
+def _quick_confirm_response(task_text: str) -> dict:
+    """CONFIRM intent → 确认类查询"""
+    return {
+        "verdict": "确认请求",
+        "confidence": 0.95,
+        "intent_type": "CONFIRM",
+        "summary": f"确认收到",
+        "dimensions": {},
+    }
 
 
 # MiniMind 长上下文压缩：超长 prompt 时自动摘要
@@ -189,7 +220,7 @@ from judgment.biography import get_context as get_bio_context, extract_from_text
 from judgment.pets import update_from_emotion, pet_to_prompt, get_status_summary, interact as _pet_interact, get_pet as _get_pet
 
 # P0改进：因果推断引擎 - 给judgment提供推理底座
-from correlation_memory.correlation_inference import CorrelationInferenceEngine, infer_causal_chain
+from correlation_memory.correlation_inference import CorrelationInferenceEngine, infer_correlation_chain as infer_causal_chain
 
 # P3改进：十维推理规则引擎
 from .judgment_rules import rule_based_precheck, get_rule_scores

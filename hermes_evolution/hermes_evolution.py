@@ -23,9 +23,14 @@ class HermesEvolution:
     
     def __init__(
         self,
-        db_path: str = "E:\\juhuo\\hermes_evolution\\skills.db",
-        trajectories_dir: str = "E:\\juhuo\\hermes_evolution\\trajectories",
+        db_path: str = None,
+        trajectories_dir: str = None,
     ):
+        _default_dir = Path(__file__).parent
+        if db_path is None:
+            db_path = _default_dir / "skills.db"
+        if trajectories_dir is None:
+            trajectories_dir = _default_dir / "trajectories"
         self.skill_storage = SkillStorage(db_path)
         self.trajectory_recorder = TrajectoryRecorder(trajectories_dir)
         self.categories = [

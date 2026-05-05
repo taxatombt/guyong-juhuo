@@ -14,8 +14,9 @@ from typing import Dict, List, Optional, Tuple
 class SkillStorage:
     """SQLite-based skill storage with full-text search."""
     
-    def __init__(self, db_path: str = "E:\\juhuo\\hermes_evolution\\skills.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str = None):
+        _default = Path(__file__).parent / "skills.db"
+        self.db_path = Path(db_path) if db_path else _default
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
     
