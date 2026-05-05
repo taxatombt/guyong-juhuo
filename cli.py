@@ -7,8 +7,9 @@ cli.py — Juhuo CLI
 - juhuo [task]        # 单次判断
 - juhuo shell         # 交互模式
 - juhuo web           # 启动 Web Console
-- juhuo status         # 查看状态
+- juhuo status        # 状态仪表盘（准确率追踪）
 - juhuo verdict       # verdict 管理
+- juhuo morning       # 早晨决策闭环
 - juhuo config        # 配置管理
 """
 
@@ -21,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from judgment.logging_config import get_logger
+from cli_status import run_status as _run_status
 from judgment.pipeline import check10d_full, PipelineConfig, format_full_report
 from judgment.self_model.belief import get_belief_status
 from judgment.verdict_collector import get_verdict_stats, mark_verdict_correct, mark_verdict_wrong
@@ -136,36 +138,9 @@ def cmd_shell():
         cmd_judge(task)
 
 
-def cmd_status():
-    """查看状态"""
-    belief = get_belief_status()
-    stats = get_verdict_stats()
-    chains = get_recent_chains(limit=5)
-    
-    print("\n" + "="*50)
-    print("📊 Juhuo 状态")
-    print("="*50)
-    
-    print("\n【置信度状态】")
-    for dim, info in belief.items():
-        score = info.get("confidence", 0) * 100
-        status = "🔴" if score < 50 else "🟡" if score < 70 else "🟢"
-        print(f"  {status} {dim}: {score:.1f}%")
-    
-    print("\n【Verdict 统计】")
-    print(f"  总判断数: {stats.get('total', 0)}")
-    print(f"  正确数: {stats.get('correct', 0)}")
-    print(f"  错误数: {stats.get('wrong', 0)}")
-    if stats.get('total', 0) > 0:
-        acc = stats['correct'] / stats['total'] * 100
-        print(f"  准确率: {acc:.1f}%")
-    
-    print("\n【最近判断】")
-    for chain in chains:
-        cid = chain.get("chain_id", "")[:8]
-        task = chain.get("task", "")[:40]
-        verdict = chain.get("verdict", "")[:20]
-        print(f"  [{cid}] {task}... → {verdict}")
+def cmd_status(args):
+    """状态仪表盘（准确率追踪）"""
+    _run_status()
 
 
 
@@ -501,7 +476,7 @@ def main():
         from web_console import run
         run(args.port)
     elif args.cmd == "status":
-        cmd_status()
+        cmd_status(args)
     elif args.cmd == "verdict":
         if args.action == "actual":
             args.chain_id = args.chain_id_arg or getattr(args, 'chain_id', None)
