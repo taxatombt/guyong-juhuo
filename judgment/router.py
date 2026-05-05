@@ -723,15 +723,25 @@ def _analyze_dim_sync(dim, task_text, agent_profile, dim_prompts: dict = None):
     return {dim.id: questions}
 
 
-def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str = "default"):
+def check10d_run(task_text, agent_profile=None, emotion_state=None, user_id: str = "default", complexity: str = "critical"):
     """
-    同步检视接口：直接调用 check10d，critical 复杂度。
+    同步检视接口：直接调用 check10d。
+    
+    P1 Fix: simple 模式下，跳过第二次 _answer_questions，直接复用 check10d() 的结果。
+    原因：两次 LLM 调用（各~48s）= 96s，阻塞 Hermes/QQ 事件循环。
+    
+    Args:
+        complexity: "auto" | "simple" | "complex" | "critical" (default: "critical")
     
     注意：asyncio.run() 会与模块级后台线程冲突，
     所以这里直接同步调用 check10d，不做嵌套异步。
     """
     _ensure_started()
-    base_result = check10d(task_text, agent_profile, complexity="critical", emotion_state=emotion_state, user_id=user_id)
+    base_result = check10d(task_text, agent_profile, complexity=complexity, emotion_state=emotion_state, user_id=user_id)
+
+    # P1 Fix: simple 模式跳过二次分析，直接返回 check10d() 的结果
+    if complexity == "simple":
+        return base_result
     # 同步构建所有维度问题
     must = base_result["must_check"]
     important = base_result["important"]

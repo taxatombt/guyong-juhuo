@@ -267,6 +267,61 @@ def check10d_full(task_text: str, config: dict = None, user_id: str = "default")
     return check10d_run(task_text, user_id=user_id)
 
 
+def check10d_quick(task_text: str, user_id: str = "default", timeout: float = 50.0) -> dict:
+    """
+    快速判断（simple 复杂度，50s 超时兜底）。
+    用于 CLI / Hermes QQ 触发等非阻塞场景。
+    
+    Args:
+        task_text: 判断问题
+        user_id: 用户标识
+        timeout: 超时秒数（默认50s），超时则返回 error verdict
+    
+    Returns:
+        dict，含 verdict/confidence/chain_id/dimensions
+    """
+    import signal
+    from judgment.router import check10d_run
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError("check10d_quick timeout")
+
+    # 先尝试 IntentRouter（不占 timeout）
+    try:
+        from judgment.intent_router import route, direct_reply, IntentType
+        ir = route(task_text)
+        if not ir.should_check10d:
+            reply = direct_reply(ir.intent_type, task_text)
+            return {
+                "task": task_text,
+                "verdict": reply or f"[{ir.intent_type.value}]",
+                "confidence": ir.confidence,
+                "chain_id": "",
+                "dimensions": [],
+                "intent_type": ir.intent_type.value,
+                "should_check10d": False,
+                "note": ir.note,
+            }
+    except Exception:
+        pass  # 降级：正常走 check10d_run
+
+    # 安装超时（signal只在主线程有效，改用子进程方案）
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(check10d_run, task_text, None, None, user_id, "simple")
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            return {
+                "task": task_text,
+                "verdict": "⚠️ 判断超时（30s），建议简化问题或稍后再试",
+                "confidence": 0.0,
+                "chain_id": "",
+                "dimensions": [],
+                "error": "timeout",
+            }
+
+
 def PipelineConfig(**kwargs):
     """占位配置类（MCP 调用用）"""
     return kwargs

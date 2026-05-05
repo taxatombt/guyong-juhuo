@@ -8,7 +8,14 @@ cli.py — Juhuo CLI
 - juhuo shell         # 交互模式
 - juhuo web           # 启动 Web Console
 - juhuo status        # 状态仪表盘（准确率追踪）
-- juhuo verdict       # verdict 管理
+- juhuo verdict       # morning（早晨决策闭环）
+    morning_parser = subparsers.add_parser("morning", help="早晨决策闭环")
+    morning_parser.add_argument("task", nargs="?", help="决策问题（不填则交互输入）")
+    morning_parser.add_argument("--energy", default="normal", choices=["low", "normal", "high"], help="精力状态")
+    morning_parser.add_argument("--emotion", default="", help="情绪状态（如：焦虑/平静/兴奋）")
+    morning_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识")
+
+    # verdict 管理
 - juhuo morning       # 早晨决策闭环
 - juhuo config        # 配置管理
 """
@@ -23,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from judgment.logging_config import get_logger
 from cli_status import run_status as _run_status
-from judgment.pipeline import check10d_full, PipelineConfig, format_full_report
+from judgment.pipeline import check10d_quick, check10d_full, PipelineConfig, format_full_report
 from judgment.self_model.belief import get_belief_status
 from judgment.verdict_collector import get_verdict_stats, mark_verdict_correct, mark_verdict_wrong
 from correlation_memory.correlation_chain import get_recent_chains, get_chain_detail
@@ -38,24 +45,114 @@ from judgment.experiences import rate_experience
 log = get_logger("juhuo.cli")
 
 
-def cmd_judge(task: str, verbose: bool = False, user_id: str = "default"):
-    """执行判断 — ZeusHammer IntentRouter: 简单任务直接回复，需要判断才走 check10d"""
-    # [ZeusHammer IntentRouter] 先尝试直接回复
+def _run_judge_subprocess(task: str, user_id: str = "default", timeout: float = 45.0) -> dict:
+    """
+    通过子进程调用 judgment.router.check10d_run（simple 复杂度）。
+    子进程最多等 timeout 秒，超时则杀死子进程并返回错误 verdict。
+    
+    解决：MiniMax-M2.7 单次 LLM 调用需 ~26s，阻塞 Hermes/QQ 事件循环。
+    """
+    import json, tempfile, subprocess as _subprocess, traceback as _tb
+
+    juhuo_root = os.path.dirname(__file__) or "."
+
+    # 写任务数据到临时文件（避免 repr() 中文转义问题）
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+        json.dump({"task": task, "user_id": user_id}, f)
+        tmp_path = f.name
+
+    # 构建子脚本
+    py_code = (
+        "import sys, os, json, traceback\n"
+        f"os.chdir({repr(juhuo_root)})\n"
+        f"sys.path.insert(0, {repr(juhuo_root)})\n"
+        f"with open({repr(tmp_path)}, encoding='utf-8') as f:\n"
+        "    data = json.load(f)\n"
+        "result = None\n"
+        "try:\n"
+        "    from judgment.router import check10d_run\n"
+        "    result = check10d_run(data['task'], complexity='simple', user_id=data.get('user_id', 'default'))\n"
+        "    print('START', flush=True)\n"
+        "    print(json.dumps(result, ensure_ascii=False, default=str), flush=True)\n"
+        "except Exception as e:\n"
+        "    print('PYERROR:' + str(e), flush=True)\n"
+        "    print('TRACEBACK:' + traceback.format_exc()[:500], flush=True)\n"
+        "finally:\n"
+        f"    try: os.unlink({repr(tmp_path)})\n"
+        "    except: pass\n"
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(py_code)
+        py_path = f.name
+
     try:
-        from judgment.intent_router import route, handle, direct_reply
-        ir = route(task)
-        if not ir.should_check10d:
-            reply = direct_reply(ir.intent_type, task)
-            print(f"\n💡 直接回复 [{ir.intent_type.value}] (conf={ir.confidence:.0%}):\n")
-            print(f"   {reply or f'[{ir.intent_type.value}]'}")
-            return
-    except Exception:
-        pass  # 降级：正常走 check10d
+        r = _subprocess.run(
+            [sys.executable, py_path],
+            timeout=timeout + 5,
+            capture_output=True, encoding="utf-8", errors="replace",
+            cwd=juhuo_root
+        )
+        out = r.stdout or ""
+        if "START" in out:
+            json_str = out.split("START", 1)[1].strip()
+            return json.loads(json_str)
+        if "PYERROR:" in out:
+            err_msg = out[out.index("PYERROR:"):out.index("PYERROR:") + 200]
+            return {
+                "task": task, "verdict": f"⚠️ 判断失败: {err_msg}",
+                "confidence": 0.0, "chain_id": "", "dimensions": [], "error": "python_error",
+            }
+        return {
+            "task": task, "verdict": f"⚠️ 判断失败: {r.stderr[:300]}",
+            "confidence": 0.0, "chain_id": "", "dimensions": [], "error": "no_output",
+        }
+    except _subprocess.TimeoutExpired:
+        return {
+            "task": task,
+            "verdict": f"⚠️ 判断超时（>{timeout:.0f}s），MiniMax API 响应慢（~26s），请稍后再试",
+            "confidence": 0.0, "chain_id": "", "dimensions": [], "error": "timeout",
+        }
+    except json.JSONDecodeError:
+        return {
+            "task": task, "verdict": "⚠️ 解析失败",
+            "confidence": 0.0, "chain_id": "", "dimensions": [], "error": "parse_error",
+        }
+    except Exception as e:
+        return {
+            "task": task, "verdict": f"⚠️ 判断失败: {e}",
+            "confidence": 0.0, "chain_id": "", "dimensions": [], "error": str(e),
+        }
+    finally:
+        for p in (py_path, tmp_path):
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
 
-    print(f"\n⚖️  正在分析: {task}\n")
 
-    result = check10d_full(task, user_id=user_id)
-    chain_id = result.get('chain_id', '')
+def cmd_judge(task: str, verbose: bool = False, user_id: str = "default", complexity: str = "simple"):
+    """
+    执行判断。
+    
+    complexity: 
+      - simple   (默认): 2维度(game_theory+emotional)，~30-50s
+      - critical : 10维度全量分析，>60s
+      - complex  : 8维度
+    
+    P1 Fix: simple 用 subprocess(30s 超时) 保护，防止 Hermes/QQ 触发时阻塞
+    """
+    import subprocess as _subprocess
+    
+    print(f"\n⚖️  正在分析 [{complexity}]...\n  (约需 30s，请耐心等待)\n")
+
+    # P1: simple 走 subprocess 超时保护（45s kill）
+    if complexity == "simple":
+        result = _run_judge_subprocess(task, user_id=user_id, timeout=45)
+    else:
+        # critical / complex: 用完整 pipeline（无超时保护）
+        result = check10d_full(task, user_id=user_id)
+    chain_id = result.get('chain_id') or result.get('meta', {}).get('chain_id', '')
     
     if verbose:
         print(format_full_report(result))
@@ -135,7 +232,7 @@ def cmd_shell():
         if not task:
             continue
         
-        cmd_judge(task)
+        cmd_judge(task, verbose=args.verbose, user_id=args.user_id, complexity=args.complexity)
 
 
 def cmd_status(args):
@@ -169,6 +266,82 @@ def _find_latest_pending_judgment():
     finally:
         conn.close()
     return None
+
+
+def cmd_morning(args):
+    """早晨决策闭环：判断 → 预测 → 反馈 → 记录"""
+    import sqlite3
+    from judgment.pipeline import check10d_quick
+    from judgment.verdict_collector import receive_verdict
+    
+    # 1. 获取任务
+    if args.task:
+        task = args.task
+    else:
+        try:
+            task = input("\n🌅 今天最重要的事是什么？> ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n取消")
+            return
+        if not task:
+            print("未输入问题")
+            return
+    
+    # 2. 精力/情绪调制
+    energy_map = {"low": {"P": -0.2, "A": -0.3, "D": -0.2},
+                  "normal": {"P": 0.0, "A": 0.0, "D": 0.0},
+                  "high": {"P": 0.3, "A": 0.3, "D": 0.2}}
+    emotion_state = energy_map.get(args.energy, energy_map["normal"])
+    if args.emotion:
+        emotion_state["label"] = args.emotion
+    
+    print(f"\n⚖️  分析中...\n")
+    
+    # 3. 执行判断（simple 复杂度，有超时保护）
+    result = check10d_quick(task, user_id=args.user_id, timeout=30.0)
+    
+    verdict = result.get("verdict", "无法判断")
+    confidence = result.get("confidence", 0) * 100
+    chain_id = result.get("chain_id", "")
+    pred_action = result.get("predicted_action", "")
+    dims = result.get("dimensions", [])
+    
+    # 4. 展示结果
+    print(f"→ 建议: {verdict}")
+    print(f"→ 置信度: {confidence:.0f}%")
+    if pred_action:
+        print(f"→ 预测你会: {pred_action}")
+    if chain_id:
+        print(f"→ Chain ID: {chain_id}")
+    
+    # 5. 收集反馈
+    try:
+        fb = input("\n实际结果如何？[1=正确 / 0=错误 / s=跳过]> ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        print("\n跳过反馈")
+        return
+    
+    if fb == "1":
+        _correct = True
+        _score = 1.0
+    elif fb == "0":
+        _correct = False
+        _score = 0.0
+    else:
+        print("跳过反馈记录")
+        return
+    
+    # 6. 记录反馈
+    if chain_id:
+        try:
+            receive_verdict(chain_id=chain_id, correct=_correct,
+                          outcome_score=_score, notes=f"morning_feedback:{fb}",
+                          user_id=args.user_id)
+            print(f"✅ 已记录反馈: {'正确' if _correct else '错误'}")
+        except Exception as e:
+            print(f"⚠️ 反馈记录失败: {e}")
+    else:
+        print("⚠️ 无 chain_id，跳过反馈")
 
 
 def cmd_verdict(args):
@@ -416,6 +589,8 @@ def main():
     judge_parser.add_argument("task", help="判断问题")
     judge_parser.add_argument("-v", "--verbose", action="store_true", help="详细输出")
     judge_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识（多用户隔离）")
+    judge_parser.add_argument("--complexity", default="simple", choices=["simple", "critical", "complex"], 
+                             help="分析复杂度：simple=2维度快, critical=10维度全量(慢)")
     
     # shell
     subparsers.add_parser("shell", help="交互模式")
@@ -427,6 +602,13 @@ def main():
     # status
     subparsers.add_parser("status", help="查看状态")
     
+    # morning（早晨决策闭环）
+    morning_parser = subparsers.add_parser("morning", help="早晨决策闭环")
+    morning_parser.add_argument("task", nargs="?", help="决策问题（不填则交互输入）")
+    morning_parser.add_argument("--energy", default="normal", choices=["low", "normal", "high"], help="精力状态")
+    morning_parser.add_argument("--emotion", default="", help="情绪状态（如：焦虑/平静/兴奋）")
+    morning_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识")
+
     # verdict
     verdict_parser = subparsers.add_parser("verdict", help="Verdict 管理")
     verdict_parser.add_argument("action", choices=["list", "correct", "wrong", "detail", "actual"], help="操作")
@@ -469,7 +651,8 @@ def main():
     args = parser.parse_args()
     
     if args.cmd == "judge":
-        cmd_judge(args.task, args.verbose, getattr(args, "user_id", "default"))
+        cmd_judge(args.task, args.verbose, getattr(args, "user_id", "default"),
+                 getattr(args, "complexity", "simple"))
     elif args.cmd == "shell":
         cmd_shell()
     elif args.cmd == "web":
@@ -477,6 +660,8 @@ def main():
         run(args.port)
     elif args.cmd == "status":
         cmd_status(args)
+    elif args.cmd == "morning":
+        cmd_morning(args)
     elif args.cmd == "verdict":
         if args.action == "actual":
             args.chain_id = args.chain_id_arg or getattr(args, 'chain_id', None)

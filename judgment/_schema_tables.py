@@ -129,6 +129,18 @@ def init_schema(rebuild=True):
             if table == "verdict_outcomes":
                 continue
             conn.execute(f"CREATE TABLE IF NOT EXISTS {table} ({defn})")
+        
+        # P2 Fix: 初始化 dimension_beliefs（0行导致 receive_verdict 永远落空）
+        ALL_DIMS = [
+            "cognitive", "game_theory", "economic", "dialectical",
+            "emotional", "intuitive", "moral", "social", "temporal", "metacognitive",
+        ]
+        for dim_id in ALL_DIMS:
+            conn.execute(
+                "INSERT OR IGNORE INTO dimension_beliefs (dimension, belief, hit_count, miss_count) VALUES (?, 0.5, 0, 0)",
+                (dim_id,)
+            )
+        
         conn.commit()
         n = len([r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
