@@ -376,7 +376,7 @@ def receive_verdict(chain_id=None,task_text=None,correct=True,notes="",
         return {"updated":True,"chain_id":chain_id,"changes":changes}
 
     finally:
-        budget.exit()  # P0 JudgmentBudget
+        budget.exit("receive_verdict")  # P0 JudgmentBudget
 
 
 
