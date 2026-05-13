@@ -76,6 +76,7 @@ from judgment.router_utils import (
     _judge_complexity,
     format_report,
     format_structured,
+    format_dashboard,
 )
 
 # LLM 编排层（从 router.py 提取）

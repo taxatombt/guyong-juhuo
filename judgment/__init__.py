@@ -20,6 +20,8 @@ _LOCAL = {
 
     "check10d_full", "PipelineConfig", "format_full_report",
 
+    # cache strategy (perception layer)
+    "cached_fetch", "cache_stats", "cache_clear", "cache_invalidate",
 }
 
 
@@ -40,6 +42,11 @@ _LOCAL_MAP = {
 
     "format_full_report": ("pipeline", "format_full_report"),
 
+    # cache strategy
+    "cached_fetch": ("perception.cache_strategy", "cached_fetch"),
+    "cache_stats": ("perception.cache_strategy", "cache_stats"),
+    "cache_clear": ("perception.cache_strategy", "cache_clear"),
+    "cache_invalidate": ("perception.cache_strategy", "cache_invalidate"),
 }
 
 
@@ -462,7 +469,17 @@ def __getattr__(name):
 
     if name in _LOCAL:
 
-        mod_name = f"judgment.{_LOCAL_MAP[name][0]}"
+        submodule = _LOCAL_MAP[name][0]
+
+        # perception.* modules live at juhuo/perception/ not juhuo/judgment/perception/
+
+        if submodule.startswith("perception."):
+
+            mod_name = submodule  # top-level 'perception.cache_strategy'
+
+        else:
+
+            mod_name = f"judgment.{submodule}"
 
         import importlib
 

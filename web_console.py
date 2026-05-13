@@ -16,6 +16,7 @@ import argparse
 
 from judgment.logging_config import get_logger
 from judgment.pipeline import check10d_full, PipelineConfig, format_full_report
+from judgment.router_utils import format_dashboard
 from judgment.self_model.belief import get_belief_status
 from judgment.verdict_collector import get_verdict_stats
 from correlation_memory.correlation_chain import get_recent_chains
@@ -38,6 +39,16 @@ HTML_TEMPLATE = """
         textarea { width: 100%; height: 100px; background: #0f3460; color: #fff; border: none; border-radius: 5px; padding: 10px; font-size: 16px; }
         button { background: #e94560; color: #fff; border: none; padding: 10px 30px; border-radius: 5px; cursor: pointer; font-size: 16px; }
         button:hover { background: #c73e54; }
+        .view-toggle { margin-bottom: 10px; }
+        .view-toggle button { padding: 6px 16px; font-size: 14px; margin-right: 8px; background: #0f3460; }
+        .view-toggle button.active { background: #e94560; }
+        .dashboard { white-space: pre-wrap; font-family: 'Consolas', monospace; font-size: 14px; line-height: 1.6; color: #e0e0e0; background: #0d1b2a; padding: 16px; border-radius: 8px; border-left: 3px solid #e94560; }
+        .dashboard .section-title { color: #e94560; font-weight: bold; font-size: 16px; margin-top: 12px; }
+        .dashboard .dim-row { display: flex; align-items: center; margin: 4px 0; }
+        .dashboard .dim-name { width: 80px; color: #aaa; }
+        .dashboard .dim-bar { flex: 1; background: #1b2838; height: 12px; border-radius: 6px; margin: 0 8px; }
+        .dashboard .dim-fill { height: 100%; background: linear-gradient(90deg, #e94560, #ff6b6b); border-radius: 6px; }
+        .dashboard .dim-score { width: 40px; text-align: right; color: #888; }
         .result { background: #16213e; padding: 20px; border-radius: 10px; margin-top: 20px; }
         .dimension { display: flex; align-items: center; margin: 10px 0; }
         .dim-name { width: 120px; font-weight: bold; }
@@ -68,8 +79,27 @@ HTML_TEMPLATE = """
         <br><br>
         <button onclick="submitJudge()">判断</button>
     </div>
-    
+
     <div id="result"></div>
+
+    <div class="view-toggle" id="viewToggle" style="display:none">
+        <button class="active" data-view="dashboard" onclick="setView('dashboard'); submitJudge()">仪表盘</button>
+        <button data-view="bars" onclick="setView('bars'); submitJudge()">维度条</button>
+    </div>
+
+    <script>
+    // 默认视图
+    let currentView = 'dashboard';
+
+    function setView(view) {
+        currentView = view;
+        document.querySelectorAll('.view-toggle button').forEach(b => {
+            b.classList.toggle('active', b.dataset.view === view);
+        });
+    }
+
+    // 渲染 bar 视图
+    function renderBars(data) {
     
     <script>
     function submitJudge() {
@@ -100,13 +130,57 @@ HTML_TEMPLATE = """
                 html += '</div>';
             }
             
-            html += '</div>';
-            document.getElementById('result').innerHTML = html;
-        })
-        .catch(e => {
-            document.getElementById('result').innerHTML = '<p style="color:red">错误: ' + e + '</p>';
-        });
-    }
+            // 渲染 bar 视图
+            function renderBars(data) {
+                let html = '<div class="result">';
+                html += '<div class="verdict">' + data.verdict + '</div>';
+                html += '<p style="text-align:center;color:#888">置信度: ' + (data.confidence * 100).toFixed(1) + '%</p>';
+                html += '<h4>各维度分析</h4>';
+                for (const [dim, info] of Object.entries(data.dimensions || {})) {
+                    const pct = Math.round(info.score * 100);
+                    html += '<div class="dimension">';
+                    html += '<span class="dim-name">' + dim + '</span>';
+                    html += '<div class="dim-bar"><div class="dim-fill" style="width:' + pct + '%"></div></div>';
+                    html += '<span class="dim-score">' + pct + '%</span>';
+                    html += '</div>';
+                }
+                html += '</div>';
+                return html;
+            }
+
+            // 渲染 dashboard 视图（来源：daily_stock_analysis）
+            function renderDashboard(data) {
+                if (!data.dashboard) return renderBars(data);
+                // dashboard 文本含分隔线，用 <pre> 渲染
+                let html = '<div class="result"><div class="dashboard">' + data.dashboard + '</div></div>';
+                return html;
+            }
+
+            function submitJudge() {
+                const task = document.getElementById('task').value;
+                if (!task) return;
+
+                document.getElementById('result').innerHTML = '<p style="text-align:center">分析中...</p>';
+
+                fetch('/api/judge', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    // 显示视图切换按钮
+                    document.getElementById('viewToggle').style.display = 'block';
+                    if (currentView === 'dashboard') {
+                        document.getElementById('result').innerHTML = renderDashboard(data);
+                    } else {
+                        document.getElementById('result').innerHTML = renderBars(data);
+                    }
+                })
+                .catch(e => {
+                    document.getElementById('result').innerHTML = '<p style="color:red">错误: ' + e + '</p>';
+                });
+            }
     </script>
 </body>
 </html>
@@ -167,7 +241,8 @@ def judge():
             "verdict": verdict,
             "confidence": confidence,
             "dimensions": dimensions,
-            "chain_id": result.get("chain_id", "")
+            "chain_id": result.get("chain_id", ""),
+            "dashboard": format_dashboard(result),  # 新增：四维仪表盘（来源：daily_stock_analysis）
         })
     
     except Exception as e:

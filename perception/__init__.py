@@ -85,6 +85,14 @@ from .git_nexus_adapter import (
     stop_auto_update,
 )
 
+
+
+# cache_strategy
+from perception.cache_strategy import (
+    cached_fetch, CachedFetchError, CacheConfig,
+    L1Cache, L2Cache,
+    cache_stats, cache_clear, cache_invalidate, perception_cache,
+)
 __all__ = [
     # attention_filter
     "AttentionFilter",

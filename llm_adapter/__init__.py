@@ -8,6 +8,18 @@ from adapters.llm import (
 )
 from adapters.llm.base import KnowledgeUnit
 
+
+# ollama fallback
+from llm_adapter.ollama_fallback import (
+    FallbackRouter,
+    OllamaClient,
+    OllamaConfig,
+    OllamaUnavailableError,
+    OllamaCallError,
+    get_fallback_router,
+    ollama_status,
+    ollama_wrap,
+)
 __all__ = [
     'LLMAdapter', 'LLMResponse', 'CompletionRequest', 'KnowledgeUnit',
     'MiniMaxAdapter', 'OpenAIAdapter', 'OllamaAdapter',
