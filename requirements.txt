@@ -1,6 +1,8 @@
 ﻿# 聚活核心依赖
-# 网页控制台
-fastapi>=0.104.0
+
+# Web Console & MCP
+flask>=3.0.0
+fastmcp>=0.1.0
 uvicorn>=0.24.0
 python-multipart>=0.0.6
 pydantic>=2.5.0

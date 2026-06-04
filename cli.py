@@ -4,19 +4,13 @@
 cli.py — Juhuo CLI
 
 命令行工具：
-- juhuo [task]        # 单次判断
-- juhuo shell         # 交互模式
-- juhuo web           # 启动 Web Console
+- juhuo judge "问题"     # 单次判断
+- juhuo shell          # 交互模式
+- juhuo web           # 启动 Web Console（port 18768）
 - juhuo status        # 状态仪表盘（准确率追踪）
-- juhuo verdict       # morning（早晨决策闭环）
-    morning_parser = subparsers.add_parser("morning", help="早晨决策闭环")
-    morning_parser.add_argument("task", nargs="?", help="决策问题（不填则交互输入）")
-    morning_parser.add_argument("--energy", default="normal", choices=["low", "normal", "high"], help="精力状态")
-    morning_parser.add_argument("--emotion", default="", help="情绪状态（如：焦虑/平静/兴奋）")
-    morning_parser.add_argument("--user-id", dest="user_id", default="default", help="用户标识")
-
-    # verdict 管理
+- juhuo verdict       # Verdict 管理
 - juhuo morning       # 早晨决策闭环
+- juhuo mcp           # 启动 MCP Server（stdio）
 - juhuo config        # 配置管理
 """
 
@@ -632,6 +626,9 @@ def main():
     bench_parser = subparsers.add_parser("benchmark", help="运行 Benchmark")
     bench_parser.add_argument("-n", "--num", type=int, default=8, help="案例数量")
 
+    # mcp server
+    subparsers.add_parser("mcp", help="启动 MCP Server（stdio 模式）")
+
     # behavior（途径3：agent 行为日志）
     beh_parser = subparsers.add_parser("behavior", help="Agent 行为日志")
     beh_parser.add_argument("action", choices=["list", "stats", "show"], help="操作")
@@ -675,6 +672,9 @@ def main():
     elif args.cmd == "benchmark":
         report = run_benchmark()
         print(f"\n✅ Benchmark 完成")
+    elif args.cmd == "mcp":
+        from mcp_server import mcp
+        mcp.run()
     elif args.cmd == "behavior":
         cmd_behavior(args)
     elif args.cmd == "experience":
