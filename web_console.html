@@ -1,116 +1,243 @@
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Juhuo Console</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Segoe UI,sans-serif;background:#0f0f23;color:#e0e0e0}
-.header{position:fixed;top:0;left:0;right:0;height:56px;background:linear-gradient(135deg,#e94560,#c73e54);display:flex;align-items:center;padding:0 24px;z-index:100}
-.logo{display:flex;align-items:center;gap:12px}
-.logo-icon{width:36px;height:36px;background:rgba(255,255,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700}
-.logo-text{font-size:20px;font-weight:700;color:#fff}
-.main-layout{display:flex;padding-top:56px}
-.sidebar{width:240px;background:#16213e;position:fixed;top:56px;left:0;bottom:0;overflow-y:auto;border-right:1px solid rgba(233,69,96,.2)}
-.nav-section{padding:20px 0}
-.nav-title{font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:1.5px;padding:0 20px;margin-bottom:12px}
-.nav-item{display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer;color:#888;border-left:3px solid transparent;transition:all .2s}
-.nav-item:hover{background:rgba(233,69,96,.1);color:#fff}
-.nav-item.active{background:rgba(233,69,96,.15);color:#e94560;border-left-color:#e94560}
-.nav-icon{width:32px;height:32px;background:rgba(255,255,255,.05);border-radius:6px;display:flex;align-items:center;justify-content:center}
-.nav-item.active .nav-icon{background:#e94560;color:#fff}
-.content{flex:1;margin-left:240px;padding:32px;max-width:900px}
-.page{display:none}
-.page.active{display:block}
-.page-title{font-size:28px;font-weight:700;color:#fff;margin-bottom:32px}
-.card{background:#16213e;border-radius:16px;padding:24px;margin-bottom:24px;border:1px solid rgba(233,69,96,.15)}
-.card-title{font-size:16px;font-weight:600;color:#fff;margin-bottom:16px}
-.input{width:100%;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:10px;font-size:14px;background:#0f0f23;color:#fff;resize:vertical;min-height:100px}
-.input:focus{outline:none;border-color:#e94560}
-.btn{background:linear-gradient(135deg,#e94560,#c73e54);color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
-.result-box{background:rgba(0,0,0,.3);border-radius:10px;padding:16px;margin-top:16px}
-.result-box pre{font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap;word-break:break-all}
-.form-group{margin-bottom:16px}
-.form-label{display:block;font-size:13px;color:#888;margin-bottom:8px}
-.form-select,.api-key-input{width:100%;padding:12px 16px;border:1px solid rgba(255,255,255,.1);border-radius:8px;font-size:14px;background:#0f0f23;color:#fff}
-.form-select:focus,.api-key-input:focus{outline:none;border-color:#e94560}
-.row{display:flex;gap:16px;margin-bottom:16px}
-.col{flex:1}
-.badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:12px}
-.b-h{background:rgba(233,69,96,.2);color:#e94560}
-.b-m{background:rgba(243,156,18,.2);color:#f39c12}
-.b-l{background:rgba(39,174,96,.2);color:#27ae60}
-</style></head>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Juhuo ⚖️ 判断系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f0f23;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        /* ── 顶部标题栏 ── */
+        .header {
+            position: fixed; top: 0; left: 0; right: 0;
+            height: 60px;
+            background: linear-gradient(135deg, #e94560, #c73e54);
+            display: flex; align-items: center;
+            padding: 0 28px; z-index: 100;
+            box-shadow: 0 2px 16px rgba(233,69,96,.3);
+        }
+        .header-title { font-size: 20px; font-weight: 700; color: #fff; }
+        .header-version {
+            margin-left: 12px; font-size: 12px; color: rgba(255,255,255,.6);
+            background: rgba(255,255,255,.15); padding: 2px 8px; border-radius: 10px;
+        }
+        .main { padding-top: 60px; max-width: 860px; margin: 0 auto; padding: 60px 24px 40px; }
+
+        /* ── 状态卡片 ── */
+        .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+        .stat-card {
+            background: #16213e; border-radius: 12px; padding: 16px;
+            border: 1px solid rgba(233,69,96,.15); text-align: center;
+        }
+        .stat-num { font-size: 36px; font-weight: 700; color: #e94560; line-height: 1; }
+        .stat-label { font-size: 12px; color: #666; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* ── 判断输入区 ── */
+        .judge-card {
+            background: #16213e; border-radius: 16px; padding: 24px;
+            border: 1px solid rgba(233,69,96,.15); margin-bottom: 24px;
+        }
+        .judge-card h2 { font-size: 16px; color: #fff; margin-bottom: 16px; }
+        .judge-card textarea {
+            width: 100%; height: 100px; background: #0f0f23; color: #fff;
+            border: 1px solid rgba(255,255,255,.1); border-radius: 10px;
+            padding: 14px; font-size: 15px; resize: none; font-family: inherit;
+        }
+        .judge-card textarea:focus { outline: none; border-color: #e94560; }
+        .judge-card textarea::placeholder { color: #555; }
+        .btn-row { display: flex; gap: 12px; align-items: center; margin-top: 14px; }
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560, #c73e54);
+            color: #fff; border: none; padding: 12px 32px; border-radius: 8px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+        }
+        .btn-primary:hover { opacity: .9; transform: scale(1.01); }
+        .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+        /* ── 视图切换 ── */
+        .view-toggle { display: flex; gap: 8px; }
+        .view-btn {
+            background: #0f3460; color: #888; border: none;
+            padding: 8px 18px; border-radius: 8px; font-size: 13px; cursor: pointer;
+        }
+        .view-btn.active { background: #e94560; color: #fff; }
+
+        /* ── 进度条区域 ── */
+        .dimension-row { display: flex; align-items: center; margin: 8px 0; gap: 12px; }
+        .dim-name { width: 110px; font-size: 13px; color: #aaa; text-align: right; }
+        .dim-bar-wrap { flex: 1; background: #0f3460; height: 18px; border-radius: 9px; overflow: hidden; }
+        .dim-bar-fill { height: 100%; border-radius: 9px; }
+        .dim-score { width: 42px; font-size: 13px; color: #666; }
+
+        /* ── 判断结果 ── */
+        .result-card {
+            background: #16213e; border-radius: 16px; padding: 24px;
+            border: 1px solid rgba(233,69,96,.15);
+            animation: fadeIn .3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
+        .verdict-text {
+            text-align: center; font-size: 22px; font-weight: 700;
+            color: #e94560; margin-bottom: 12px;
+        }
+        .confidence-row { text-align: center; color: #666; margin-bottom: 20px; }
+        .confidence-bar-wrap { max-width: 400px; margin: 0 auto 20px; background: #0f3460; height: 8px; border-radius: 4px; overflow: hidden; }
+        .confidence-bar-fill { height: 100%; background: linear-gradient(90deg,#e94560,#ff6b6b); border-radius: 4px; }
+        .chain-id { font-size: 11px; color: #444; text-align: center; font-family: monospace; }
+
+        /* ── Dashboard 视图 ── */
+        .dashboard-pre {
+            white-space: pre-wrap; font-family: Consolas, monospace;
+            font-size: 13px; line-height: 1.6; color: #d0d0d0;
+            background: #0d1b2a; padding: 18px; border-radius: 10px;
+            border-left: 3px solid #e94560;
+        }
+
+        /* ── 加载状态 ── */
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .spinner {
+            width: 32px; height: 32px; border: 3px solid #16213e;
+            border-top-color: #e94560; border-radius: 50%;
+            animation: spin .8s linear infinite; margin: 0 auto 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── 错误 ── */
+        .error { background: rgba(233,69,96,.15); border-radius: 8px; padding: 12px 16px; color: #e94560; font-size: 14px; }
+    </style>
+</head>
 <body>
-<header class="header"><div class="logo"><div class="logo-icon">J</div><span class="logo-text">Juhuo · 聚活</span></div></header>
-<div class="main-layout">
-<aside class="sidebar">
-<div class="nav-section"><div class="nav-title">Core</div>
-<div class="nav-item active" onclick="nav('chat',this)"><div class="nav-icon">C</div>Chat</div>
-<div class="nav-item" onclick="nav('judgment',this)"><div class="nav-icon">J</div>Judgment</div>
-<div class="nav-item" onclick="nav('action_plan',this)"><div class="nav-icon">A</div>Action Plan</div>
-<div class="nav-item" onclick="nav('action_signal',this)"><div class="nav-icon">S</div>Action Signal</div>
+
+<div class="header">
+    <span class="header-title">⚖️ Juhuo</span>
+    <span class="header-version">判断系统</span>
 </div>
-<div class="nav-section"><div class="nav-title">LLM</div>
-<div class="nav-item" onclick="nav('llm',this)"><div class="nav-icon">L</div>LLM Console</div>
-<div class="nav-item" onclick="nav('models',this)"><div class="nav-icon">M</div>Models</div>
+
+<div class="main">
+    <!-- 统计卡片 -->
+    <div class="stats-row" id="statsRow">
+        <div class="stat-card"><div class="stat-num" id="stat-total">–</div><div class="stat-label">总判断数</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-correct">–</div><div class="stat-label">正确</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-accuracy">–</div><div class="stat-label">准确率</div></div>
+    </div>
+
+    <!-- 判断输入 -->
+    <div class="judge-card">
+        <h2>📋 决策困境分析</h2>
+        <textarea id="taskInput" placeholder="输入你想分析的问题，例如：要不要辞职创业？"></textarea>
+        <div class="btn-row">
+            <button class="btn-primary" id="judgeBtn" onclick="submitJudge()">⚖️ 判断</button>
+            <div class="view-toggle">
+                <button class="view-btn active" id="btn-dashboard" onclick="setView('dashboard')">仪表盘</button>
+                <button class="view-btn" id="btn-bars" onclick="setView('bars')">维度条</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 结果 -->
+    <div id="resultArea"></div>
 </div>
-<div class="nav-section"><div class="nav-title">Growth</div>
-<div class="nav-item" onclick="nav('goal',this)"><div class="nav-icon">G</div>Goal</div>
-<div class="nav-item" onclick="nav('causal_memory',this)"><div class="nav-icon">M</div>Causal Memory</div>
-<div class="nav-item" onclick="nav('curiosity',this)"><div class="nav-icon">X</div>Curiosity</div>
-<div class="nav-item" onclick="nav('openspace',this)"><div class="nav-icon">O</div>OpenSpace</div>
-</div>
-<div class="nav-section"><div class="nav-title">Tools</div>
-<div class="nav-item" onclick="nav('history',this)"><div class="nav-icon">H</div>History</div>
-<div class="nav-item" onclick="nav('export',this)"><div class="nav-icon">E</div>Export</div>
-<div class="nav-item" onclick="nav('settings',this)"><div class="nav-icon">S</div>Settings</div>
-</div>
-</aside>
-<main class="content">
-<div id="page-chat" class="page active"><h1 class="page-title">Chat</h1><div class="card"><div class="form-label">Message</div><textarea class="input" id="chatInput" rows="4" placeholder="Type your message..."></textarea><button class="btn" onclick="sendChat()" style="margin-top:16px">Send</button><div class="result-box" id="chatResult" style="display:none;margin-top:16px"></div></div></div>
-<div id="page-judgment" class="page"><h1 class="page-title">10D Judgment</h1><div class="card"><div class="form-label">Question</div><textarea class="input" id="judgeInput" rows="3" placeholder="Enter your decision question..."></textarea><button class="btn" onclick="runJudgment()" style="margin-top:16px">Analyze</button><div class="result-box" id="judgeResult" style="display:none;margin-top:16px"></div></div></div>
-<div id="page-action_plan" class="page"><h1 class="page-title">Action Plan</h1><div class="card"><div class="form-label">Goal</div><textarea class="input" id="planInput" rows="3" placeholder="Describe your goal..."></textarea><button class="btn" onclick="genPlan()" style="margin-top:16px">Generate</button><div class="result-box" id="planResult" style="display:none;margin-top:16px"></div></div></div>
-<div id="page-action_signal" class="page"><h1 class="page-title">Action Signal</h1><div class="card"><div class="form-label">Signal</div><textarea class="input" id="signalInput" rows="3" placeholder="Enter signal..."></textarea><button class="btn" onclick="processSignal()" style="margin-top:16px">Process</button><div class="result-box" id="signalResult" style="display:none;margin-top:16px"></div></div></div>
-<div id="page-llm" class="page"><h1 class="page-title">LLM Console</h1><div class="card"><div class="card-title">API Configuration</div><div class="form-group"><label class="form-label">Provider</label><select class="form-select" id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="local">Local</option><option value="ollama">Ollama</option></select></div><div class="form-group"><label class="form-label">API Key</label><input type="password" class="api-key-input" id="apiKey" placeholder="sk-..."></div><div class="form-group"><label class="form-label">Base URL</label><input type="text" class="api-key-input" id="baseUrl" placeholder="https://api.openai.com/v1"></div><button class="btn" onclick="saveLLM()">Save</button></div><div class="card"><div class="card-title">Status</div><div id="llmStatus">Not configured</div></div></div>
-<div id="page-models" class="page"><h1 class="page-title">Models</h1><div class="card"><div class="card-title">Available Models</div><div id="modelList"><pre>Loading...</pre></div></div></div>
-<div id="page-goal" class="page"><h1 class="page-title">Goal System</h1><div class="card"><div class="card-title">Current Goals</div><div id="goalList"><pre>No goals set</pre></div></div></div>
-<div id="page-causal_memory" class="page"><h1 class="page-title">Causal Memory</h1><div class="card"><div class="card-title">Memory Records</div><div id="memoryList"><pre>Loading...</pre></div></div></div>
-<div id="page-curiosity" class="page"><h1 class="page-title">Curiosity</h1><div class="card"><div class="card-title">Curiosity Tasks</div><div id="curiosityList"><pre>No tasks</pre></div></div></div>
-<div id="page-openspace" class="page"><h1 class="page-title">OpenSpace</h1><div class="card"><div class="card-title">Skills</div><div id="skillList"><pre>Loading...</pre></div></div></div>
-<div id="page-history" class="page"><h1 class="page-title">History</h1><div class="card"><div class="card-title">Recent History</div><div id="historyList"><pre>No history</pre></div></div></div>
-<div id="page-export" class="page"><h1 class="page-title">Export</h1><div class="card"><button class="btn" onclick="exportData()">Export All Data</button></div></div>
-<div id="page-settings" class="page"><h1 class="page-title">Settings</h1><div class="card"><div class="card-title">System</div><div id="sysStatus">Loading...</div></div></div>
-</main></div>
+
 <script>
-function nav(page, el){
-document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-document.getElementById('page-'+page).classList.add('active');
-document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-el.classList.add('active');
+let currentView = 'dashboard';
+
+function setView(view) {
+    currentView = view;
+    document.getElementById('btn-dashboard').classList.toggle('active', view === 'dashboard');
+    document.getElementById('btn-bars').classList.toggle('active', view === 'bars');
 }
-function sendChat(){
-var msg=document.getElementById('chatInput').value;
-if(!msg)return;
-var res=document.getElementById('chatResult');
-res.style.display='block';res.innerHTML='<pre>Loading...</pre>';
-fetch('/api/chat',{method:'POST',body:msg,headers:{'Content-Type':'text/plain'}}).then(r=>r.json()).then(d=>{res.innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});
+
+function renderBars(data) {
+    let h = '<div class="result-card">';
+    h += '<div class="verdict-text">' + esc(data.verdict || '') + '</div>';
+    const conf = Math.round((data.confidence || 0) * 100);
+    h += '<div class="confidence-row">置信度 ' + conf + '%</div>';
+    h += '<div class="confidence-bar-wrap"><div class="confidence-bar-fill" style="width:' + conf + '%"></div></div>';
+    h += '<div style="margin-top:16px">';
+    const dims = data.dimensions || {};
+    for (const [name, info] of Object.entries(dims)) {
+        const pct = Math.round((info.score || 0) * 100);
+        const hue = pct > 75 ? '#4ade80' : pct > 50 ? '#facc15' : '#e94560';
+        h += '<div class="dimension-row">';
+        h += '<span class="dim-name">' + esc(name) + '</span>';
+        h += '<div class="dim-bar-wrap"><div class="dim-bar-fill" style="width:' + pct + '%;background:' + hue + '"></div></div>';
+        h += '<span class="dim-score">' + pct + '%</span>';
+        h += '</div>';
+    }
+    h += '</div>';
+    if (data.chain_id) h += '<div class="chain-id">chain: ' + data.chain_id + '</div>';
+    h += '</div>';
+    return h;
 }
-function runJudgment(){
-var q=document.getElementById('judgeInput').value;
-if(!q)return;
-var res=document.getElementById('judgeResult');
-res.style.display='block';res.innerHTML='<pre>Analyzing 10 dimensions...</pre>';
-fetch('/api/judgment',{method:'POST',body:q,headers:{'Content-Type':'text/plain'}}).then(r=>r.json()).then(d=>{
-var html='<pre>Question: '+d.question+'\n\n';
-html+='Dimensions:\n';
-for(var k in d.dimensions){var v=d.dimensions[k];html+=k+': '+Math.round(v*100)+'%\n';}
-html+='\nSummary: '+d.summary+'</pre>';
-res.innerHTML=html;
+
+function renderDashboard(data) {
+    if (!data.dashboard) return renderBars(data);
+    let h = '<div class="result-card">';
+    h += '<div class="verdict-text">' + esc(data.verdict || '') + '</div>';
+    h += '<pre class="dashboard-pre">' + esc(data.dashboard) + '</pre>';
+    h += '</div>';
+    return h;
+}
+
+function esc(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function submitJudge() {
+    const task = document.getElementById('taskInput').value.trim();
+    if (!task) return;
+    const btn = document.getElementById('judgeBtn');
+    btn.disabled = true;
+    document.getElementById('resultArea').innerHTML =
+        '<div class="loading"><div class="spinner"></div>分析中，请稍候...</div>';
+    fetch('/api/judge', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({task})
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.error) {
+            document.getElementById('resultArea').innerHTML = '<div class="error">错误: ' + esc(data.error) + '</div>';
+            return;
+        }
+        document.getElementById('resultArea').innerHTML =
+            currentView === 'dashboard' ? renderDashboard(data) : renderBars(data);
+    })
+    .catch(e => {
+        btn.disabled = false;
+        document.getElementById('resultArea').innerHTML =
+            '<div class="error">请求失败: ' + esc(String(e)) + '</div>';
+    });
+}
+
+// 回车提交（Shift+Enter换行）
+document.getElementById('taskInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitJudge();
+    }
 });
-}
-function genPlan(){var g=document.getElementById('planInput').value;if(!g)return;var r=document.getElementById('planResult');r.style.display='block';r.innerHTML='<pre>Generating...</pre>';fetch('/api/action_plan',{method:'POST',body:g,headers:{'Content-Type':'text/plain'}}).then(r=>r.json()).then(d=>{r.innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});}
-function processSignal(){var s=document.getElementById('signalInput').value;if(!s)return;var r=document.getElementById('signalResult');r.style.display='block';r.innerHTML='<pre>Processing...</pre>';fetch('/api/action_signal',{method:'POST',body:s,headers:{'Content-Type':'text/plain'}}).then(r=>r.json()).then(d=>{r.innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});}
-function saveLLM(){var p=document.getElementById('provider').value;var k=document.getElementById('apiKey').value;var u=document.getElementById('baseUrl').value;fetch('/api/llm',{method:'POST',body:JSON.stringify({provider:p,apiKey:k,baseUrl:u}),headers:{'Content-Type':'application/json'}}).then(r=>r.json()).then(d=>{document.getElementById('llmStatus').innerHTML='<pre>'+JSON.stringify(d)+'</pre>'});}
-function exportData(){fetch('/api/export',{method:'POST'}).then(r=>r.blob()).then(b=>{var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='juhuo_export.json';a.click();});}
-fetch('/api/models').then(r=>r.json()).then(d=>{document.getElementById('modelList').innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});
-fetch('/api/memory').then(r=>r.json()).then(d=>{document.getElementById('memoryList').innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});
-fetch('/api/status').then(r=>r.json()).then(d=>{document.getElementById('sysStatus').innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'});
-</script></body></html>
+
+// 加载时拉取统计
+fetch('/api/status').then(r => r.json()).then(data => {
+    if (data.total !== undefined) {
+        document.getElementById('stat-total').textContent = data.total;
+        document.getElementById('stat-correct').textContent = data.correct || 0;
+        document.getElementById('stat-accuracy').textContent =
+            data.total > 0 ? Math.round((data.correct || 0) / data.total * 100) + '%' : '–';
+    }
+}).catch(() => {});
+</script>
+</body>
+</html>

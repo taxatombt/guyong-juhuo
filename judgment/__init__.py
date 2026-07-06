@@ -226,6 +226,7 @@ _MAP = {
     "check10d_full": ("pipeline", "check10d_full"),
 
     "check_safe": ("matcher", "check_safe"),
+    "check_task_frame_harm": ("verifier", "check_task_frame_harm"),
 
     "check_trigger": ("self_evolver", "check_trigger"),
 
